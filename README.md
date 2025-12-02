@@ -38,9 +38,9 @@ The display resolution is 1280×800, which in RGB565 format corresponds to 2,048
 Which means framebuffers do not fit in "fast" RAM only in external PSRAM.
 
 The processor / dev-board provides different memory types:
-Flash / 16 MB rather slow
-DRAM on-chip SRAM 768 KB very very fast (which is divided in IRAM (instructions) and DRAM (data)
-PSRAM 32 MB slow “external” RAM
+- Flash / 16 MB rather slow
+- DRAM on-chip SRAM 768 KB very very fast (which is divided in IRAM (instructions) and DRAM (data)
+- PSRAM 32 MB slow “external” RAM
 
 I slowly worked my way deeper into the ESP32 and its hardware.
 
