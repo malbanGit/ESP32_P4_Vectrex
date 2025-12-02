@@ -5,6 +5,9 @@ I used version ESP-IDF V5.5.1.
 
 And build. I connected my ESP development board with a simple USB cable and flashed it with UART.
 
+[![Video ansehen](https://img.youtube.com/vi/WvN1xyKDec0/0.jpg)](https://youtu.be/WvN1xyKDec0)
+
+
 
 Final report: Vectrex emulator on an ESP32 P4
 
