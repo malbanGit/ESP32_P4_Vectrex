@@ -1,0 +1,15 @@
+dependencies:
+  esp_codec_dev:
+    public: true
+    version: "1.2.*"
+  esp_lcd_touch_gt911: ^1
+  idf: '>=5.3'
+  waveshare/esp_lcd_dsi: '*'
+  waveshare/esp_lcd_hx8394: ^1.0.2
+  waveshare/esp_lcd_jd9365: '*'
+tags:
+- bsp
+targets:
+- esp32p4
+url: https://www.waveshare.com/esp32-p4-nano.htm
+version: 1.2.0
