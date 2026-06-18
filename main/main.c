@@ -14,8 +14,10 @@
 #include "esp_random.h"
 #include "esp_task_wdt.h"
 
-#include "bsp/esp-bsp.h" 
+#include "bsp/esp-bsp.h"
 #include "bsp/display.h"
+
+#include "draw_line.h"
 
 #include "esp_lcd_mipi_dsi.h"      // esp_lcd_dpi_panel_* APIs
 #include "esp_lcd_panel_ops.h"     // esp_lcd_panel_disp_on_off()
@@ -340,74 +342,10 @@ IRAM_ATTR inline static void draw_line_core_aa_thick(int x0, int y0, int x1, int
 
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
-    // single pixel
-    // Degenerate case: a single "dot" -> must respect line thickness and AA
-    if (x0 == x1 && y0 == y1) {
-        int half_w = (g_line_width > 0 ? g_line_width : 1) / 2;
-
-        // If no AA: draw a filled square of size (2*half_w+1)
-        if (!g_line_antialias) {
-            uint16_t color = brightness_to_color(brightness);
-            for (int dy = -half_w; dy <= half_w; ++dy) {
-                for (int dx = -half_w; dx <= half_w; ++dx) {
-                    put_pixel(x0 + dx, y0 + dy, color);
-                }
-            }
-            return;
-        } else {
-            // AA on: draw a small disc-like kernel with radial alpha
-            // brightness == 0 will still work (writes black).
-            int core_r = half_w;        // inner radius = full intensity
-            int max_r  = half_w + 1;    // outer radius = fades to 0
-
-            for (int dy = -max_r; dy <= max_r; ++dy) {
-                for (int dx = -max_r; dx <= max_r; ++dx) {
-                    float dist = sqrtf((float)(dx * dx + dy * dy));
-                    if (dist > (float)max_r) {
-                        continue;
-                    }
-
-                    float w = 1.0f;
-                    if (dist > (float)core_r) {
-                        // linear falloff between core_r and max_r
-                        w = (float)max_r - dist;
-                        if (w <= 0.0f) {
-                            continue;
-                        }
-                    }
-
-                    uint8_t alpha = (uint8_t)(w * 255.0f);
-                    uint16_t color = brightness_to_color_scaled(brightness, alpha);
-                    put_pixel(x0 + dx, y0 + dy, color);
-                }
-            }
-            return;
-        }
-    }
-
-    if (brightness == 0) {
-        // Erase with the same kernel shape that would draw the line
-        if (g_line_antialias) {
-            if (g_line_width <= 1) {
-                draw_line_core_aa(x0, y0, x1, y1, 0);
-            } else {
-                draw_line_core_aa_thick(x0, y0, x1, y1, 0);
-            }
-        } else {
-            draw_line_core_no_aa(x0, y0, x1, y1, 0);
-        }
-        return;
-    }
-
-    if (g_line_antialias) {
-        if (g_line_width <= 1) {
-            draw_line_core_aa(x0, y0, x1, y1, brightness);
-        } else {
-            draw_line_core_aa_thick(x0, y0, x1, y1, brightness);
-        }
-    } else {
-        draw_line_core_no_aa(x0, y0, x1, y1, brightness);
-    }
+    int width = (g_line_width > 0) ? g_line_width : 1;
+    draw_line_asm(s_fb_back, LCD_H_RES, LCD_V_RES,
+                  x0, y0, x1, y1,
+                  (int)brightness, width);
 }
 
 // ----------------------------------------------------
