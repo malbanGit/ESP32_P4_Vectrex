@@ -188,18 +188,18 @@ static IRAM_ATTR void rasterise(
     int dx = x1 - x0;
     int dy = y1 - y0;
 
-// Bounds-checked pixel dispatch — avoids branching inside the inner loop.
+// Pixel dispatch — bounds checks commented out; rasteriser stays within fb.
 #define DISPATCH(px, py, alpha)                                        \
     do {                                                               \
-        if ((unsigned)(px) < (unsigned)fw &&                           \
-            (unsigned)(py) < (unsigned)fh) {                          \
+        /* if ((unsigned)(px) < (unsigned)fw &&                     */ \
+        /*     (unsigned)(py) < (unsigned)fh) {                     */ \
             int _off = (py) * fw + (px);                              \
             if (mode == MODE_ERASE)                                    \
                 fast_restore(dimmed, fb, _off);                        \
             else                                                       \
                 fast_draw_pixel(dimmed, overlay, fb,                   \
                                 _off, (alpha), shine_through);        \
-        }                                                              \
+        /* }                                                         */ \
     } while (0)
 
     // ---- degenerate: single point → filled square ----

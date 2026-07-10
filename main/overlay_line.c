@@ -66,23 +66,23 @@ static IRAM_ATTR inline uint16_t beam_color(
     return pack565((br * alpha) >> 8, (bg * alpha) >> 8, (bb * alpha) >> 8);
 }
 
-/* Write beam colour to fb[py][px] — bounds-checked, REPLACE. */
+/* Write beam colour to fb[py][px] — REPLACE. */
 static IRAM_ATTR inline void put_replace(
         uint16_t *fb, int fb_w, int fb_h,
         int px, int py,
         int alpha, const uint16_t *overlay, int shine_through)
 {
-    if ((unsigned)px >= (unsigned)fb_w || (unsigned)py >= (unsigned)fb_h) return;
+    // if ((unsigned)px >= (unsigned)fb_w || (unsigned)py >= (unsigned)fb_h) return;
     fb[py * fb_w + px] = beam_color(overlay, fb_w, px, py, alpha, shine_through);
 }
 
-/* Write beam colour to fb[py][px] — bounds-checked, ADDITIVE (saturating). */
+/* Write beam colour to fb[py][px] — ADDITIVE (saturating). */
 static IRAM_ATTR inline void put_additive(
         uint16_t *fb, int fb_w, int fb_h,
         int px, int py,
         int alpha, const uint16_t *overlay, int shine_through)
 {
-    if ((unsigned)px >= (unsigned)fb_w || (unsigned)py >= (unsigned)fb_h) return;
+    // if ((unsigned)px >= (unsigned)fb_w || (unsigned)py >= (unsigned)fb_h) return;
 
     uint16_t beam = beam_color(overlay, fb_w, px, py, alpha, shine_through);
 
