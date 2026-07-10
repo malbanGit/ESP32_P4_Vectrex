@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.c" "draw_line.S" "overlay_line.c" "lodepng.c"
+    SRCS "main.c" "draw_line.S" "overlay_line.c" "overlay_fast.c" "lodepng.c"
          vecx/cart.c vecx/e8910.c vecx/e6809.c vecx/vecx.c
     INCLUDE_DIRS "." vecx
     REQUIRES esp_lcd esp32_p4_nano_custom
