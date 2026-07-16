@@ -194,7 +194,7 @@ IRAM_ATTR void draw_line_overlay_rgb888(
         const uint8_t *overlay, int shine_through)
 {
     if (!overlay || shine_through <= 0) {
-        draw_line_asm_rgb888(fb, fb_w, fb_h, x0, y0, x1, y1, brightness, thickness, g_line_glow);
+        draw_line_asm_rgb888(fb, fb_w, fb_h, x0, y0, x1, y1, brightness, thickness);
         return;
     }
     if (shine_through > 255) shine_through = 255;

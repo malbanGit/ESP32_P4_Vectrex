@@ -16,16 +16,18 @@ extern "C" {
 extern int g_line_glow;
 // Gaussian-glow additive line (reads framebuffer, saturating-adds Gaussian beam).
 // Crossing lines accumulate brightness.  Endpoints are rounded (filled circle).
-// Pass g_line_glow as 'glow'; caller must use the SAME value for undraw.
+// brightness > 255 is allowed: the excess saturates the core and spills as a
+// halo to the four cardinal neighbours, all within the glow bounding box so
+// undraw cleans them up correctly.  Glow radius is taken from g_line_glow.
 void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                            int x0, int y0, int x1, int y1,
-                           int brightness, int thickness, int glow);
+                           int brightness, int thickness);
 
 // Erase all pixels that draw_line_asm_rgb888 could have touched (sets R=G=B=0).
-// brightness ignored.  'glow' must be the same value passed to draw.
+// brightness ignored.  Uses g_line_glow — keep it constant between draw/undraw.
 void undraw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                              int x0, int y0, int x1, int y1,
-                             int brightness, int thickness, int glow);
+                             int brightness, int thickness);
 
 #ifdef __cplusplus
 }

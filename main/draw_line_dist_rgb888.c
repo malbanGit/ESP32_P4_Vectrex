@@ -71,8 +71,9 @@ static inline int gauss_scale(int glow_r)
 __attribute__((section(".iram0.text")))
 void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                            int x0, int y0, int x1, int y1,
-                           int brightness, int thickness, int glow)
+                           int brightness, int thickness)
 {
+    int glow = g_line_glow;
     if (!fb || fb_w <= 0 || fb_h <= 0 || brightness <= 0) return;
     if (glow < 0) glow = 0;
 
@@ -139,10 +140,31 @@ void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
 
             int off = px * 3;
             int v   = row[off] + contrib;
-            uint8_t cv = v > 255 ? 255 : (uint8_t)v;
-            row[off]   = cv;
-            row[off+1] = cv;
-            row[off+2] = cv;
+            if (v > 255) {
+                /* Saturation spill: spread ~25% of excess to each cardinal neighbour.
+                 * All targets are within [bx0..bx1]×[by0..by1] so undraw covers them. */
+                int spill = (v - 255 + 3) >> 2;
+                if (spill > 0) {
+                    if (px > bx0) {
+                        uint8_t *p = row + (px - 1) * 3;
+                        int nv = p[0] + spill; p[0] = p[1] = p[2] = nv > 255 ? 255 : (uint8_t)nv;
+                    }
+                    if (px < bx1) {
+                        uint8_t *p = row + (px + 1) * 3;
+                        int nv = p[0] + spill; p[0] = p[1] = p[2] = nv > 255 ? 255 : (uint8_t)nv;
+                    }
+                    if (py > by0) {
+                        uint8_t *p = fb + ((py - 1) * fb_w + px) * 3;
+                        int nv = p[0] + spill; p[0] = p[1] = p[2] = nv > 255 ? 255 : (uint8_t)nv;
+                    }
+                    if (py < by1) {
+                        uint8_t *p = fb + ((py + 1) * fb_w + px) * 3;
+                        int nv = p[0] + spill; p[0] = p[1] = p[2] = nv > 255 ? 255 : (uint8_t)nv;
+                    }
+                }
+                v = 255;
+            }
+            row[off] = row[off+1] = row[off+2] = (uint8_t)v;
         }
     }
 }
@@ -150,8 +172,9 @@ void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
 __attribute__((section(".iram0.text")))
 void undraw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                              int x0, int y0, int x1, int y1,
-                             int brightness, int thickness, int glow)
+                             int brightness, int thickness)
 {
+    int glow = g_line_glow;
     (void)brightness;
     if (!fb || fb_w <= 0 || fb_h <= 0) return;
     if (glow < 0) glow = 0;
