@@ -111,16 +111,23 @@ void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
             } else {
                 int apx = px - x0, apy = py - y0;
                 int dot = apx * dx + apy * dy;
-                int t_q8;
-                if (dot <= 0)         t_q8 = 0;
-                else if (dot >= len2) t_q8 = 256;
-                else                  t_q8 = (dot * 256) / len2;
-
-                int cx_q8 = (x0 << 8) + t_q8 * dx;
-                int cy_q8 = (y0 << 8) + t_q8 * dy;
-                int ex_q8 = (px << 8) - cx_q8;
-                int ey_q8 = (py << 8) - cy_q8;
-                d2_q16 = (int32_t)ex_q8 * ex_q8 + (int32_t)ey_q8 * ey_q8;
+                if (dot <= 0) {
+                    /* before start cap */
+                    int ex_q8 = apx << 8, ey_q8 = apy << 8;
+                    d2_q16 = (int32_t)ex_q8 * ex_q8 + (int32_t)ey_q8 * ey_q8;
+                } else if (dot >= len2) {
+                    /* past end cap */
+                    int bpx = px - x1, bpy = py - y1;
+                    int ex_q8 = bpx << 8, ey_q8 = bpy << 8;
+                    d2_q16 = (int32_t)ex_q8 * ex_q8 + (int32_t)ey_q8 * ey_q8;
+                } else {
+                    /* Perpendicular distance via cross product — no t quantization.
+                     * cross = dx*apy - dy*apx; d² = cross²/len2.
+                     * Within the bounding box |cross| ≤ R*sqrt(len2) so cross²
+                     * fits in int32; the ×65536 shift needs int64. */
+                    int cross = dx * apy - dy * apx;
+                    d2_q16 = (int32_t)(((int64_t)cross * cross << 16) / len2);
+                }
             }
 
             int contrib;
