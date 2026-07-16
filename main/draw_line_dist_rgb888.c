@@ -71,8 +71,9 @@ static inline int gauss_scale(int glow_r)
 __attribute__((section(".iram0.text")))
 void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                            int x0, int y0, int x1, int y1,
-                           int brightness, int thickness, int glow)
+                           int brightness, int thickness)
 {
+    int glow = g_line_glow;
     if (!fb || fb_w <= 0 || fb_h <= 0 || brightness <= 0) return;
     if (glow < 0) glow = 0;
 
@@ -150,8 +151,9 @@ void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
 __attribute__((section(".iram0.text")))
 void undraw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                              int x0, int y0, int x1, int y1,
-                             int brightness, int thickness, int glow)
+                             int brightness, int thickness)
 {
+    int glow = g_line_glow;
     (void)brightness;
     if (!fb || fb_w <= 0 || fb_h <= 0) return;
     if (glow < 0) glow = 0;

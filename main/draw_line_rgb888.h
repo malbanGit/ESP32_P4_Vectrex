@@ -16,16 +16,16 @@ extern "C" {
 extern int g_line_glow;
 // Gaussian-glow additive line (reads framebuffer, saturating-adds Gaussian beam).
 // Crossing lines accumulate brightness.  Endpoints are rounded (filled circle).
-// glow: glow radius in pixels beyond beam edge (0 = hard beam, 2 = typical CRT glow).
+// Glow radius is taken from g_line_glow (set that global before calling).
 void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                            int x0, int y0, int x1, int y1,
-                           int brightness, int thickness, int glow);
+                           int brightness, int thickness);
 
 // Erase all pixels that draw_line_asm_rgb888 could have touched (sets R=G=B=0).
-// brightness ignored.  glow must match the value used during draw.
+// brightness ignored.  Uses g_line_glow — must match value used during draw.
 void undraw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                              int x0, int y0, int x1, int y1,
-                             int brightness, int thickness, int glow);
+                             int brightness, int thickness);
 
 #ifdef __cplusplus
 }
