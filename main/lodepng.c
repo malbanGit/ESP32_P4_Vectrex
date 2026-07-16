@@ -117,7 +117,7 @@ void lodepng_free(void* ptr);
 where a full C library is not available. The compiler can recognize them and compile
 to something as fast. */
 
-static void lodepng_memcpy(void* LODEPNG_RESTRICT dst,
+static __attribute__((noinline)) void lodepng_memcpy(void* LODEPNG_RESTRICT dst,
                            const void* LODEPNG_RESTRICT src, size_t size) {
   memmove(dst, src, size);
 }
