@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -534,19 +535,18 @@ IRAM_ATTR static void renderer_task(void *arg)
 
         // Use current back framebuffer index
         int fb_idx = s_back_fb_index;
-// todo ?
-        // Undraw old lines from this backbuffer
-        undraw_previous_fb(fb_idx);
 
-        // Draw new frame lines into backbuffer and remember them
+        // Clear back buffer to black before additive drawing.
+        // Additive rendering requires a full clear each frame — partial undraw
+        // cannot undo saturation and does not work correctly with double buffering.
+        memset(s_fb_back, 0, LCD_H_RES * LCD_V_RES * sizeof(uint16_t));
+        s_fb_line_count[fb_idx] = 0;
+
+        // Draw new frame lines into backbuffer
         for (int i = 0; i < line_count; ++i) {
             vectrex_line_t *src = &s_frame_lines[frame_idx][i];
 
             drawLine_raw(src->x0, src->y0, src->x1, src->y1, src->brightness);
-
-            if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
-                s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
-            }
         }
 
         // Swap front/back pointers and indices
