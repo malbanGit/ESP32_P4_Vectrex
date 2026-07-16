@@ -70,26 +70,4 @@ static inline int gauss_scale(int glow_r)
 
 /* draw_line_asm_rgb888 is implemented in draw_line_dist_rgb888.S */
 
-__attribute__((section(".iram0.text")))
-void undraw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
-                             int x0, int y0, int x1, int y1,
-                             int brightness, int thickness)
-{
-    int glow = g_line_glow;
-    (void)brightness;
-    if (!fb || fb_w <= 0 || fb_h <= 0) return;
-    if (glow < 0) glow = 0;
-
-    int beam_r = thickness >> 1;
-    int R      = beam_r + glow;
-
-    int bx0 = iclamp((x0 < x1 ? x0 : x1) - R, 0, fb_w - 1);
-    int bx1 = iclamp((x0 > x1 ? x0 : x1) + R, 0, fb_w - 1);
-    int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
-    int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
-
-    int span_bytes = (bx1 - bx0 + 1) * 3;
-    for (int py = by0; py <= by1; py++) {
-        memset(fb + (py * fb_w + bx0) * 3, 0, span_bytes);
-    }
-}
+/* undraw_line_asm_rgb888 is implemented in draw_line_dist_rgb888.S */

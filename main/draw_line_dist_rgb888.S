@@ -402,3 +402,164 @@ draw_line_asm_rgb888:
     ret
 
     .size draw_line_asm_rgb888, .-draw_line_asm_rgb888
+
+/* ════════════════════════════════════════════════════════════════════
+ * undraw_line_asm_rgb888 — zero the bounding box rows with memset.
+ *
+ * Register map:
+ *   s0  = fb
+ *   s1  = fb_w
+ *   s2  = bx0
+ *   s3  = span_bytes  = (bx1-bx0+1)*3
+ *   s4  = by0
+ *   s5  = by1
+ *   s6  = py  (outer-loop counter; saved so memset call doesn't clobber it)
+ *
+ * Stack frame (48 bytes):
+ *   sp+ 0  : saved ra
+ *   sp+ 4  : saved s0
+ *   sp+ 8  : saved s1
+ *   sp+12  : saved s2
+ *   sp+16  : saved s3
+ *   sp+20  : saved s4
+ *   sp+24  : saved s5
+ *   sp+28  : saved s6
+ *   sp+32  : x0 local
+ *   sp+36  : y0 local
+ *   sp+40  : x1 local
+ *   sp+44  : y1 local
+ *   sp+48  : thickness  (9th arg from caller)
+ * ════════════════════════════════════════════════════════════════════ */
+
+    .global undraw_line_asm_rgb888
+    .type   undraw_line_asm_rgb888, @function
+    .align  2
+
+undraw_line_asm_rgb888:
+    addi    sp, sp, -48
+    sw      ra,  0(sp)
+    sw      s0,  4(sp)
+    sw      s1,  8(sp)
+    sw      s2, 12(sp)
+    sw      s3, 16(sp)
+    sw      s4, 20(sp)
+    sw      s5, 24(sp)
+    sw      s6, 28(sp)
+
+    mv      s0, a0          /* fb    */
+    mv      s1, a1          /* fb_w  */
+
+    /* Early exits */
+    beqz    s0, .Lundraw_ret
+    blez    s1, .Lundraw_ret
+    blez    a2, .Lundraw_ret    /* fb_h */
+
+    /* Save x0,y0,x1,y1 */
+    sw      a3, 32(sp)
+    sw      a4, 36(sp)
+    sw      a5, 40(sp)
+    sw      a6, 44(sp)
+
+    /* glow = max(g_line_glow, 0) */
+    la      t0, g_line_glow
+    lw      t0, 0(t0)
+    bgez    t0, 1f
+    li      t0, 0
+1:                              /* t0 = glow */
+
+    /* beam_r = thickness >> 1 */
+    lw      t1, 48(sp)
+    srai    t1, t1, 1           /* t1 = beam_r */
+
+    /* R = beam_r + glow */
+    add     t2, t1, t0          /* t2 = R */
+
+    /* ── Bounding box ── */
+    /* bx0 = iclamp(min(x0,x1) - R, 0, fb_w-1) */
+    lw      a3, 32(sp)
+    lw      a5, 40(sp)
+    blt     a3, a5, 1f
+    mv      a3, a5
+1:  sub     a3, a3, t2
+    bge     a3, zero, 1f
+    li      a3, 0
+1:  addi    t3, s1, -1          /* fb_w-1 */
+    blt     a3, t3, 1f
+    mv      a3, t3
+1:  mv      s2, a3              /* s2 = bx0 */
+
+    /* bx1 (kept in t0 only to derive span_bytes) */
+    lw      a3, 32(sp)
+    lw      a5, 40(sp)
+    bgt     a3, a5, 1f
+    mv      a3, a5
+1:  add     a3, a3, t2
+    bge     a3, zero, 1f
+    li      a3, 0
+1:  blt     a3, t3, 1f
+    mv      a3, t3
+1:                              /* a3 = bx1 */
+
+    /* span_bytes = (bx1 - bx0 + 1) * 3 */
+    sub     t0, a3, s2
+    addi    t0, t0, 1
+    slli    t1, t0, 1
+    add     s3, t0, t1          /* s3 = span_bytes */
+
+    /* by0 = iclamp(min(y0,y1) - R, 0, fb_h-1) */
+    lw      a4, 36(sp)
+    lw      a6, 44(sp)
+    blt     a4, a6, 1f
+    mv      a4, a6
+1:  sub     a4, a4, t2
+    bge     a4, zero, 1f
+    li      a4, 0
+1:  addi    t3, a2, -1          /* fb_h-1 */
+    blt     a4, t3, 1f
+    mv      a4, t3
+1:  mv      s4, a4              /* s4 = by0 */
+
+    /* by1 = iclamp(max(y0,y1) + R, 0, fb_h-1) */
+    lw      a4, 36(sp)
+    lw      a6, 44(sp)
+    bgt     a4, a6, 1f
+    mv      a4, a6
+1:  add     a4, a4, t2
+    bge     a4, zero, 1f
+    li      a4, 0
+1:  blt     a4, t3, 1f
+    mv      a4, t3
+1:  mv      s5, a4              /* s5 = by1 */
+
+    /* ── Loop: memset each row ── */
+    mv      s6, s4              /* py = by0 */
+.Lundraw_loop:
+    bgt     s6, s5, .Lundraw_ret
+
+    /* a0 = fb + (py*fb_w + bx0) * 3 */
+    mul     a0, s6, s1
+    add     a0, a0, s2
+    slli    t0, a0, 1
+    add     a0, a0, t0          /* *3 */
+    add     a0, s0, a0
+
+    li      a1, 0
+    mv      a2, s3              /* span_bytes */
+    call    memset
+
+    addi    s6, s6, 1
+    j       .Lundraw_loop
+
+.Lundraw_ret:
+    lw      ra,  0(sp)
+    lw      s0,  4(sp)
+    lw      s1,  8(sp)
+    lw      s2, 12(sp)
+    lw      s3, 16(sp)
+    lw      s4, 20(sp)
+    lw      s5, 24(sp)
+    lw      s6, 28(sp)
+    addi    sp, sp, 48
+    ret
+
+    .size undraw_line_asm_rgb888, .-undraw_line_asm_rgb888
