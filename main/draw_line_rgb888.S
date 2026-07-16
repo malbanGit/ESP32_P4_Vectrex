@@ -67,7 +67,7 @@ draw_line_asm_rgb888:
     sw      s10, 12(sp)
     sw      s11,  8(sp)
 
-    // s0 = fb, s1 = fb_w, s2 = fb_h, s3 = steep, s4 = half_w
+    // s0 = fb, s1 = fb_w, s2 = fb_h, s3 = steep, s4 = lo, s10 = hi
     // s5 = brightness, s6 = y_fp (Q8), s7 = gradient, s8 = x, s9 = x1
 
     mv      s0, a0          // fb
@@ -77,9 +77,11 @@ draw_line_asm_rgb888:
 
     lw      t0, 60(sp)      // thickness (9th arg)
     li      s4, 0
+    li      s10, 0
     ble     t0, zero, .Lthick8_ok
-    addi    t0, t0, -1
-    srli    s4, t0, 1       // half_w = (thickness-1) >> 1
+    addi    t1, t0, -1
+    srli    s4, t1, 1       // lo = (thickness-1) >> 1
+    srli    s10, t0, 1      // hi = thickness >> 1
 .Lthick8_ok:
 
     // Load x0,y0,x1,y1 (still in argument registers)
@@ -121,12 +123,12 @@ draw_line_asm_rgb888:
 .Lpt8_nosteep:
     mv      a0, t1; mv a1, t2
 .Lpt8_draw:
-    neg     t5, s4          // oy = -half_w
+    neg     t5, s4          // oy = -lo
 .Lpt8_outer:
-    bgt     t5, s4, .L8done
+    bgt     t5, s10, .L8done
     neg     t6, s4
 .Lpt8_inner:
-    bgt     t6, s4, .Lpt8_next
+    bgt     t6, s10, .Lpt8_next
     add     a2, a0, t6
     add     a3, a1, t5
     PUT_PIXEL_888 s0, s1, s2, a2, a3, s5, a4, a5
@@ -151,27 +153,37 @@ draw_line_asm_rgb888:
     srai    t0, s6, 8       // y_int
     andi    t1, s6, 0xFF    // frac
 
-    // --- TOP AA EDGE ---
+    // hi==0 → Wu thin; hi>0 → solid block
+    bnez    s10, .Lsolid8
+
+    // --- WU THIN (hi==0) ---
     li      t2, 255
     sub     t2, t2, t1      // alpha_top = 255 - frac
     mul     t3, s5, t2
-    srli    t3, t3, 8       // scaled_b_top
-
-    sub     a0, t0, s4      // ytop = y_int - half_w
-    beqz    s3, .Ltop8_nosteep
+    srli    t3, t3, 8
+    beqz    s3, .Lwutop8_nosteep
+    PUT_PIXEL_888 s0, s1, s2, t0, s8, t3, a3, a4
+    j       .Lwubot8
+.Lwutop8_nosteep:
+    PUT_PIXEL_888 s0, s1, s2, s8, t0, t3, a3, a4
+.Lwubot8:
+    beqz    t1, .Lbot8_skip
+    mul     t3, s5, t1
+    srli    t3, t3, 8
+    addi    a0, t0, 1       // y_int + 1
+    beqz    s3, .Lwubot8_nosteep
     PUT_PIXEL_888 s0, s1, s2, a0, s8, t3, a3, a4
-    j       .Ltop8_done
-.Ltop8_nosteep:
+    j       .Lbot8_skip
+.Lwubot8_nosteep:
     PUT_PIXEL_888 s0, s1, s2, s8, a0, t3, a3, a4
-.Ltop8_done:
+    j       .Lbot8_skip
 
-    // --- CORE PIXELS ---
-    sub     a0, t0, s4
-    addi    a0, a0, 1       // core_start = y_int - half_w + 1
-    add     a1, t0, s4      // core_end   = y_int + half_w
-
+    // --- SOLID BLOCK (hi>0) ---
+.Lsolid8:
+    sub     a0, t0, s4      // c = y_int - lo
+    add     a1, t0, s10     // end = y_int + hi
 .Lcore8_loop:
-    bgt     a0, a1, .Lcore8_done
+    bgt     a0, a1, .Lbot8_skip
     beqz    s3, .Lcore8_nosteep
     PUT_PIXEL_888 s0, s1, s2, a0, s8, s5, a4, a5
     j       .Lcore8_next
@@ -180,20 +192,7 @@ draw_line_asm_rgb888:
 .Lcore8_next:
     addi    a0, a0, 1
     j       .Lcore8_loop
-.Lcore8_done:
 
-    // --- BOTTOM AA EDGE ---
-    beqz    t1, .Lbot8_skip
-    mul     t3, s5, t1
-    srli    t3, t3, 8       // scaled_b_bot
-
-    add     a0, t0, s4
-    addi    a0, a0, 1       // ybot = y_int + half_w + 1
-    beqz    s3, .Lbot8_nosteep
-    PUT_PIXEL_888 s0, s1, s2, a0, s8, t3, a3, a4
-    j       .Lbot8_skip
-.Lbot8_nosteep:
-    PUT_PIXEL_888 s0, s1, s2, s8, a0, t3, a3, a4
 .Lbot8_skip:
 
     add     s6, s6, s7      // y_fp += gradient

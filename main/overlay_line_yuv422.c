@@ -116,7 +116,8 @@ static IRAM_ATTR void rasterise_line_yuv422(
         const uint8_t *overlay, int shine_through,
         put_pixel_fn_yuv422 put)
 {
-    int half_w = thickness > 1 ? (thickness - 1) >> 1 : 0;
+    int lo = thickness > 0 ? (thickness - 1) >> 1 : 0;
+    int hi = thickness > 0 ? thickness >> 1 : 0;
 
     int adx = x1 - x0; if (adx < 0) adx = -adx;
     int ady = y1 - y0; if (ady < 0) ady = -ady;
@@ -130,8 +131,8 @@ static IRAM_ATTR void rasterise_line_yuv422(
     if (dx == 0) {
         int sx = steep ? y0 : x0;
         int sy = steep ? x0 : y0;
-        for (int oy = -half_w; oy <= half_w; oy++)
-            for (int ox = -half_w; ox <= half_w; ox++)
+        for (int oy = -lo; oy <= hi; oy++)
+            for (int ox = -lo; ox <= hi; ox++)
                 put(fb, fb_w, fb_h, sx+ox, sy+oy, brightness, overlay, shine_through);
         return;
     }
@@ -143,21 +144,20 @@ static IRAM_ATTR void rasterise_line_yuv422(
         int y_int = (int)(y_fp >> 8);
         int frac  = (int)(y_fp & 0xFF);
 
-        int alpha_top = (brightness * (255 - frac)) >> 8;
-        int ytop = y_int - half_w;
-        if (steep) put(fb, fb_w, fb_h, ytop, x, alpha_top, overlay, shine_through);
-        else       put(fb, fb_w, fb_h, x, ytop, alpha_top, overlay, shine_through);
-
-        for (int c = y_int - half_w + 1; c <= y_int + half_w; c++) {
-            if (steep) put(fb, fb_w, fb_h, c, x, brightness, overlay, shine_through);
-            else       put(fb, fb_w, fb_h, x, c, brightness, overlay, shine_through);
-        }
-
-        if (frac) {
-            int alpha_bot = (brightness * frac) >> 8;
-            int ybot = y_int + half_w + 1;
-            if (steep) put(fb, fb_w, fb_h, ybot, x, alpha_bot, overlay, shine_through);
-            else       put(fb, fb_w, fb_h, x, ybot, alpha_bot, overlay, shine_through);
+        if (hi == 0) {
+            int alpha_top = (brightness * (255 - frac)) >> 8;
+            if (steep) put(fb, fb_w, fb_h, y_int, x, alpha_top, overlay, shine_through);
+            else       put(fb, fb_w, fb_h, x, y_int, alpha_top, overlay, shine_through);
+            if (frac) {
+                int alpha_bot = (brightness * frac) >> 8;
+                if (steep) put(fb, fb_w, fb_h, y_int + 1, x, alpha_bot, overlay, shine_through);
+                else       put(fb, fb_w, fb_h, x, y_int + 1, alpha_bot, overlay, shine_through);
+            }
+        } else {
+            for (int c = y_int - lo; c <= y_int + hi; c++) {
+                if (steep) put(fb, fb_w, fb_h, c, x, brightness, overlay, shine_through);
+                else       put(fb, fb_w, fb_h, x, c, brightness, overlay, shine_through);
+            }
         }
     }
 }

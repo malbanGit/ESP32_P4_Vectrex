@@ -110,9 +110,11 @@ draw_line_asm:
 
     lw      t0, 60(sp)      // thickness (9th arg, on caller stack)
     li      s4, 0
+    li      s11, 0
     ble     t0, zero, .Lthick_ok
-    addi    t0, t0, -1
-    srli    s4, t0, 1       // s4 = (thickness-1) >> 1
+    addi    t1, t0, -1
+    srli    s4, t1, 1       // s4 = lo = (thickness-1) >> 1
+    srli    s11, t0, 1      // s11 = hi = thickness >> 1
 .Lthick_ok:
 
     // ----- PRECOMPUTE color_full = brightness_to_rgb565(brightness) ---------
@@ -177,13 +179,13 @@ draw_line_asm:
     mv      a0, t1          // screen_x
     mv      a1, t2          // screen_y
 .Lpt_draw:
-    // Draw (2*half_w+1)² square centered on (a0, a1)
-    neg     t5, s4          // dy_offset = -half_w
+    // Draw (lo+hi+1)² square centered on (a0, a1)
+    neg     t5, s4          // dy_offset = -lo
 .Lpt_outer:
-    bgt     t5, s4, .Ldone
-    neg     t6, s4          // dx_offset = -half_w
+    bgt     t5, s11, .Ldone
+    neg     t6, s4          // dx_offset = -lo
 .Lpt_inner:
-    bgt     t6, s4, .Lpt_next_outer
+    bgt     t6, s11, .Lpt_next_outer
     add     a2, a0, t6      // px
     add     a3, a1, t5      // py
     PUT_PIXEL s0, s1, s2, a2, a3, s10, a4
@@ -212,42 +214,46 @@ draw_line_asm:
     srai    t0, s6, 8       // t0 = y_int  (signed arithmetic shift)
     andi    t1, s6, 0xFF    // t1 = frac   (0..255)
 
+    // hi==0 → Wu thin; hi>0 → solid block
+    bnez    s11, .Lsolid_rgb
+
     // -----------------------------------------------------------------
-    // TOP AA EDGE  at (y_int - half_w)
-    //   alpha_top = 255 - frac
-    //   color_top = rgb565( brightness * alpha_top >> 8 )
+    // WU THIN (hi==0): AA at y_int and y_int+1
     // -----------------------------------------------------------------
     li      t2, 255
-    sub     t2, t2, t1          // t2 = alpha_top
-
-    // scaled brightness (brightness × alpha >> 8)
+    sub     t2, t2, t1          // t2 = alpha_top = 255 - frac
     mul     t3, s5, t2
-    srli    t3, t3, 8           // t3 = scaled_b_top
-
-    // RGB565 conversion (B_TO_RGB565 clobbers t3 and t5; result in t5)
+    srli    t3, t3, 8
     mv      t4, t3
     B_TO_RGB565 t5, t4, t6
-
-    // Screen coordinates for top edge
-    sub     a0, t0, s4          // y_top = y_int - half_w
-    beqz    s3, .Ltop_nosteep
-    // steep: transposed → screen_x = y_top, screen_y = x
+    beqz    s3, .Lwutop_nosteep
+    PUT_PIXEL s0, s1, s2, t0, s8, t5, a3
+    j       .Lwubot
+.Lwutop_nosteep:
+    PUT_PIXEL s0, s1, s2, s8, t0, t5, a3
+.Lwubot:
+    beqz    t1, .Lbot_skip
+    mul     t3, s5, t1
+    srli    t3, t3, 8
+    mv      t4, t3
+    B_TO_RGB565 t5, t4, t6
+    addi    a0, t0, 1           // y_int + 1
+    beqz    s3, .Lwubot_nosteep
     PUT_PIXEL s0, s1, s2, a0, s8, t5, a3
-    j       .Ltop_done
-.Ltop_nosteep:
+    j       .Lbot_skip
+.Lwubot_nosteep:
     PUT_PIXEL s0, s1, s2, s8, a0, t5, a3
-.Ltop_done:
+    j       .Lbot_skip
 
     // -----------------------------------------------------------------
-    // CORE PIXELS  y_int - half_w + 1  to  y_int + half_w
-    //   alpha = 255  →  use precomputed s10
+    // SOLID BLOCK (hi>0): exactly thickness pixels, no AA
     // -----------------------------------------------------------------
-    sub     a0, t0, s4
-    addi    a0, a0, 1           // a0 = core_y_start
-    add     a1, t0, s4          // a1 = core_y_end
+.Lsolid_rgb:
+    sub     a0, t0, s4          // c = y_int - lo
+    add     a1, t0, s11         // end = y_int + hi
 
 .Lcore_loop:
-    bgt     a0, a1, .Lcore_done
+    bgt     a0, a1, .Lbot_skip
     beqz    s3, .Lcore_nosteep
     PUT_PIXEL s0, s1, s2, a0, s8, s10, a4
     j       .Lcore_next
@@ -256,28 +262,7 @@ draw_line_asm:
 .Lcore_next:
     addi    a0, a0, 1
     j       .Lcore_loop
-.Lcore_done:
 
-    // -----------------------------------------------------------------
-    // BOTTOM AA EDGE  at (y_int + half_w + 1)
-    //   alpha_bot = frac
-    //   Skip entirely when frac == 0 (zero coverage)
-    // -----------------------------------------------------------------
-    beqz    t1, .Lbot_skip
-
-    mul     t3, s5, t1
-    srli    t3, t3, 8           // t3 = scaled_b_bot
-
-    mv      t4, t3
-    B_TO_RGB565 t5, t4, t6
-
-    add     a0, t0, s4
-    addi    a0, a0, 1           // y_bot = y_int + half_w + 1
-    beqz    s3, .Lbot_nosteep
-    PUT_PIXEL s0, s1, s2, a0, s8, t5, a3
-    j       .Lbot_skip
-.Lbot_nosteep:
-    PUT_PIXEL s0, s1, s2, s8, a0, t5, a3
 .Lbot_skip:
 
     // ----- ADVANCE ----------------------------------------------------------

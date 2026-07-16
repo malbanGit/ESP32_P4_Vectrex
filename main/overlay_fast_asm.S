@@ -154,25 +154,28 @@
     .type   overlay_fast_erase_line_asm, @function
 
 overlay_fast_erase_line_asm:
-    addi    sp,  sp, -48
-    sw      ra,  44(sp)
-    sw      s0,  40(sp)
-    sw      s1,  36(sp)
-    sw      s2,  32(sp)
-    sw      s3,  28(sp)
-    sw      s4,  24(sp)
-    sw      s5,  20(sp)
-    sw      s6,  16(sp)
-    sw      s7,  12(sp)
-    sw      s8,   8(sp)
+    addi    sp,  sp, -52
+    sw      ra,  48(sp)
+    sw      s0,  44(sp)
+    sw      s1,  40(sp)
+    sw      s2,  36(sp)
+    sw      s3,  32(sp)
+    sw      s4,  28(sp)
+    sw      s5,  24(sp)
+    sw      s6,  20(sp)
+    sw      s7,  16(sp)
+    sw      s8,  12(sp)
+    sw      s9,   8(sp)
 
     mv      s0, a1
     lw      s1, 8(a0)           // fb_w
     lw      s2, 0(a0)           // dimmed
     li      s4, 0
+    li      s9, 0
     ble     a6, zero, .Le_hw_ok
     addi    t0, a6, -1
-    srli    s4, t0, 1           // half_w = (thickness-1) >> 1
+    srli    s4, t0, 1           // lo = (thickness-1) >> 1
+    srli    s9, a6, 1           // hi = thickness >> 1
 .Le_hw_ok:
 
     // Steep detection
@@ -200,7 +203,7 @@ overlay_fast_erase_line_asm:
     sub     t0, a4, a2          // dx
     sub     t1, a5, a3          // dy
 
-    // Degenerate: dx == 0 → restore (2*half_w+1)² square
+    // Degenerate: dx == 0 → restore square
     bnez    t0, .Le_has_dx
     beqz    s3, .Le_pt_ns
     sw      a3, 0(sp)           // sx = y0 (transposed)
@@ -210,12 +213,12 @@ overlay_fast_erase_line_asm:
     sw      a2, 0(sp)           // sx = x0
     sw      a3, 4(sp)           // sy = y0
 .Le_pt_draw:
-    neg     t5, s4              // row_off = -half_w
+    neg     t5, s4              // row_off = -lo
 .Le_pt_outer:
-    bgt     t5, s4, .Le_done
+    bgt     t5, s9, .Le_done
     neg     t6, s4
 .Le_pt_inner:
-    bgt     t6, s4, .Le_pt_next_outer
+    bgt     t6, s9, .Le_pt_next_outer
     lw      a0, 0(sp)
     lw      a1, 4(sp)
     add     a0, a0, t6          // px = sx + col_off
@@ -239,11 +242,14 @@ overlay_fast_erase_line_asm:
     srai    t0, s7, 8           // t0 = y_int
     andi    t1, s7, 0xFF        // t1 = frac (not needed for erase, but computes positions)
 
-    // Top AA pixel and core strip all get erased
-    // Erase y_int-half_w .. y_int+half_w+1 (the full AA extent)
-    sub     a7, t0, s4          // a7 = y_int - half_w  (first pixel row)
-    add     t2, t0, s4
-    addi    t2, t2, 1           // t2 = y_int + half_w + 1  (last pixel row)
+    // Erase the full strip that was drawn
+    sub     a7, t0, s4          // start = y_int - lo
+    bnez    s9, .Le_hi_ok
+    addi    t2, t0, 1           // hi==0 (Wu): end = y_int + 1
+    j       .Le_strip_start
+.Le_hi_ok:
+    add     t2, t0, s9          // hi>0 (solid): end = y_int + hi
+.Le_strip_start:
 
 .Le_col_loop:
     bgt     a7, t2, .Le_col_done
@@ -265,17 +271,18 @@ overlay_fast_erase_line_asm:
     j       .Le_x_loop
 
 .Le_done:
-    lw      ra,  44(sp)
-    lw      s0,  40(sp)
-    lw      s1,  36(sp)
-    lw      s2,  32(sp)
-    lw      s3,  28(sp)
-    lw      s4,  24(sp)
-    lw      s5,  20(sp)
-    lw      s6,  16(sp)
-    lw      s7,  12(sp)
-    lw      s8,   8(sp)
-    addi    sp,  sp,  48
+    lw      ra,  48(sp)
+    lw      s0,  44(sp)
+    lw      s1,  40(sp)
+    lw      s2,  36(sp)
+    lw      s3,  32(sp)
+    lw      s4,  28(sp)
+    lw      s5,  24(sp)
+    lw      s6,  20(sp)
+    lw      s7,  16(sp)
+    lw      s8,  12(sp)
+    lw      s9,   8(sp)
+    addi    sp,  sp,  52
     ret
 
     .size overlay_fast_erase_line_asm, . - overlay_fast_erase_line_asm
@@ -325,7 +332,14 @@ overlay_fast_draw_line_asm:
     lw      s2, 0(a0)           // dimmed
     lw      s3, 4(a0)           // overlay
     mv      s6, a6              // brightness
-    srli    s5, a7, 1           // half_w = thickness >> 1
+    li      s5, 0
+    sw      zero, 8(sp)         // hi = 0 (stored at 8(sp))
+    ble     a7, zero, .Ld_hw_ok
+    addi    t0, a7, -1
+    srli    s5, t0, 1           // lo = (thickness-1) >> 1
+    srli    t0, a7, 1           // hi = thickness >> 1
+    sw      t0, 8(sp)
+.Ld_hw_ok:
 
     // anti_shine = 255 - shine_through
     lw      t0, 64(sp)          // shine_through (9th arg)
@@ -368,11 +382,12 @@ overlay_fast_draw_line_asm:
     sw      a3, 4(sp)           // sy
 .Ld_pt_draw:
     neg     t5, s5
+    lw      t3, 8(sp)           // hi
 .Ld_pt_outer:
-    bgt     t5, s5, .Ld_done
+    bgt     t5, t3, .Ld_done
     neg     t6, s5
 .Ld_pt_inner:
-    bgt     t6, s5, .Ld_pt_next_outer
+    bgt     t6, t3, .Ld_pt_next_outer
     lw      a0, 0(sp)
     lw      a1, 4(sp)
     add     a0, a0, t6
@@ -397,35 +412,52 @@ overlay_fast_draw_line_asm:
     srai    t0, s7, 8           // t0 = y_int
     andi    t1, s7, 0xFF        // t1 = frac
 
-    // ----- Top AA edge: alpha = brightness*(255-frac)>>8 -----
+    // hi==0 → Wu thin; hi>0 → solid block
+    lw      t3, 8(sp)           // hi
+    bnez    t3, .Ld_solid
+
+    // ----- WU THIN (hi==0): AA at y_int, y_int+1 -----
     li      a2, 255
     sub     a2, a2, t1
     mul     a2, s6, a2
-    srli    a2, a2, 8           // a2 = alpha_top
-
-    sub     a1, t0, s5          // a1 = y_int - half_w  (py for non-steep)
-    beqz    s4, .Ld_top_ns
-    mv      a0, a1              // steep: px=y_top
+    srli    a2, a2, 8           // alpha_top = brightness*(255-frac)>>8
+    beqz    s4, .Ld_wutop_ns
+    mv      a0, t0              // steep: px=y_int
     mv      a1, s9              //        py=x
-    j       .Ld_top_draw
-.Ld_top_ns:
+    j       .Ld_wutop_draw
+.Ld_wutop_ns:
     mv      a0, s9              // px=x
-                                // a1 already = y_top
-.Ld_top_draw:
+    mv      a1, t0              // py=y_int
+.Ld_wutop_draw:
     DRAW_PIXEL
+    andi    t1, s7, 0xFF        // recompute frac (DRAW_PIXEL clobbers t1 via t0)
+    beqz    t1, .Ld_bot_skip
+    mul     a2, s6, t1
+    srli    a2, a2, 8           // alpha_bot
+    srai    t0, s7, 8           // recompute y_int
+    addi    a1, t0, 1           // y_int + 1
+    beqz    s4, .Ld_wubot_ns
+    mv      a0, a1
+    mv      a1, s9
+    j       .Ld_wubot_draw
+.Ld_wubot_ns:
+    mv      a0, s9
+    // a1 = y_int+1 already
+.Ld_wubot_draw:
+    DRAW_PIXEL
+    j       .Ld_bot_skip
 
-    // ----- Core pixels: y_int-half_w+1 .. y_int+half_w, alpha=brightness -----
-    // Recompute y_int from s7 (DRAW_PIXEL clobbered t0)
-    srai    t0, s7, 8           // t0 = y_int
-    sub     a7, t0, s5
-    addi    a7, a7, 1           // a7 = core_y_start
-    add     t2, t0, s5          // t2 = core_y_end  (recompute after each pixel)
-    mv      a2, s6              // alpha = brightness (constant for core)
+    // ----- SOLID BLOCK (hi>0): exactly thickness pixels, no AA -----
+.Ld_solid:
+    srai    t0, s7, 8           // y_int (recompute after potential clobber)
+    sub     a7, t0, s5          // a7 = c = y_int - lo
+    add     t3, t0, t3          // t3 = end = y_int + hi (t3 was hi)
+    mv      a2, s6
 
 .Ld_core_loop:
-    // Recompute end (t2 clobbered by DRAW_PIXEL)
-    srai    t2, s7, 8
-    add     t2, t2, s5          // core_y_end = y_int + half_w
+    lw      t2, 8(sp)           // hi
+    srai    t0, s7, 8
+    add     t2, t0, t2          // recompute end (= y_int + hi)
     bgt     a7, t2, .Ld_core_done
     beqz    s4, .Ld_core_ns
     mv      a0, a7              // steep: px=c
@@ -435,29 +467,10 @@ overlay_fast_draw_line_asm:
     mv      a0, s9              // px=x
     mv      a1, a7              // py=c
 .Ld_core_draw:
-    DRAW_PIXEL                  // clobbers t0-t6, a3-a6; preserves a7, s*
-    addi    a7, a7, 1           // c++
+    DRAW_PIXEL
+    addi    a7, a7, 1
     j       .Ld_core_loop
 .Ld_core_done:
-
-    // ----- Bottom AA edge: alpha = brightness*frac>>8, skip if frac==0 -----
-    andi    t1, s7, 0xFF        // recompute frac from s7
-    beqz    t1, .Ld_bot_skip
-    mul     a2, s6, t1
-    srli    a2, a2, 8           // a2 = alpha_bot
-
-    srai    t0, s7, 8           // y_int
-    add     a1, t0, s5
-    addi    a1, a1, 1           // a1 = y_int + half_w + 1
-    beqz    s4, .Ld_bot_ns
-    mv      a0, a1              // steep: px=y_bot
-    mv      a1, s9              //        py=x
-    j       .Ld_bot_draw
-.Ld_bot_ns:
-    mv      a0, s9              // px=x
-                                // a1 already = y_bot
-.Ld_bot_draw:
-    DRAW_PIXEL
 
 .Ld_bot_skip:
     add     s7, s7, s8          // y_fp += grad

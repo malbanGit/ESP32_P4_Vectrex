@@ -179,10 +179,11 @@ IRAM_ATTR inline static void draw_line_core_no_aa(int x0, int y0, int x1, int y1
     int err = dx / 2;
     int y   = y0;
 
-    int half_w = g_line_width > 1 ? (g_line_width - 1) / 2 : 0;
+    int lo = g_line_width > 0 ? (g_line_width - 1) >> 1 : 0;
+    int hi = g_line_width > 0 ? g_line_width >> 1 : 0;
 
     for (int x = x0; x <= x1; ++x) {
-        for (int o = -half_w; o <= half_w; ++o) {
+        for (int o = -lo; o <= hi; ++o) {
             int px, py;
             if (steep) {
                 px = y + o;
@@ -311,8 +312,8 @@ IRAM_ATTR inline static void draw_line_core_aa_thick(int x0, int y0, int x1, int
         grad = -grad;
     }
 
-    // thickness
-    int half_w = g_line_width > 1 ? (g_line_width - 1) / 2 : 0;
+    int lo = g_line_width > 0 ? (g_line_width - 1) >> 1 : 0;
+    int hi = g_line_width > 0 ? g_line_width >> 1 : 0;
 
     for (int x = x0; x <= x1; ++x) {
         int y_int   = (int)(y_fp >> 8);
@@ -324,15 +325,15 @@ IRAM_ATTR inline static void draw_line_core_aa_thick(int x0, int y0, int x1, int
         uint16_t c1 = brightness_to_color_scaled(brightness, w1);
         uint16_t c2 = brightness_to_color_scaled(brightness, w2);
 
-        // Draw "vertical" stripe of thickness around the center, AA on the edge
-        for (int o = -half_w; o <= half_w; ++o) {
-            if (steep) {
-                // original coords were swapped → (y, x)
-                put_pixel(y_int + o,     x, c1);
-                put_pixel(y_int + o + 1, x, c2);
-            } else {
-                put_pixel(x, y_int + o,     c1);
-                put_pixel(x, y_int + o + 1, c2);
+        if (hi == 0) {
+            // Wu thin: two AA pixels
+            if (steep) { put_pixel(y_int, x, c1); put_pixel(y_int + 1, x, c2); }
+            else        { put_pixel(x, y_int, c1); put_pixel(x, y_int + 1, c2); }
+        } else {
+            // Solid block: thickness pixels, no AA fringes
+            for (int o = -lo; o <= hi; ++o) {
+                if (steep) put_pixel(y_int + o, x, brightness_to_color_scaled(brightness, 255));
+                else       put_pixel(x, y_int + o, brightness_to_color_scaled(brightness, 255));
             }
         }
 

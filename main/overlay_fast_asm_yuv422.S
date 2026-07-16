@@ -123,32 +123,35 @@
 //                                          int x1, int y1,                 // a4 a5
 //                                          int thickness);                  // a6
 //
-// Frame: 48 bytes  — ra + s0-s8
-// s0=fb  s1=fw  s2=dimmed  s3=steep  s4=half_w
+// Frame: 52 bytes  — ra + s0-s9
+// s0=fb  s1=fw  s2=dimmed  s3=steep  s4=lo  s9=hi
 // s5=x   s6=x1  s7=y_fp    s8=grad
 // ===========================================================================
     .global overlay_fast_erase_line_asm_yuv422
     .type   overlay_fast_erase_line_asm_yuv422, @function
 overlay_fast_erase_line_asm_yuv422:
-    addi    sp, sp, -48
-    sw      ra, 44(sp)
-    sw      s0, 40(sp)
-    sw      s1, 36(sp)
-    sw      s2, 32(sp)
-    sw      s3, 28(sp)
-    sw      s4, 24(sp)
-    sw      s5, 20(sp)
-    sw      s6, 16(sp)
-    sw      s7, 12(sp)
-    sw      s8,  8(sp)
+    addi    sp, sp, -52
+    sw      ra, 48(sp)
+    sw      s0, 44(sp)
+    sw      s1, 40(sp)
+    sw      s2, 36(sp)
+    sw      s3, 32(sp)
+    sw      s4, 28(sp)
+    sw      s5, 24(sp)
+    sw      s6, 20(sp)
+    sw      s7, 16(sp)
+    sw      s8, 12(sp)
+    sw      s9,  8(sp)
 
     lw      s2, 0(a0)       // dimmed
     lw      s1, 8(a0)       // fb_w
     mv      s0, a1          // fb
     li      s4, 0
+    li      s9, 0
     ble     a6, zero, .Leyuv_hw_ok
     addi    t0, a6, -1
-    srli    s4, t0, 1       // half_w = (thickness-1) >> 1
+    srli    s4, t0, 1       // lo = (thickness-1) >> 1
+    srli    s9, a6, 1       // hi = thickness >> 1
 .Leyuv_hw_ok:
 
     mv      t1, a2; mv t2, a3; mv t3, a4; mv t4, a5
@@ -181,10 +184,10 @@ overlay_fast_erase_line_asm_yuv422:
 .Leyuv_pt_d:
     neg     t5, s4
 .Leyuv_pt_oy:
-    bgt     t5, s4, .Leyuv_done
+    bgt     t5, s9, .Leyuv_done
     neg     t6, s4
 .Leyuv_pt_ox:
-    bgt     t6, s4, .Leyuv_pt_oy_next
+    bgt     t6, s9, .Leyuv_pt_oy_next
     sw      a0, 4(sp); sw a1, 0(sp)
     add     a0, a0, t6; add a1, a1, t5
     ERASE_PIXEL_YUV
@@ -205,9 +208,14 @@ overlay_fast_erase_line_asm_yuv422:
 
     srai    t0, s7, 8       // y_int
 
-    // Erase strip from y_int-half_w to y_int+half_w
-    sub     a1, t0, s4      // strip_y (loop counter; macro uses a1 as py)
-    add     t2, t0, s4      // strip end
+    // Erase the full strip that was drawn
+    sub     a1, t0, s4      // strip start = y_int - lo
+    bnez    s9, .Leyuv_hi_ok
+    addi    t2, t0, 1       // hi==0 (Wu): end = y_int + 1
+    j       .Leyuv_strip_start
+.Leyuv_hi_ok:
+    add     t2, t0, s9      // hi>0 (solid): end = y_int + hi
+.Leyuv_strip_start:
 
 .Leyuv_strip:
     bgt     a1, t2, .Leyuv_strip_done
@@ -233,17 +241,18 @@ overlay_fast_erase_line_asm_yuv422:
     j       .Leyuv_xloop
 
 .Leyuv_done:
-    lw      ra, 44(sp)
-    lw      s0, 40(sp)
-    lw      s1, 36(sp)
-    lw      s2, 32(sp)
-    lw      s3, 28(sp)
-    lw      s4, 24(sp)
-    lw      s5, 20(sp)
-    lw      s6, 16(sp)
-    lw      s7, 12(sp)
-    lw      s8,  8(sp)
-    addi    sp, sp, 48
+    lw      ra, 48(sp)
+    lw      s0, 44(sp)
+    lw      s1, 40(sp)
+    lw      s2, 36(sp)
+    lw      s3, 32(sp)
+    lw      s4, 28(sp)
+    lw      s5, 24(sp)
+    lw      s6, 20(sp)
+    lw      s7, 16(sp)
+    lw      s8, 12(sp)
+    lw      s9,  8(sp)
+    addi    sp, sp, 52
     ret
 
     .size overlay_fast_erase_line_asm_yuv422, . - overlay_fast_erase_line_asm_yuv422
@@ -287,9 +296,12 @@ overlay_fast_draw_line_asm_yuv422:
     mv      s0, a1          // fb
     mv      s6, a6          // brightness
     li      s5, 0
+    sw      zero, 0(sp)     // hi = 0 at 0(sp)
     ble     a7, zero, .Ldyuv_hw_ok
     addi    t0, a7, -1
-    srli    s5, t0, 1       // half_w = (thickness-1) >> 1
+    srli    s5, t0, 1       // lo = (thickness-1) >> 1
+    srli    t0, a7, 1       // hi = thickness >> 1
+    sw      t0, 0(sp)
 .Ldyuv_hw_ok:
 
     // anti_shine = clamp(255 - shine_through, 0, 255)
@@ -333,11 +345,12 @@ overlay_fast_draw_line_asm_yuv422:
     mv      a0, t1; mv a1, t2
 .Ldyuv_pt_d:
     neg     t5, s5
+    lw      t3, 0(sp)       // hi
 .Ldyuv_pt_oy:
-    bgt     t5, s5, .Ldyuv_done
+    bgt     t5, t3, .Ldyuv_done
     neg     t6, s5
 .Ldyuv_pt_ox:
-    bgt     t6, s5, .Ldyuv_pt_oy_next
+    bgt     t6, t3, .Ldyuv_pt_oy_next
     sw      a0, 8(sp); sw a1, 4(sp)
     add     a0, a0, t6; add a1, a1, t5
     mv      a2, s6
@@ -363,68 +376,72 @@ overlay_fast_draw_line_asm_yuv422:
     srai    t0, s7, 8       // y_int
     andi    t1, s7, 0xFF    // frac
 
-    // --- TOP AA EDGE ---
+    // hi==0 → Wu thin; hi>0 → solid block
+    lw      t3, 0(sp)       // hi
+    bnez    t3, .Ldyuv_solid
+
+    // --- WU THIN (hi==0) ---
     li      t2, 255
     sub     t2, t2, t1
     mul     t3, s6, t2
     srli    t3, t3, 8       // alpha_top
-
-    sub     a0, t0, s5      // ytop = y_int - half_w
     mv      a2, t3
-    beqz    s4, .Ldyuv_top_ns
+    beqz    s4, .Ldyuv_wutop_ns
+    mv      a0, t0          // steep: px=y_int, py=x
     mv      a1, s9
     DRAW_PIXEL_YUV
-    j       .Ldyuv_top_done
-.Ldyuv_top_ns:
-    mv      a1, a0
+    j       .Ldyuv_wubot
+.Ldyuv_wutop_ns:
+    mv      a0, s9          // px=x, py=y_int
+    mv      a1, t0
+    DRAW_PIXEL_YUV
+.Ldyuv_wubot:
+    srai    t0, s7, 8
+    andi    t1, s7, 0xFF
+    beqz    t1, .Ldyuv_bot_skip
+    mul     t3, s6, t1
+    srli    t3, t3, 8
+    mv      a2, t3
+    addi    a1, t0, 1       // y_int + 1
+    beqz    s4, .Ldyuv_wubot_ns
+    mv      a0, a1
+    mv      a1, s9
+    DRAW_PIXEL_YUV
+    j       .Ldyuv_bot_skip
+.Ldyuv_wubot_ns:
     mv      a0, s9
     DRAW_PIXEL_YUV
-.Ldyuv_top_done:
+    j       .Ldyuv_bot_skip
 
-    // --- CORE PIXELS ---
-    srai    t0, s7, 8       // recompute y_int
-    andi    t1, s7, 0xFF    // recompute frac
-    sub     a0, t0, s5
-    addi    a0, a0, 1       // core_start
-    add     a1, t0, s5      // core_end
+    // --- SOLID BLOCK (hi>0) ---
+.Ldyuv_solid:
+    srai    t0, s7, 8
+    sub     a0, t0, s5      // c = y_int - lo
+    // a1 = end computed per iteration
 
 .Ldyuv_core:
+    srai    t0, s7, 8
+    lw      t2, 0(sp)       // hi
+    add     a1, t0, t2      // end = y_int + hi
     bgt     a0, a1, .Ldyuv_core_done
     mv      a2, s6
     beqz    s4, .Ldyuv_core_ns
-    sw      a0, 8(sp); sw a1, 4(sp)
+    sw      a0, 8(sp)
     mv      a1, s9          // steep: px=core_y, py=x
     DRAW_PIXEL_YUV
-    lw      a0, 8(sp); lw a1, 4(sp)
+    lw      a0, 8(sp)
     addi    a0, a0, 1
     j       .Ldyuv_core
 .Ldyuv_core_ns:
-    sw      a0, 8(sp); sw a1, 4(sp)
+    sw      a0, 8(sp)
     mv      a1, a0
     mv      a0, s9          // non-steep: px=x, py=core_y
     DRAW_PIXEL_YUV
-    lw      a0, 8(sp); lw a1, 4(sp)
+    lw      a0, 8(sp)
     addi    a0, a0, 1
     j       .Ldyuv_core
 .Ldyuv_core_done:
 
-    // --- BOTTOM AA EDGE ---
-    beqz    t1, .Ldyuv_bot_skip
-    mul     t3, s6, t1
-    srli    t3, t3, 8       // alpha_bot
-
-    srai    t0, s7, 8
-    add     a0, t0, s5
-    addi    a0, a0, 1       // ybot = y_int + half_w + 1
-    mv      a2, t3
-    beqz    s4, .Ldyuv_bot_ns
-    mv      a1, s9
-    DRAW_PIXEL_YUV
-    j       .Ldyuv_bot_skip
-.Ldyuv_bot_ns:
-    mv      a1, a0
-    mv      a0, s9
-    DRAW_PIXEL_YUV
 .Ldyuv_bot_skip:
 
     add     s7, s7, s8

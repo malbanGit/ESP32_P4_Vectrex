@@ -122,35 +122,37 @@
 //                                          int x1, int y1,                 // a4 a5
 //                                          int thickness);                  // a6
 //
-// Frame: 48 bytes — ra + s0-s8 (10 × 4 = 40 bytes + 8 pad)
-// s0=fb  s1=fw  s2=dimmed  s3=steep  s4=half_w
+// Frame: 52 bytes — ra + s0-s9 (11 × 4 = 44 bytes + 8 pad)
+// s0=fb  s1=fw  s2=dimmed  s3=steep  s4=lo  s9=hi
 // s5=x   s6=x1  s7=y_fp    s8=grad
 // ===========================================================================
     .global overlay_fast_erase_line_asm_rgb888
     .type   overlay_fast_erase_line_asm_rgb888, @function
 overlay_fast_erase_line_asm_rgb888:
-    addi    sp, sp, -48
-    sw      ra, 44(sp)
-    sw      s0, 40(sp)
-    sw      s1, 36(sp)
-    sw      s2, 32(sp)
-    sw      s3, 28(sp)
-    sw      s4, 24(sp)
-    sw      s5, 20(sp)
-    sw      s6, 16(sp)
-    sw      s7, 12(sp)
-    sw      s8,  8(sp)
+    addi    sp, sp, -52
+    sw      ra, 48(sp)
+    sw      s0, 44(sp)
+    sw      s1, 40(sp)
+    sw      s2, 36(sp)
+    sw      s3, 32(sp)
+    sw      s4, 28(sp)
+    sw      s5, 24(sp)
+    sw      s6, 20(sp)
+    sw      s7, 16(sp)
+    sw      s8, 12(sp)
+    sw      s9,  8(sp)
 
     // Load from ctx
     lw      s2, 0(a0)       // dimmed
     lw      s1, 8(a0)       // fb_w
     mv      s0, a1          // fb
 
-    // thickness → half_w = max(0, (thickness-1)/2)
     li      s4, 0
+    li      s9, 0
     ble     a6, zero, .Le8_hw_ok
     addi    t0, a6, -1
-    srli    s4, t0, 1
+    srli    s4, t0, 1       // lo = (thickness-1) >> 1
+    srli    s9, a6, 1       // hi = thickness >> 1
 .Le8_hw_ok:
 
     // Load x0,y0,x1,y1
@@ -189,10 +191,10 @@ overlay_fast_erase_line_asm_rgb888:
 .Lerase8_pt_draw:
     neg     t5, s4
 .Lerase8_pt_outer:
-    bgt     t5, s4, .Lerase8_done
+    bgt     t5, s9, .Lerase8_done
     neg     t6, s4
 .Lerase8_pt_inner:
-    bgt     t6, s4, .Lerase8_pt_next
+    bgt     t6, s9, .Lerase8_pt_next
     add     a0_tmp, a0, t6          // use a2 as temp
     .set a0_tmp, a2
     add     a0_tmp, a0, t6
@@ -222,9 +224,14 @@ overlay_fast_erase_line_asm_rgb888:
 
     srai    t0, s7, 8       // y_int
 
-    // Erase full strip: y_int-half_w .. y_int+half_w (inclusive, idempotent)
-    sub     a1, t0, s4      // strip start
-    add     t2, t0, s4      // strip end
+    // Erase the full strip that was drawn
+    sub     a1, t0, s4      // strip start = y_int - lo
+    bnez    s9, .Lerase8_hi_ok
+    addi    t2, t0, 1       // hi==0 (Wu): end = y_int + 1
+    j       .Lerase8_strip_start
+.Lerase8_hi_ok:
+    add     t2, t0, s9      // hi>0 (solid): end = y_int + hi
+.Lerase8_strip_start:
 
 .Lerase8_strip:
     bgt     a1, t2, .Lerase8_strip_done
@@ -255,17 +262,18 @@ overlay_fast_erase_line_asm_rgb888:
     j       .Lerase8_xloop
 
 .Lerase8_done:
-    lw      ra, 44(sp)
-    lw      s0, 40(sp)
-    lw      s1, 36(sp)
-    lw      s2, 32(sp)
-    lw      s3, 28(sp)
-    lw      s4, 24(sp)
-    lw      s5, 20(sp)
-    lw      s6, 16(sp)
-    lw      s7, 12(sp)
-    lw      s8,  8(sp)
-    addi    sp, sp, 48
+    lw      ra, 48(sp)
+    lw      s0, 44(sp)
+    lw      s1, 40(sp)
+    lw      s2, 36(sp)
+    lw      s3, 32(sp)
+    lw      s4, 28(sp)
+    lw      s5, 24(sp)
+    lw      s6, 20(sp)
+    lw      s7, 16(sp)
+    lw      s8, 12(sp)
+    lw      s9,  8(sp)
+    addi    sp, sp, 52
     ret
 
     .size overlay_fast_erase_line_asm_rgb888, . - overlay_fast_erase_line_asm_rgb888
@@ -311,9 +319,12 @@ overlay_fast_draw_line_asm_rgb888:
 
     mv      s6, a6          // brightness
     li      s5, 0
+    sw      zero, 0(sp)     // hi = 0 at 0(sp)
     ble     a7, zero, .Ld8_hw_ok
     addi    t0, a7, -1
-    srli    s5, t0, 1       // half_w = (thickness-1) >> 1
+    srli    s5, t0, 1       // lo = (thickness-1) >> 1
+    srli    t0, a7, 1       // hi = thickness >> 1
+    sw      t0, 0(sp)
 .Ld8_hw_ok:
 
     // anti_shine = 255 - shine_through
@@ -364,11 +375,12 @@ overlay_fast_draw_line_asm_rgb888:
     mv      a0, t1; mv a1, t2
 .Ldraw8_pt_draw:
     neg     t5, s5
+    lw      t3, 0(sp)       // hi
 .Ldraw8_pt_outer:
-    bgt     t5, s5, .Ldraw8_done
+    bgt     t5, t3, .Ldraw8_done
     neg     t6, s5
 .Ldraw8_pt_inner:
-    bgt     t6, s5, .Ldraw8_pt_next
+    bgt     t6, t3, .Ldraw8_pt_next
     // save base coords, compute offset
     sw      a0,  8(sp)
     sw      a1,  4(sp)
@@ -398,71 +410,76 @@ overlay_fast_draw_line_asm_rgb888:
     srai    t0, s7, 8       // y_int = y_fp >> 8
     andi    t1, s7, 0xFF    // frac
 
-    // --- TOP AA EDGE ---
+    // hi==0 → Wu thin; hi>0 → solid block
+    lw      t3, 0(sp)       // hi
+    bnez    t3, .Ldraw8_solid
+
+    // --- WU THIN (hi==0) ---
     li      t2, 255
     sub     t2, t2, t1      // 255 - frac
     mul     t3, s6, t2
     srli    t3, t3, 8       // alpha_top
-
-    sub     a0, t0, s5      // ytop = y_int - half_w
     mv      a2, t3
-    beqz    s4, .Ldraw8_top_ns
-    mv      a1, s9          // steep: px=ytop, py=x
-    DRAW_PIXEL_888
-    j       .Ldraw8_top_done
-.Ldraw8_top_ns:
-    mv      a0, s9          // non-steep: px=x, py=ytop → swap
-    srai    t0, s7, 8       // recompute y_int (DRAW_PIXEL_888 may clobber t0)
-    sub     a1, t0, s5
-    DRAW_PIXEL_888
-.Ldraw8_top_done:
-
-    // --- CORE PIXELS ---
-    srai    t0, s7, 8       // y_int
-    andi    t1, s7, 0xFF    // frac (recompute since t1 may be clobbered)
-    sub     a0, t0, s5
-    addi    a0, a0, 1       // core_start
-    add     a1, t0, s5      // core_end
-
-.Ldraw8_core:
-    bgt     a0, a1, .Ldraw8_core_done
-    mv      a2, s6
-    beqz    s4, .Ldraw8_core_ns
-    // steep: px=a0(core_y), py=s9(x)
-    sw      a0, 8(sp); sw a1, 4(sp)
+    beqz    s4, .Ldraw8_wutop_ns
+    mv      a0, t0          // steep: px=y_int, py=x
     mv      a1, s9
     DRAW_PIXEL_888
-    lw      a0, 8(sp); lw a1, 4(sp)
-    addi    a0, a0, 1
-    j       .Ldraw8_core
-.Ldraw8_core_ns:
-    // non-steep: px=s9(x), py=a0(core_y)
-    sw      a0, 8(sp); sw a1, 4(sp)
+    j       .Ldraw8_wubot
+.Ldraw8_wutop_ns:
+    mv      a0, s9          // px=x, py=y_int
+    mv      a1, t0
+    DRAW_PIXEL_888
+.Ldraw8_wubot:
+    srai    t0, s7, 8       // recompute y_int
+    andi    t1, s7, 0xFF    // recompute frac
+    beqz    t1, .Ldraw8_bot_skip
+    mul     t3, s6, t1
+    srli    t3, t3, 8
+    mv      a2, t3
+    addi    a0, t0, 1       // y_int + 1
+    beqz    s4, .Ldraw8_wubot_ns
+    mv      a1, s9
+    DRAW_PIXEL_888
+    j       .Ldraw8_bot_skip
+.Ldraw8_wubot_ns:
     mv      a1, a0
     mv      a0, s9
     DRAW_PIXEL_888
-    lw      a0, 8(sp); lw a1, 4(sp)
+    j       .Ldraw8_bot_skip
+
+    // --- SOLID BLOCK (hi>0) ---
+.Ldraw8_solid:
+    srai    t0, s7, 8       // y_int
+    sub     a0, t0, s5      // c = y_int - lo
+    lw      a1, 0(sp)       // hi
+    add     a1, t0, a1      // end = y_int + hi
+
+.Ldraw8_core:
+    // recompute end each iteration (a1 clobbered by DRAW_PIXEL_888)
+    sw      a0, 8(sp)
+    srai    t0, s7, 8
+    lw      t2, 0(sp)       // hi
+    add     a1, t0, t2      // end = y_int + hi
+    lw      a0, 8(sp)
+    bgt     a0, a1, .Ldraw8_core_done
+    mv      a2, s6
+    beqz    s4, .Ldraw8_core_ns
+    sw      a0, 8(sp)
+    mv      a1, s9
+    DRAW_PIXEL_888
+    lw      a0, 8(sp)
+    addi    a0, a0, 1
+    j       .Ldraw8_core
+.Ldraw8_core_ns:
+    sw      a0, 8(sp)
+    mv      a1, a0
+    mv      a0, s9
+    DRAW_PIXEL_888
+    lw      a0, 8(sp)
     addi    a0, a0, 1
     j       .Ldraw8_core
 .Ldraw8_core_done:
 
-    // --- BOTTOM AA EDGE ---
-    beqz    t1, .Ldraw8_bot_skip
-    mul     t3, s6, t1
-    srli    t3, t3, 8       // alpha_bot
-
-    srai    t0, s7, 8
-    add     a0, t0, s5
-    addi    a0, a0, 1       // ybot = y_int + half_w + 1
-    mv      a2, t3
-    beqz    s4, .Ldraw8_bot_ns
-    mv      a1, s9
-    DRAW_PIXEL_888
-    j       .Ldraw8_bot_skip
-.Ldraw8_bot_ns:
-    mv      a1, a0
-    mv      a0, s9
-    DRAW_PIXEL_888
 .Ldraw8_bot_skip:
 
     add     s7, s7, s8      // y_fp += grad

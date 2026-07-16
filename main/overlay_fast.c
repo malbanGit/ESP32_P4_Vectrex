@@ -176,7 +176,8 @@ static IRAM_ATTR void rasterise(
     const uint16_t *overlay = ctx->overlay;
     int fw = ctx->fb_w;
     int fh = ctx->fb_h;
-    int half_w = thickness > 1 ? (thickness - 1) >> 1 : 0;
+    int lo = thickness > 0 ? (thickness - 1) >> 1 : 0;
+    int hi = thickness > 0 ? thickness >> 1 : 0;
 
     // ---- steep detection ----
     int adx = x1 - x0; if (adx < 0) adx = -adx;
@@ -206,8 +207,8 @@ static IRAM_ATTR void rasterise(
     if (dx == 0) {
         int sx = steep ? y0 : x0;
         int sy = steep ? x0 : y0;
-        for (int oy = -half_w; oy <= half_w; oy++)
-            for (int ox = -half_w; ox <= half_w; ox++)
+        for (int oy = -lo; oy <= hi; oy++)
+            for (int ox = -lo; ox <= hi; ox++)
                 DISPATCH(sx + ox, sy + oy, brightness);
         return;
     }
@@ -220,24 +221,22 @@ static IRAM_ATTR void rasterise(
         int y_int = (int)(y_fp >> 8);
         int frac  = (int)(y_fp & 0xFF);
 
-        // Top AA edge
-        int alpha_top = (brightness * (255 - frac)) >> 8;
-        int ytop = y_int - half_w;
-        if (steep) DISPATCH(ytop, x, alpha_top);
-        else       DISPATCH(x, ytop, alpha_top);
-
-        // Solid core pixels (full brightness)
-        for (int c = y_int - half_w + 1; c <= y_int + half_w; c++) {
-            if (steep) DISPATCH(c, x, brightness);
-            else       DISPATCH(x, c, brightness);
-        }
-
-        // Bottom AA edge (skip at frac==0 — zero coverage)
-        if (frac) {
-            int alpha_bot = (brightness * frac) >> 8;
-            int ybot = y_int + half_w + 1;
-            if (steep) DISPATCH(ybot, x, alpha_bot);
-            else       DISPATCH(x, ybot, alpha_bot);
+        if (hi == 0) {
+            // Wu thin line: AA top at y_int, AA bottom at y_int+1
+            int alpha_top = (brightness * (255 - frac)) >> 8;
+            if (steep) DISPATCH(y_int, x, alpha_top);
+            else       DISPATCH(x, y_int, alpha_top);
+            if (frac) {
+                int alpha_bot = (brightness * frac) >> 8;
+                if (steep) DISPATCH(y_int + 1, x, alpha_bot);
+                else       DISPATCH(x, y_int + 1, alpha_bot);
+            }
+        } else {
+            // Solid: exactly thickness pixels, no AA fringes
+            for (int c = y_int - lo; c <= y_int + hi; c++) {
+                if (steep) DISPATCH(c, x, brightness);
+                else       DISPATCH(x, c, brightness);
+            }
         }
     }
 

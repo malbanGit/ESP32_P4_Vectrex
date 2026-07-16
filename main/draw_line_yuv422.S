@@ -64,7 +64,7 @@ draw_line_asm_yuv422:
     sw      s10, 12(sp)
     sw      s11,  8(sp)
 
-    // s0=fb, s1=fw, s2=fh, s3=steep, s4=half_w, s5=brightness
+    // s0=fb, s1=fw, s2=fh, s3=steep, s4=lo, s10=hi, s5=brightness
     // s6=y_fp(Q8), s7=grad, s8=x, s9=x1
 
     mv      s0, a0
@@ -74,9 +74,11 @@ draw_line_asm_yuv422:
 
     lw      t0, 60(sp)
     li      s4, 0
+    li      s10, 0
     ble     t0, zero, .Lthickyuv_ok
-    addi    t0, t0, -1
-    srli    s4, t0, 1
+    addi    t1, t0, -1
+    srli    s4, t1, 1       // lo = (thickness-1) >> 1
+    srli    s10, t0, 1      // hi = thickness >> 1
 .Lthickyuv_ok:
 
     mv      t1, a3
@@ -118,10 +120,10 @@ draw_line_asm_yuv422:
 .Lpyuv_draw:
     neg     t5, s4
 .Lpyuv_outer:
-    bgt     t5, s4, .Lyuvdone
+    bgt     t5, s10, .Lyuvdone
     neg     t6, s4
 .Lpyuv_inner:
-    bgt     t6, s4, .Lpyuv_next
+    bgt     t6, s10, .Lpyuv_next
     add     a2, a0, t6
     add     a3, a1, t5
     PUT_PIXEL_YUV s0, s1, s2, a2, a3, s5, a4, a5
@@ -143,27 +145,37 @@ draw_line_asm_yuv422:
     srai    t0, s6, 8
     andi    t1, s6, 0xFF
 
-    // --- TOP AA EDGE ---
+    // hi==0 → Wu thin; hi>0 → solid block
+    bnez    s10, .Lsolidyuv
+
+    // --- WU THIN (hi==0) ---
     li      t2, 255
     sub     t2, t2, t1
     mul     t3, s5, t2
     srli    t3, t3, 8
-
-    sub     a0, t0, s4
-    beqz    s3, .Ltopyuv_nosteep
+    beqz    s3, .Lwutopyuv_nosteep
+    PUT_PIXEL_YUV s0, s1, s2, t0, s8, t3, a3, a4
+    j       .Lwubotyuv
+.Lwutopyuv_nosteep:
+    PUT_PIXEL_YUV s0, s1, s2, s8, t0, t3, a3, a4
+.Lwubotyuv:
+    beqz    t1, .Lbotyuv_skip
+    mul     t3, s5, t1
+    srli    t3, t3, 8
+    addi    a0, t0, 1
+    beqz    s3, .Lwubotyuv_nosteep
     PUT_PIXEL_YUV s0, s1, s2, a0, s8, t3, a3, a4
-    j       .Ltopyuv_done
-.Ltopyuv_nosteep:
+    j       .Lbotyuv_skip
+.Lwubotyuv_nosteep:
     PUT_PIXEL_YUV s0, s1, s2, s8, a0, t3, a3, a4
-.Ltopyuv_done:
+    j       .Lbotyuv_skip
 
-    // --- CORE PIXELS ---
-    sub     a0, t0, s4
-    addi    a0, a0, 1
-    add     a1, t0, s4
-
+    // --- SOLID BLOCK (hi>0) ---
+.Lsolidyuv:
+    sub     a0, t0, s4      // c = y_int - lo
+    add     a1, t0, s10     // end = y_int + hi
 .Lcoreyuv_loop:
-    bgt     a0, a1, .Lcoreyuv_done
+    bgt     a0, a1, .Lbotyuv_skip
     beqz    s3, .Lcoreyuv_nosteep
     PUT_PIXEL_YUV s0, s1, s2, a0, s8, s5, a4, a5
     j       .Lcoreyuv_next
@@ -172,20 +184,7 @@ draw_line_asm_yuv422:
 .Lcoreyuv_next:
     addi    a0, a0, 1
     j       .Lcoreyuv_loop
-.Lcoreyuv_done:
 
-    // --- BOTTOM AA EDGE ---
-    beqz    t1, .Lbotyuv_skip
-    mul     t3, s5, t1
-    srli    t3, t3, 8
-
-    add     a0, t0, s4
-    addi    a0, a0, 1
-    beqz    s3, .Lbotyuv_nosteep
-    PUT_PIXEL_YUV s0, s1, s2, a0, s8, t3, a3, a4
-    j       .Lbotyuv_skip
-.Lbotyuv_nosteep:
-    PUT_PIXEL_YUV s0, s1, s2, s8, a0, t3, a3, a4
 .Lbotyuv_skip:
 
     add     s6, s6, s7
