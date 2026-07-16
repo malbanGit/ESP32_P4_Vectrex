@@ -1,29 +1,35 @@
 /* Distance-field CRT vector line renderer for RGB888 framebuffers.
  *
- * Algorithm (per ChatGPT recommendation):
- *   For each pixel in bounding box:
- *     1. Project pixel onto segment, clamp t to [0,1] → closest point
- *     2. Compute d² to closest point (sub-pixel Q8 precision)
- *     3. Beam core (d ≤ beam_r): contrib = brightness (full)
- *        Glow fringe (d > beam_r): contrib = brightness * gauss(glow_d²)
- *     4. Additive saturating write: pixel = min(255, pixel + contrib)
+ * For each pixel in bounding box:
+ *   1. Project onto segment (Q8 fixed-point, no sqrt) → closest point
+ *   2. Compute d² to closest point with sub-pixel precision
+ *   3. Beam core (d ≤ beam_r): contrib = brightness
+ *      Glow fringe (d > beam_r): contrib = brightness × Gaussian(glow_d²)
+ *   4. Additive saturating write: pixel = min(255, pixel + contrib)
  *
- * Round caps are free: the segment projection formula naturally handles
- * endpoints as circle caps.
+ * Round caps are free from the segment-projection formula.
+ * undraw: memset-zeros the expanded bounding box.
  *
- * undraw: zero the entire expanded bounding box (no per-pixel tracking).
+ * 'glow' parameter controls the glow radius in pixels beyond the beam edge.
+ * Gaussian is normalised so it decays to ~1/255 at exactly glow pixels out.
+ * glow=0 → hard beam, no fringe.  glow=2 is a good default for thin lines.
  */
 
 #include <stdint.h>
 #include <string.h>
 #include "draw_line_rgb888.h"
 
-/* Gaussian glow LUT.
- * gauss_lut[i] = round(255 * exp(-i / 32))
- * Indexed by:  (glow_d2_q16 >> 14)
- *   where glow_d2_q16 = (distance_beyond_beam_edge)² in Q16 pixel² units.
- * Step size: 2^14 = 16384 Q16 units = 0.25 pixel².
- * Effective sigma = 2 pixels (2·σ² = 8 px² → index-scale = 8·65536/16384 = 32).
+/* Default glow radius used by the wrapper functions (overlay_line_rgb888.c etc.)
+ * when they call draw_line_asm_rgb888 without a glow argument.
+ * Override from main.c or elsewhere:  g_line_glow = 3;
+ */
+int g_line_glow = 2;
+
+/* Gaussian LUT: gauss_lut[i] = round(255 * exp(-i / 32))
+ * Indexed by: (glow_d2_q16 * gauss_scale) >> (GAUSS_SHIFT + 16)
+ * where gauss_scale is chosen per glow_r so the curve spans the full LUT.
+ * Step size of LUT (in glow distance²) = 1/(gauss_scale/2^GAUSS_SHIFT) pixel².
+ * See draw_gauss_scale() for how gauss_scale is computed at call time.
  */
 #define GAUSS_SHIFT 14
 #define GAUSS_LUT_SIZE 178
@@ -43,24 +49,38 @@ static const uint8_t gauss_lut[GAUSS_LUT_SIZE] = {
       1,   1,
 };
 
-/* Glow radius beyond beam edge (pixels). Total reach = beam_r + GLOW_R. */
-#define GLOW_R 5
-
 static inline int iclamp(int v, int lo, int hi)
 {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+/* Compute LUT scale factor so that glow_d² = glow_r² maps to lut index ~177.
+ * gauss_scale * glow_r2_q16 >> GAUSS_SHIFT == 177
+ * gauss_scale = 177 << GAUSS_SHIFT / glow_r2_q16
+ * We use a precomputed shift of glow_r²: glow_r2_q16 = glow_r² * 65536
+ * → gauss_scale = 177 * 65536 / (glow_r² * 65536 >> GAUSS_SHIFT)
+ *               = 177 << GAUSS_SHIFT / glow_r²
+ */
+static inline int gauss_scale(int glow_r)
+{
+    int gr2 = glow_r * glow_r;
+    if (gr2 == 0) return 0;
+    return (177 << GAUSS_SHIFT) / gr2;
+}
+
 __attribute__((section(".iram0.text")))
 void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                            int x0, int y0, int x1, int y1,
-                           int brightness, int thickness)
+                           int brightness, int thickness, int glow)
 {
     if (!fb || fb_w <= 0 || fb_h <= 0 || brightness <= 0) return;
+    if (glow < 0) glow = 0;
 
-    /* beam radius: half of thickness, rounded up */
-    int beam_r = (thickness + 1) >> 1;
-    int R = beam_r + GLOW_R;
+    /* beam radius in pixels: floor(thickness/2).
+     * thickness=1 → beam_r=0 (single-pixel spine, Gaussian starts from centre).
+     * thickness=2 → beam_r=1 (2-pixel solid core). */
+    int beam_r = thickness >> 1;
+    int R      = beam_r + glow;
 
     /* expanded bounding box, clamped to framebuffer */
     int bx0 = iclamp((x0 < x1 ? x0 : x1) - R, 0, fb_w - 1);
@@ -68,12 +88,15 @@ void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
     int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
 
-    int dx = x1 - x0, dy = y1 - y0;
-    int len2 = dx * dx + dy * dy;  /* max ~(1920²+1080²) ≈ 4.8M — fits int32 */
+    int dx   = x1 - x0, dy = y1 - y0;
+    int len2 = dx * dx + dy * dy;
 
-    /* beam_r in Q8 subpixel units (for d² comparison in Q16) */
-    int beam_r_q8  = beam_r << 8;                  /* beam_r * 256            */
-    int beam_r2_q16 = beam_r_q8 * beam_r_q8;       /* beam_r² in Q16 units    */
+    /* beam core threshold in Q16 subpixel-squared units */
+    int beam_r_q8   = beam_r << 8;
+    int beam_r2_q16 = beam_r_q8 * beam_r_q8;
+
+    /* Gaussian scale factor: maps glow_d2_q16 to LUT index */
+    int gs = gauss_scale(glow);  /* 0 when glow==0 */
 
     for (int py = by0; py <= by1; py++) {
         uint8_t *row = fb + (py * fb_w) * 3;
@@ -81,48 +104,41 @@ void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
             int32_t d2_q16;
 
             if (len2 == 0) {
-                /* degenerate: segment is a dot */
                 int ex_q8 = (px - x0) << 8;
                 int ey_q8 = (py - y0) << 8;
                 d2_q16 = (int32_t)ex_q8 * ex_q8 + (int32_t)ey_q8 * ey_q8;
             } else {
-                /* t = dot(AP, AB) / len2, clamped to [0, 1]
-                 * We compute t in Q8: t_q8 = clamp(dot * 256 / len2, 0, 256)
-                 * dot max ≈ 1920*1920 ≈ 3.7M; *256 ≈ 950M → fits int32 for
-                 * screen sizes ≤ 1920. For safety we clamp before multiply. */
                 int apx = px - x0, apy = py - y0;
                 int dot = apx * dx + apy * dy;
                 int t_q8;
-                if (dot <= 0)    t_q8 = 0;
+                if (dot <= 0)         t_q8 = 0;
                 else if (dot >= len2) t_q8 = 256;
-                else             t_q8 = (dot * 256) / len2;
+                else                  t_q8 = (dot * 256) / len2;
 
-                /* closest point in Q8 subpixel coords */
                 int cx_q8 = (x0 << 8) + t_q8 * dx;
                 int cy_q8 = (y0 << 8) + t_q8 * dy;
-
                 int ex_q8 = (px << 8) - cx_q8;
                 int ey_q8 = (py << 8) - cy_q8;
-                /* |ex_q8| ≤ (GLOW_R+1)*256 = 1536 → ex_q8² ≤ ~2.36M → sum ≤ ~4.7M: fits int32 */
                 d2_q16 = (int32_t)ex_q8 * ex_q8 + (int32_t)ey_q8 * ey_q8;
             }
 
             int contrib;
             if (d2_q16 <= beam_r2_q16) {
-                /* inside beam core: full brightness */
                 contrib = brightness;
             } else {
-                /* glow fringe: look up Gaussian */
+                if (gs == 0) continue;  /* glow disabled */
                 int32_t glow_d2_q16 = d2_q16 - beam_r2_q16;
-                int lut_idx = (int)(glow_d2_q16 >> GAUSS_SHIFT);
+                /* lut_idx = glow_d2_q16 * gs >> (GAUSS_SHIFT + 16)
+                 * Use 64-bit: glow_d2_q16 max ≈ (6*256)² = 2.36M; gs max ≈ 11534
+                 * product ≤ ~27B → needs int64 */
+                int lut_idx = (int)(((int64_t)glow_d2_q16 * gs) >> (GAUSS_SHIFT + 16));
                 if (lut_idx >= GAUSS_LUT_SIZE) continue;
                 contrib = (brightness * gauss_lut[lut_idx]) >> 8;
                 if (contrib == 0) continue;
             }
 
-            /* additive saturating write: R = G = B (white beam) */
             int off = px * 3;
-            int v = row[off] + contrib;
+            int v   = row[off] + contrib;
             uint8_t cv = v > 255 ? 255 : (uint8_t)v;
             row[off]   = cv;
             row[off+1] = cv;
@@ -134,13 +150,14 @@ void draw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
 __attribute__((section(".iram0.text")))
 void undraw_line_asm_rgb888(uint8_t *fb, int fb_w, int fb_h,
                              int x0, int y0, int x1, int y1,
-                             int brightness, int thickness)
+                             int brightness, int thickness, int glow)
 {
     (void)brightness;
     if (!fb || fb_w <= 0 || fb_h <= 0) return;
+    if (glow < 0) glow = 0;
 
-    int beam_r = (thickness + 1) >> 1;
-    int R = beam_r + GLOW_R;
+    int beam_r = thickness >> 1;
+    int R      = beam_r + glow;
 
     int bx0 = iclamp((x0 < x1 ? x0 : x1) - R, 0, fb_w - 1);
     int bx1 = iclamp((x0 > x1 ? x0 : x1) + R, 0, fb_w - 1);
