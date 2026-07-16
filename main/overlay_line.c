@@ -109,7 +109,7 @@ static IRAM_ATTR void rasterise_line(
         const uint16_t *overlay, int shine_through,
         put_pixel_fn put)
 {
-    int half_w = thickness > 0 ? thickness >> 1 : 0;
+    int half_w = thickness > 1 ? (thickness - 1) >> 1 : 0;
 
     // Steep detection
     int adx = x1 - x0; if (adx < 0) adx = -adx;

@@ -179,7 +179,7 @@ IRAM_ATTR inline static void draw_line_core_no_aa(int x0, int y0, int x1, int y1
     int err = dx / 2;
     int y   = y0;
 
-    int half_w = (g_line_width > 0 ? g_line_width : 1) / 2;
+    int half_w = g_line_width > 1 ? (g_line_width - 1) / 2 : 0;
 
     for (int x = x0; x <= x1; ++x) {
         for (int o = -half_w; o <= half_w; ++o) {
@@ -312,7 +312,7 @@ IRAM_ATTR inline static void draw_line_core_aa_thick(int x0, int y0, int x1, int
     }
 
     // thickness
-    int half_w = (g_line_width > 0 ? g_line_width : 1) / 2;
+    int half_w = g_line_width > 1 ? (g_line_width - 1) / 2 : 0;
 
     for (int x = x0; x <= x1; ++x) {
         int y_int   = (int)(y_fp >> 8);

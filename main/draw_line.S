@@ -109,13 +109,10 @@ draw_line_asm:
     mv      s5, a7          // brightness
 
     lw      t0, 60(sp)      // thickness (9th arg, on caller stack)
-    // half_w = thickness / 2  (matches existing C: half_w = g_line_width / 2)
-    // thickness=1 → half_w=0 (pure Wu 1-px), thickness=3 → half_w=1, etc.
-    blt     t0, zero, .Lthick_clamp
-    srli    s4, t0, 1       // s4 = thickness >> 1
-    j       .Lthick_ok
-.Lthick_clamp:
     li      s4, 0
+    ble     t0, zero, .Lthick_ok
+    addi    t0, t0, -1
+    srli    s4, t0, 1       // s4 = (thickness-1) >> 1
 .Lthick_ok:
 
     // ----- PRECOMPUTE color_full = brightness_to_rgb565(brightness) ---------

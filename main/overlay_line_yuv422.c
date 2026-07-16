@@ -116,7 +116,7 @@ static IRAM_ATTR void rasterise_line_yuv422(
         const uint8_t *overlay, int shine_through,
         put_pixel_fn_yuv422 put)
 {
-    int half_w = thickness > 0 ? thickness >> 1 : 0;
+    int half_w = thickness > 1 ? (thickness - 1) >> 1 : 0;
 
     int adx = x1 - x0; if (adx < 0) adx = -adx;
     int ady = y1 - y0; if (ady < 0) ady = -ady;

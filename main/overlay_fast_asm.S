@@ -169,7 +169,11 @@ overlay_fast_erase_line_asm:
     mv      s0, a1
     lw      s1, 8(a0)           // fb_w
     lw      s2, 0(a0)           // dimmed
-    srli    s4, a6, 1           // half_w = thickness >> 1
+    li      s4, 0
+    ble     a6, zero, .Le_hw_ok
+    addi    t0, a6, -1
+    srli    s4, t0, 1           // half_w = (thickness-1) >> 1
+.Le_hw_ok:
 
     // Steep detection
     sub     t0, a4, a2          // dx

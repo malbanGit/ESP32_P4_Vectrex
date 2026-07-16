@@ -146,8 +146,12 @@ overlay_fast_erase_line_asm_rgb888:
     lw      s1, 8(a0)       // fb_w
     mv      s0, a1          // fb
 
-    // thickness → half_w
-    srli    s4, a6, 1
+    // thickness → half_w = max(0, (thickness-1)/2)
+    li      s4, 0
+    ble     a6, zero, .Le8_hw_ok
+    addi    t0, a6, -1
+    srli    s4, t0, 1
+.Le8_hw_ok:
 
     // Load x0,y0,x1,y1
     mv      t1, a2; mv t2, a3; mv t3, a4; mv t4, a5
@@ -306,7 +310,11 @@ overlay_fast_draw_line_asm_rgb888:
     mv      s0, a1          // fb
 
     mv      s6, a6          // brightness
-    srli    s5, a7, 1       // half_w = thickness >> 1
+    li      s5, 0
+    ble     a7, zero, .Ld8_hw_ok
+    addi    t0, a7, -1
+    srli    s5, t0, 1       // half_w = (thickness-1) >> 1
+.Ld8_hw_ok:
 
     // anti_shine = 255 - shine_through
     lw      t0, 64(sp)      // shine_through (9th arg)

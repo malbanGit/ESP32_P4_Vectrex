@@ -73,11 +73,10 @@ draw_line_asm_yuv422:
     mv      s5, a7
 
     lw      t0, 60(sp)
-    blt     t0, zero, .Lthickyuv_clamp
-    srli    s4, t0, 1
-    j       .Lthickyuv_ok
-.Lthickyuv_clamp:
     li      s4, 0
+    ble     t0, zero, .Lthickyuv_ok
+    addi    t0, t0, -1
+    srli    s4, t0, 1
 .Lthickyuv_ok:
 
     mv      t1, a3

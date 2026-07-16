@@ -145,7 +145,11 @@ overlay_fast_erase_line_asm_yuv422:
     lw      s2, 0(a0)       // dimmed
     lw      s1, 8(a0)       // fb_w
     mv      s0, a1          // fb
-    srli    s4, a6, 1       // half_w
+    li      s4, 0
+    ble     a6, zero, .Leyuv_hw_ok
+    addi    t0, a6, -1
+    srli    s4, t0, 1       // half_w = (thickness-1) >> 1
+.Leyuv_hw_ok:
 
     mv      t1, a2; mv t2, a3; mv t3, a4; mv t4, a5
 
@@ -282,7 +286,11 @@ overlay_fast_draw_line_asm_yuv422:
     lw      s1, 8(a0)       // fb_w
     mv      s0, a1          // fb
     mv      s6, a6          // brightness
-    srli    s5, a7, 1       // half_w
+    li      s5, 0
+    ble     a7, zero, .Ldyuv_hw_ok
+    addi    t0, a7, -1
+    srli    s5, t0, 1       // half_w = (thickness-1) >> 1
+.Ldyuv_hw_ok:
 
     // anti_shine = clamp(255 - shine_through, 0, 255)
     lw      t0, 64(sp)

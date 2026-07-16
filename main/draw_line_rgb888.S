@@ -76,11 +76,10 @@ draw_line_asm_rgb888:
     mv      s5, a7          // brightness
 
     lw      t0, 60(sp)      // thickness (9th arg)
-    blt     t0, zero, .Lthick8_clamp
-    srli    s4, t0, 1       // half_w = thickness >> 1
-    j       .Lthick8_ok
-.Lthick8_clamp:
     li      s4, 0
+    ble     t0, zero, .Lthick8_ok
+    addi    t0, t0, -1
+    srli    s4, t0, 1       // half_w = (thickness-1) >> 1
 .Lthick8_ok:
 
     // Load x0,y0,x1,y1 (still in argument registers)

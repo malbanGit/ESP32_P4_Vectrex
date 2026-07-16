@@ -176,7 +176,7 @@ static IRAM_ATTR void rasterise(
     const uint16_t *overlay = ctx->overlay;
     int fw = ctx->fb_w;
     int fh = ctx->fb_h;
-    int half_w = thickness > 0 ? thickness >> 1 : 0;
+    int half_w = thickness > 1 ? (thickness - 1) >> 1 : 0;
 
     // ---- steep detection ----
     int adx = x1 - x0; if (adx < 0) adx = -adx;
