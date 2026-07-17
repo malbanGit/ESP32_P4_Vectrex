@@ -208,8 +208,27 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
     int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
 
-    if (s_overlay_bg) {
-        /* Fast fallback: one memcpy per row, full bounding-box width. */
+    if (s_overlay_pal) {
+        /* Palette path: 1 PSRAM byte/pixel read, DRAM palette lookup.
+         * Transparent pixels (!(pidx & 0x80)) are skipped — draw never
+         * touched them, so no restoration needed. */
+        for (int py = by0; py <= by1; py++) {
+            int ry = py - s_ov_off_y;
+            if ((unsigned)ry >= (unsigned)s_ov_h) continue;
+            const uint8_t *row_pal = s_overlay_pal + (size_t)ry * s_ov_w - s_ov_off_x;
+            uint8_t       *row_fb  = fb + (size_t)py * fb_w * 3;
+            for (int px = bx0; px <= bx1; px++) {
+                unsigned rx = (unsigned)(px - s_ov_off_x);
+                if (rx >= (unsigned)s_ov_w) continue;
+                uint8_t pidx = row_pal[px];
+                if (!(pidx & 0x80)) continue;
+                const uint8_t *c   = s_overlay_palette[pidx & 0x7F];
+                uint8_t       *dst = row_fb + px * 3;
+                dst[0] = c[0]; dst[1] = c[1]; dst[2] = c[2];
+            }
+        }
+    } else if (s_overlay_bg) {
+        /* Fallback when no palette: full bounding-box memcpy from s_overlay_bg. */
         int span3 = (bx1 - bx0 + 1) * 3;
         for (int py = by0; py <= by1; py++) {
             memcpy(fb           + ((size_t)py * fb_w + bx0) * 3,
