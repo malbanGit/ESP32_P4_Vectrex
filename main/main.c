@@ -1019,12 +1019,18 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         for (int y = 0; y < img_h; y++) {
             const uint8_t *src = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
             uint8_t       *dst = s_overlay_pal + (size_t)y * img_w;
-            for (int x = 0; x < img_w; x++, src += 4, dst++) {
+            for (int x = 0; x < img_w; x++, src += 4, dst++) 
+            {
                 uint8_t b = src[0], g = src[1], r = src[2], a = src[3];
                 int ea = (int)a + alphaAdjust;
-                if (ea <= 0 || ea >= 255) { *dst = 0x00; continue; }
+                if (ea <= 0 || ea >= 255) 
+                { 
+                    *dst = 0x00; continue; 
+                }
                 int best = 0, best_d = 0x7FFFFFFF;
-                for (int i = 0; i < s_overlay_pal_n; i++) {
+                
+                for (int i = 0; i < s_overlay_pal_n; i++) 
+                {
                     int db = (int)b - s_overlay_palette[i][0];
                     int dg = (int)g - s_overlay_palette[i][1];
                     int dr = (int)r - s_overlay_palette[i][2];
@@ -1155,7 +1161,7 @@ extern int SCREEN_HEIGHT;
 #endif
 
     ESP_ERROR_CHECK(audio_init());
-    audio_set_callback(e8910_callback, NULL);
+//    audio_set_callback(e8910_callback, NULL);
 
     printf("Audio init done\n");
 
