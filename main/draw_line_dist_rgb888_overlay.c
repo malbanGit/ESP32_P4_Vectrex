@@ -12,6 +12,12 @@
 #include "esp_attr.h"
 #include "draw_line_dist_rgb888_overlay.h"
 
+/* One overlay row cached in IRAM so the inner loop never reads PSRAM directly.
+ * Sized for the maximum supported framebuffer width (1920 × 4 bytes = 7680 B).
+ * Both functions run on core 0 only, so a single static buffer is safe.      */
+#define OV_ROW_MAX 1920
+static DRAM_ATTR uint8_t s_ov_row[OV_ROW_MAX * 4];
+
 /* ── Shared globals ────────────────────────────────────────────────────── */
 extern int           g_line_glow;          /* draw_line_dist_rgb888.c */
 extern const uint8_t gauss_lut[];          /* draw_line_dist_rgb888.c */
@@ -88,14 +94,19 @@ IRAM_ATTR void draw_line_rgb888_overlay(
     int cross_row = dx * (by0 - y0) - dy * (bx0 - x0);
     int dot_row   = (bx0 - x0) * dx + (by0 - y0) * dy;
 
+    int ov_span = bx1 - bx0 + 1;   /* pixels to copy per row */
+
     for (int py = by0; py <= by1; py++) {
         int            cross   = cross_row;
         int            dot     = dot_row;
-        const uint8_t *row_ov  = overlay + (size_t)py * fb_w * 4;
-        uint8_t        *row_fb = fb      + (size_t)py * fb_w * 3;
+        /* Copy the needed overlay span from PSRAM into IRAM once per row. */
+        memcpy(s_ov_row,
+               overlay + ((size_t)py * fb_w + bx0) * 4,
+               (size_t)ov_span * 4);
+        uint8_t        *row_fb = fb + (size_t)py * fb_w * 3;
 
         for (int px = bx0; px <= bx1; px++) {
-            const uint8_t *ov = row_ov + px * 4;   /* B G R A */
+            const uint8_t *ov = s_ov_row + (px - bx0) * 4;   /* B G R A */
 
             /* ── Alpha gate: skip if overlay is opaque ── */
             int ea = effective_alpha(ov[3]);
@@ -167,12 +178,16 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
     int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
 
+    int ov_span = bx1 - bx0 + 1;
+
     for (int py = by0; py <= by1; py++) {
-        const uint8_t *row_ov  = overlay + (size_t)py * fb_w * 4;
-        uint8_t        *row_fb = fb      + (size_t)py * fb_w * 3;
+        memcpy(s_ov_row,
+               overlay + ((size_t)py * fb_w + bx0) * 4,
+               (size_t)ov_span * 4);
+        uint8_t *row_fb = fb + (size_t)py * fb_w * 3;
 
         for (int px = bx0; px <= bx1; px++) {
-            const uint8_t *ov  = row_ov + px * 4;   /* B G R A */
+            const uint8_t *ov  = s_ov_row + (px - bx0) * 4;   /* B G R A */
             uint8_t       *dst = row_fb + px * 3;
             uint8_t        a   = ov[3];
 
