@@ -79,10 +79,6 @@ int vecx_init(void);
 DRAM_ATTR int  g_line_width = 1;      // >= 1
 DRAM_ATTR int  g_line_glow  = 2;
 DRAM_ATTR int  brightnessAdjust = 0;
-/* Global alpha adjustment applied to semi-transparent pixels only.
- * Range -255..+255.  0 = no change.  Positive = more opaque, negative = more transparent.
- * Pixels with alpha==0 or alpha==255 are never modified.                  */
-DRAM_ATTR int alphaAdjust = -80;
 
 
 static const char *TAG = "vectrex_example";
@@ -108,7 +104,7 @@ uint8_t        *s_overlay_bg = NULL;   /* precomputed RGB888 overlay-over-black 
 uint8_t       *s_overlay_pal = NULL;
 DRAM_ATTR uint8_t  s_overlay_palette[128][3];
 DRAM_ATTR int      s_overlay_pal_n   = 0;
-DRAM_ATTR uint8_t  s_overlay_alpha_val = 128;  /* representative raw alpha */
+DRAM_ATTR uint8_t  s_overlay_alpha_val = 40;  /* representative raw alpha */
 DRAM_ATTR int      s_ov_off_x = 0;             /* active region x offset   */
 DRAM_ATTR int      s_ov_off_y = 0;             /* active region y offset   */
 DRAM_ATTR int      s_ov_w     = 0;             /* active region width      */
@@ -819,15 +815,19 @@ void drawOverlay(uint8_t *dest)
     for (int i = 0; i < total; i++, src += 4, dest += 3)
     {
         uint8_t a = src[3];
-        if (a == 0) continue;            /* fully transparent — leave black */
-
-        if (a == 255) {                  /* fully opaque — straight copy */
+        if (a == 0) /* fully transparent — leave black */
+        {
+            dest[0] = 0;
+            dest[1] = 0;
+            dest[2] = 0;
+        }
+        else if (a == 255) {                  /* fully opaque — straight copy */
             dest[0] = src[0];
             dest[1] = src[1];
             dest[2] = src[2];
         } else {                         /* semi-transparent: scale over black */
-            int ea = (int)a + alphaAdjust;
-            if (ea <= 0)  continue;      /* adjusted away to transparent */
+            int ea = (int)s_overlay_alpha_val;
+            if (ea <= 0)  continue;
             if (ea > 255) ea = 255;
             dest[0] = (uint8_t)((src[0] * ea) >> 8);
             dest[1] = (uint8_t)((src[1] * ea) >> 8);
@@ -835,7 +835,33 @@ void drawOverlay(uint8_t *dest)
         }
     }
 }
+void drawOverlayPal(uint8_t *dest)
+{
+    if (s_overlay_pal == NULL) return;
 
+    for (int y = 0; y < s_ov_h; y++) 
+    {
+        const uint8_t *row_pal = s_overlay_pal + (size_t)y * s_ov_w;
+        uint8_t       *row_dst = dest + ((size_t)(s_ov_off_y + y) * LCD_H_RES + s_ov_off_x) * 3;
+        for (int x = 0; x < s_ov_w; x++, row_dst += 3) 
+        {
+            uint8_t pidx = row_pal[x];
+            const uint8_t *c = s_overlay_palette[pidx & 0x7F];
+            if (!(pidx & 0x80))
+            {
+                row_dst[0] = c[0];
+                row_dst[1] = c[1];
+                row_dst[2] = c[2];
+            }
+            else
+            {
+                row_dst[0] = (uint8_t)((c[0] * s_overlay_alpha_val) >> 8);
+                row_dst[1] = (uint8_t)((c[1] * s_overlay_alpha_val) >> 8);
+                row_dst[2] = (uint8_t)((c[2] * s_overlay_alpha_val) >> 8);
+            }
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // overlay_load_png_bgra  — decode PNG into a BGRA (4 bytes/pixel) buffer.
@@ -943,25 +969,26 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
      * math in the hot path, just two memcpys per bounding-box row.        */
     size_t bg_sz = (size_t)LCD_H_RES * LCD_V_RES * 3;
     s_overlay_bg = heap_caps_malloc(bg_sz, MALLOC_CAP_SPIRAM);
-    if (s_overlay_bg) {
+    if (s_overlay_bg) 
+    {
         const uint8_t *src = s_overlay;
         uint8_t       *dst = s_overlay_bg;
         int total = LCD_H_RES * LCD_V_RES;
         for (int i = 0; i < total; i++, src += 4, dst += 3) {
             uint8_t a = src[3];
-            if (a == 0) {
+            if (a == 0) 
+            {
                 dst[0] = dst[1] = dst[2] = 0;
-            } else if (a == 255) {
+            } 
+            else if (a == 255) 
+            {
                 dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
-            } else {
-                int ea = (int)a + alphaAdjust;
-                if (ea <= 0) { dst[0] = dst[1] = dst[2] = 0; }
-                else {
-                    if (ea > 255) ea = 255;
-                    dst[0] = (uint8_t)((src[0] * ea) >> 8);
-                    dst[1] = (uint8_t)((src[1] * ea) >> 8);
-                    dst[2] = (uint8_t)((src[2] * ea) >> 8);
-                }
+            } 
+            else 
+            {
+                dst[0] = (uint8_t)((src[0] * s_overlay_alpha_val ) >> 8);
+                dst[1] = (uint8_t)((src[1] * s_overlay_alpha_val ) >> 8);
+                dst[2] = (uint8_t)((src[2] * s_overlay_alpha_val ) >> 8);
             }
         }
     }
@@ -973,24 +1000,24 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     s_ov_h     = img_h;
 
     s_overlay_pal = heap_caps_malloc((size_t)img_w * img_h, MALLOC_CAP_SPIRAM);
-    if (s_overlay_pal) {
+    if (s_overlay_pal) 
+    {
         s_overlay_pal_n = 0;
         memset(s_overlay_palette, 0, sizeof(s_overlay_palette));
 
         /* Pass 1: build palette from drawable pixels. */
-        uint64_t alpha_sum = 0;
-        uint32_t alpha_cnt = 0;
-        for (int y = 0; y < img_h; y++) {
+        for (int y = 0; y < img_h; y++) 
+        {
             const uint8_t *src = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
-            for (int x = 0; x < img_w; x++, src += 4) {
-                uint8_t b = src[0], g = src[1], r = src[2], a = src[3];
-                int ea = (int)a + alphaAdjust;
-                if (ea <= 0 || ea >= 255) continue;
-                alpha_sum += a;
-                alpha_cnt++;
+            for (int x = 0; x < img_w; x++, src += 4) 
+            {
+                uint8_t b = src[0], g = src[1], r = src[2];//, a = src[3];
+
                 /* find nearest existing palette entry */
-                int best = 0, best_d = 0x7FFFFFFF;
-                for (int i = 0; i < s_overlay_pal_n; i++) {
+                int best;
+                int best_d = 0x7FFFFFFF;
+                for (int i = 0; i < s_overlay_pal_n; i++) 
+                {
                     int db = (int)b - s_overlay_palette[i][0];
                     int dg = (int)g - s_overlay_palette[i][1];
                     int dr = (int)r - s_overlay_palette[i][2];
@@ -998,7 +1025,9 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
                     if (d < best_d) { best = i; best_d = d; }
                     if (d == 0) break;
                 }
-                if (best_d != 0 && s_overlay_pal_n < 127) {
+
+                if (best_d != 0 && s_overlay_pal_n < 127) 
+                {
                     best = s_overlay_pal_n;
                     s_overlay_palette[s_overlay_pal_n][0] = b;
                     s_overlay_palette[s_overlay_pal_n][1] = g;
@@ -1007,20 +1036,15 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
                 }
             }
         }
-        s_overlay_alpha_val = (uint8_t)(alpha_cnt > 0 ? alpha_sum / alpha_cnt : 128);
 
         /* Pass 2: assign index bytes. */
-        for (int y = 0; y < img_h; y++) {
+        for (int y = 0; y < img_h; y++) 
+        {
             const uint8_t *src = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
             uint8_t       *dst = s_overlay_pal + (size_t)y * img_w;
             for (int x = 0; x < img_w; x++, src += 4, dst++) 
             {
                 uint8_t b = src[0], g = src[1], r = src[2], a = src[3];
-                int ea = (int)a + alphaAdjust;
-                if (ea <= 0 || ea >= 255) 
-                { 
-                    *dst = 0x00; continue; 
-                }
                 int best = 0, best_d = 0x7FFFFFFF;
                 
                 for (int i = 0; i < s_overlay_pal_n; i++) 
@@ -1032,14 +1056,21 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
                     if (d < best_d) { best = i; best_d = d; }
                     if (d == 0) break;
                 }
-                *dst = (uint8_t)(0x80 | best);
+                if (a <= 0 || a >= 255) 
+                { 
+                    *dst = (uint8_t)(best & (~0x80));
+                }
+                else
+                {
+                    *dst = (uint8_t)(0x80 | best);
+                }
             }
         }
         ESP_LOGI(TAG, "overlay pal: %d colours, alpha_val=%d", s_overlay_pal_n, s_overlay_alpha_val);
     }
     
-    drawOverlay(s_fb_front);
-    drawOverlay(s_fb_back);
+    drawOverlayPal(s_fb_front);
+    drawOverlayPal(s_fb_back);
 
 
     ESP_LOGI(TAG, "overlay: %s scaled to %dx%d, centred on %dx%d screen (BGRA)",

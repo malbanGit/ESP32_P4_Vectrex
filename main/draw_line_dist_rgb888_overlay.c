@@ -23,7 +23,6 @@ extern int           g_line_glow;
 extern const uint8_t gauss_lut[];
 
 /* ── Shared globals from main.c ─────────────────────────────────────────── */
-extern int      alphaAdjust;
 extern uint8_t *s_overlay_bg;
 
 /* Palettised overlay */
@@ -54,9 +53,7 @@ static inline uint32_t gs_for_glow(int glow_r)
 
 static inline int effective_alpha(uint8_t raw_a)
 {
-    if (raw_a == 0 || raw_a == 255) return raw_a;
-    int ea = (int)raw_a + alphaAdjust;
-    return iclamp(ea, 0, 255);
+    return s_overlay_alpha_val;
 }
 
 static inline uint32_t cap_d2_q16(int apx, int apy)
@@ -212,19 +209,23 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
         /* Palette path: 1 PSRAM byte/pixel read, DRAM palette lookup.
          * Transparent pixels (!(pidx & 0x80)) are skipped — draw never
          * touched them, so no restoration needed. */
+        int ea = effective_alpha(s_overlay_alpha_val);
         for (int py = by0; py <= by1; py++) {
             int ry = py - s_ov_off_y;
             if ((unsigned)ry >= (unsigned)s_ov_h) continue;
             const uint8_t *row_pal = s_overlay_pal + (size_t)ry * s_ov_w - s_ov_off_x;
             uint8_t       *row_fb  = fb + (size_t)py * fb_w * 3;
-            for (int px = bx0; px <= bx1; px++) {
+            for (int px = bx0; px <= bx1; px++) 
+            {
                 unsigned rx = (unsigned)(px - s_ov_off_x);
                 if (rx >= (unsigned)s_ov_w) continue;
                 uint8_t pidx = row_pal[px];
                 if (!(pidx & 0x80)) continue;
                 const uint8_t *c   = s_overlay_palette[pidx & 0x7F];
                 uint8_t       *dst = row_fb + px * 3;
-                dst[0] = c[0]; dst[1] = c[1]; dst[2] = c[2];
+                dst[0] = (uint8_t)((c[0] * ea) >> 8);
+                dst[1] = (uint8_t)((c[1] * ea) >> 8);
+                dst[2] = (uint8_t)((c[2] * ea) >> 8);
             }
         }
     } else if (s_overlay_bg) {
@@ -249,7 +250,7 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
                 } else if (a == 255) {
                     dst[0] = ov[0]; dst[1] = ov[1]; dst[2] = ov[2];
                 } else {
-                    int ea = (int)a + alphaAdjust;
+                    int ea = (int)s_overlay_alpha_val;
                     if (ea <= 0) { dst[0] = dst[1] = dst[2] = 0; }
                     else {
                         if (ea > 255) ea = 255;

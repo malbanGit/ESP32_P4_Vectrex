@@ -329,6 +329,7 @@ char  *name[]={
 		brightnessAdjust = brightnessAdjust + 1;
 		printf("brightnessAdjust: %d\n", brightnessAdjust);
 	}
+
    
 	if (isKeyDown(HID_KEY_F1))
 	{
