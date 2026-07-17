@@ -1,10 +1,17 @@
 /*
  * Overlay-aware distance-field line renderer for RGB888 framebuffers.
  *
- * Mirrors the algorithm in draw_line_dist_rgb888.S but conditions each pixel
- * on the overlay's alpha channel and colours the line with the overlay's RGB.
+ * Two hot-path optimisations over the original BGRA-per-pixel approach:
  *
- * See draw_line_dist_rgb888_overlay.h for the full contract.
+ *  DRAW  — reads 1 byte/pixel from s_overlay_pal (PSRAM, 4× denser than
+ *           BGRA), then looks up BGR colour from s_overlay_palette (DRAM,
+ *           stays in L1 cache).  Falls back to the original 4-byte BGRA
+ *           read if s_overlay_pal is NULL.
+ *
+ *  UNDRAW — uses s_dirty_bits (DRAM bitfield) to restore only the pixels
+ *           that were actually written during draw, skipping bounding-box
+ *           pixels where glow contribution was zero.  Falls back to the
+ *           full-row memcpy when s_dirty_bits is NULL.
  */
 
 #include <stdint.h>
@@ -12,13 +19,28 @@
 #include "esp_attr.h"
 #include "draw_line_dist_rgb888_overlay.h"
 
-/* ── Shared globals ────────────────────────────────────────────────────── */
-extern int           g_line_glow;          /* draw_line_dist_rgb888.c */
-extern const uint8_t gauss_lut[];          /* draw_line_dist_rgb888.c */
-extern int           alphaAdjust;          /* main.c                  */
-extern uint8_t      *s_overlay_bg;         /* main.c — RGB888 overlay-over-black */
+/* ── Shared globals from draw_line_dist_rgb888.c ────────────────────────── */
+extern int           g_line_glow;
+extern const uint8_t gauss_lut[];
 
-/* ── Constants matching draw_line_dist_rgb888.c ────────────────────────── */
+/* ── Shared globals from main.c ─────────────────────────────────────────── */
+extern int      alphaAdjust;
+extern uint8_t *s_overlay_bg;
+
+/* Palettised overlay */
+extern uint8_t *s_overlay_pal;          /* PSRAM: 1 byte/pixel, active region */
+extern uint8_t  s_overlay_palette[128][3]; /* DRAM: BGR, ≤127 entries        */
+extern int      s_overlay_pal_n;
+extern uint8_t  s_overlay_alpha_val;    /* representative raw alpha           */
+extern int      s_ov_off_x;
+extern int      s_ov_off_y;
+extern int      s_ov_w;
+extern int      s_ov_h;
+
+/* Dirty-pixel bitfield */
+extern uint8_t *s_dirty_bits;           /* DRAM: 1 bit/pixel, active region   */
+
+/* ── Constants ──────────────────────────────────────────────────────────── */
 #define GAUSS_SHIFT    14
 #define GAUSS_LUT_SIZE 178
 
@@ -57,13 +79,13 @@ IRAM_ATTR void draw_line_rgb888_overlay(
         int brightness, int thickness,
         const uint8_t *overlay)
 {
-    if (!fb || !overlay || fb_w <= 0 || fb_h <= 0 || brightness <= 0) return;
+    if (!fb || fb_w <= 0 || fb_h <= 0 || brightness <= 0) return;
+    if (!overlay && !s_overlay_pal) return;
 
     int glow   = (g_line_glow < 0) ? 0 : g_line_glow;
     int beam_r = thickness >> 1;
     int R      = beam_r + glow;
 
-    /* Bounding box */
     int bx0 = iclamp((x0 < x1 ? x0 : x1) - R, 0, fb_w - 1);
     int bx1 = iclamp((x0 > x1 ? x0 : x1) + R, 0, fb_w - 1);
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
@@ -82,18 +104,56 @@ IRAM_ATTR void draw_line_rgb888_overlay(
     int cross_row = dx * (by0 - y0) - dy * (bx0 - x0);
     int dot_row   = (bx0 - x0) * dx + (by0 - y0) * dy;
 
+    /* Use palette path when available. */
+    const int use_pal = (s_overlay_pal != NULL);
+
+    /* Pre-check global alpha (palette path only). */
+    if (use_pal) {
+        int ea = effective_alpha(s_overlay_alpha_val);
+        if (ea >= 255) return; /* whole overlay is opaque — nothing to draw */
+    }
+
     for (int py = by0; py <= by1; py++) {
-        int            cross  = cross_row;
-        int            dot    = dot_row;
-        const uint8_t *row_ov = overlay + ((size_t)py * fb_w + bx0) * 4;
-        uint8_t       *row_fb = fb      + (size_t)py * fb_w * 3;
+        int cross = cross_row;
+        int dot   = dot_row;
+
+        /* Row pointers for palette and dirty-bits paths. */
+        int            ry         = py - s_ov_off_y;
+        const uint8_t *row_pal    = NULL;
+        int            dirty_base = -1;
+
+        if (use_pal && (unsigned)ry < (unsigned)s_ov_h) {
+            row_pal    = s_overlay_pal  + (size_t)ry * s_ov_w - s_ov_off_x;
+            dirty_base = ry * s_ov_w   - s_ov_off_x;
+        }
+
+        /* Fallback: original BGRA overlay row. */
+        const uint8_t *row_ov = (!use_pal && overlay)
+                              ? overlay + ((size_t)py * fb_w + bx0) * 4
+                              : NULL;
+
+        uint8_t *row_fb = fb + (size_t)py * fb_w * 3;
 
         for (int px = bx0; px <= bx1; px++) {
-            const uint8_t *ov = row_ov + (px - bx0) * 4;   /* B G R A */
 
-            int ea = effective_alpha(ov[3]);
-            if (ea >= 255) goto px_next;
+            /* ── Pixel colour + skip logic ─────────────────────────────── */
+            int b_col, g_col, r_col;
 
+            if (row_pal) {
+                unsigned rx = (unsigned)(px - s_ov_off_x);
+                if (rx >= (unsigned)s_ov_w) goto px_next;
+                uint8_t pidx = row_pal[px];     /* 1 PSRAM byte */
+                if (!(pidx & 0x80)) goto px_next;
+                const uint8_t *c = s_overlay_palette[pidx & 0x7F]; /* DRAM */
+                b_col = c[0]; g_col = c[1]; r_col = c[2];
+            } else {
+                const uint8_t *ov = row_ov + (px - bx0) * 4; /* 4 PSRAM bytes */
+                int ea = effective_alpha(ov[3]);
+                if (ea >= 255) goto px_next;
+                b_col = ov[0]; g_col = ov[1]; r_col = ov[2];
+            }
+
+            /* ── Distance-field contribution ───────────────────────────── */
             {
                 uint32_t d2_q16;
                 if (len2 == 0 || dot <= 0) {
@@ -120,9 +180,15 @@ IRAM_ATTR void draw_line_rgb888_overlay(
 
                 uint8_t *dst = row_fb + px * 3;
                 int v;
-                v = dst[0] + ((ov[0] * contrib) >> 8); dst[0] = (uint8_t)(v > 255 ? 255 : v);
-                v = dst[1] + ((ov[1] * contrib) >> 8); dst[1] = (uint8_t)(v > 255 ? 255 : v);
-                v = dst[2] + ((ov[2] * contrib) >> 8); dst[2] = (uint8_t)(v > 255 ? 255 : v);
+                v = dst[0] + ((b_col * contrib) >> 8); dst[0] = (uint8_t)(v > 255 ? 255 : v);
+                v = dst[1] + ((g_col * contrib) >> 8); dst[1] = (uint8_t)(v > 255 ? 255 : v);
+                v = dst[2] + ((r_col * contrib) >> 8); dst[2] = (uint8_t)(v > 255 ? 255 : v);
+
+                /* Mark pixel dirty (DRAM bit op — fast). */
+                if (s_dirty_bits && dirty_base >= 0) {
+                    int bit_idx = dirty_base + px;
+                    s_dirty_bits[bit_idx >> 3] |= (uint8_t)(1u << (bit_idx & 7));
+                }
             }
 
         px_next:
@@ -142,7 +208,7 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
         int brightness, int thickness,
         const uint8_t *overlay)
 {
-    if (!fb || !overlay || fb_w <= 0 || fb_h <= 0) return;
+    if (!fb || fb_w <= 0 || fb_h <= 0) return;
 
     int glow   = (g_line_glow < 0) ? 0 : g_line_glow;
     int beam_r = thickness >> 1;
@@ -153,27 +219,63 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
     int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
 
-    int span3 = (bx1 - bx0 + 1) * 3;
-
-    if (s_overlay_bg) {
-        /* Fast path: one memcpy per row directly from precomputed RGB888. */
+    if (s_dirty_bits && s_overlay_bg) {
+        /*
+         * Dirty-bit path: restore only pixels that draw actually modified.
+         * Per row, find contiguous dirty runs and memcpy each from s_overlay_bg.
+         * Bits are cleared as we go so the next frame starts clean.
+         */
         for (int py = by0; py <= by1; py++) {
-            memcpy(fb          + ((size_t)py * fb_w + bx0) * 3,
+            int ry = py - s_ov_off_y;
+            if ((unsigned)ry >= (unsigned)s_ov_h) continue;
+            int dirty_base = ry * s_ov_w - s_ov_off_x;
+            uint8_t *row_fb = fb + (size_t)py * fb_w * 3;
+
+            int px = bx0;
+            while (px <= bx1) {
+                int rx = px - s_ov_off_x;
+                if ((unsigned)rx >= (unsigned)s_ov_w) { px++; continue; }
+
+                int bit_idx = dirty_base + px;
+                if (!(s_dirty_bits[bit_idx >> 3] & (uint8_t)(1u << (bit_idx & 7)))) {
+                    px++;
+                    continue;
+                }
+
+                /* Dirty pixel found — extend the run. */
+                int run_start = px;
+                while (px <= bx1) {
+                    int rxi = px - s_ov_off_x;
+                    if ((unsigned)rxi >= (unsigned)s_ov_w) break;
+                    int bi = dirty_base + px;
+                    if (!(s_dirty_bits[bi >> 3] & (uint8_t)(1u << (bi & 7)))) break;
+                    s_dirty_bits[bi >> 3] &= (uint8_t)~(1u << (bi & 7)); /* clear */
+                    px++;
+                }
+                /* Sequential memcpy for this dirty run. */
+                int run3 = (px - run_start) * 3;
+                memcpy(row_fb + run_start * 3,
+                       s_overlay_bg + ((size_t)py * fb_w + run_start) * 3,
+                       (size_t)run3);
+            }
+        }
+    } else if (s_overlay_bg) {
+        /* Fast fallback: one memcpy per row, full bounding-box width. */
+        int span3 = (bx1 - bx0 + 1) * 3;
+        for (int py = by0; py <= by1; py++) {
+            memcpy(fb           + ((size_t)py * fb_w + bx0) * 3,
                    s_overlay_bg + ((size_t)py * fb_w + bx0) * 3,
                    (size_t)span3);
         }
-    } else {
+    } else if (overlay) {
         /* Fallback: compute from BGRA overlay (alphaAdjust applied). */
-        int ov_span = bx1 - bx0 + 1;
         for (int py = by0; py <= by1; py++) {
             const uint8_t *row_ov = overlay + ((size_t)py * fb_w + bx0) * 4;
             uint8_t       *row_fb = fb      + (size_t)py * fb_w * 3;
-
             for (int px = bx0; px <= bx1; px++) {
                 const uint8_t *ov  = row_ov + (px - bx0) * 4;
                 uint8_t       *dst = row_fb + px * 3;
                 uint8_t        a   = ov[3];
-
                 if (a == 0) {
                     dst[0] = dst[1] = dst[2] = 0;
                 } else if (a == 255) {

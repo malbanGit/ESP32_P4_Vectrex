@@ -99,6 +99,26 @@ DRAM_ATTR static int LCD_V_RES = 720;
 static uint8_t *s_overlay    = NULL;
 uint8_t        *s_overlay_bg = NULL;   /* precomputed RGB888 overlay-over-black */
 
+/* ── Palettised overlay (draw optimisation) ───────────────────────────────── *
+ * s_overlay_pal: 1 byte/pixel covering the active image region only (PSRAM).
+ *   bit 7 = 1 → drawable pixel; palette index in bits 6..0
+ *   bit 7 = 0 → skip (transparent or opaque after alphaAdjust)
+ * s_overlay_palette: BGR table in DRAM — stays in L1 cache permanently.
+ * Built once at load time with the then-current alphaAdjust.              */
+uint8_t       *s_overlay_pal = NULL;
+DRAM_ATTR uint8_t  s_overlay_palette[128][3];
+DRAM_ATTR int      s_overlay_pal_n   = 0;
+DRAM_ATTR uint8_t  s_overlay_alpha_val = 128;  /* representative raw alpha */
+DRAM_ATTR int      s_ov_off_x = 0;             /* active region x offset   */
+DRAM_ATTR int      s_ov_off_y = 0;             /* active region y offset   */
+DRAM_ATTR int      s_ov_w     = 0;             /* active region width      */
+DRAM_ATTR int      s_ov_h     = 0;             /* active region height     */
+
+/* ── Dirty-pixel bitfield (undraw optimisation) ───────────────────────────── *
+ * One bit per pixel of the active region.  Set by draw, cleared by undraw.
+ * Allocated from internal DRAM heap at load time (~50 KB for 564×720).    */
+uint8_t       *s_dirty_bits  = NULL;
+
 // ----------------------------------------------------
 // Types
 // ----------------------------------------------------
@@ -871,6 +891,10 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     /* free previous overlay buffers */
     if (s_overlay != NULL)    { heap_caps_free(s_overlay);    s_overlay    = NULL; }
     if (s_overlay_bg != NULL) { heap_caps_free(s_overlay_bg); s_overlay_bg = NULL; }
+    if (s_overlay_pal != NULL){ heap_caps_free(s_overlay_pal);s_overlay_pal= NULL; }
+    if (s_dirty_bits != NULL) { heap_caps_free(s_dirty_bits); s_dirty_bits = NULL; }
+    s_overlay_pal_n = 0;
+    s_ov_w = 0;
 
     /* allocate full-screen BGRA overlay buffer in PSRAM (4 bytes/pixel) */
     size_t buf_sz = (size_t)LCD_H_RES * LCD_V_RES * 4;
@@ -946,6 +970,82 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
                 }
             }
         }
+    }
+
+    /* ── Build palettised index for the active region ──────────────────── */
+    s_ov_off_x = off_x;
+    s_ov_off_y = off_y;
+    s_ov_w     = img_w;
+    s_ov_h     = img_h;
+
+    s_overlay_pal = heap_caps_malloc((size_t)img_w * img_h, MALLOC_CAP_SPIRAM);
+    if (s_overlay_pal) {
+        s_overlay_pal_n = 0;
+        memset(s_overlay_palette, 0, sizeof(s_overlay_palette));
+
+        /* Pass 1: build palette from drawable pixels. */
+        uint64_t alpha_sum = 0;
+        uint32_t alpha_cnt = 0;
+        for (int y = 0; y < img_h; y++) {
+            const uint8_t *src = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
+            for (int x = 0; x < img_w; x++, src += 4) {
+                uint8_t b = src[0], g = src[1], r = src[2], a = src[3];
+                int ea = (int)a + alphaAdjust;
+                if (ea <= 0 || ea >= 255) continue;
+                alpha_sum += a;
+                alpha_cnt++;
+                /* find nearest existing palette entry */
+                int best = 0, best_d = 0x7FFFFFFF;
+                for (int i = 0; i < s_overlay_pal_n; i++) {
+                    int db = (int)b - s_overlay_palette[i][0];
+                    int dg = (int)g - s_overlay_palette[i][1];
+                    int dr = (int)r - s_overlay_palette[i][2];
+                    int d  = db*db + dg*dg + dr*dr;
+                    if (d < best_d) { best = i; best_d = d; }
+                    if (d == 0) break;
+                }
+                if (best_d != 0 && s_overlay_pal_n < 127) {
+                    best = s_overlay_pal_n;
+                    s_overlay_palette[s_overlay_pal_n][0] = b;
+                    s_overlay_palette[s_overlay_pal_n][1] = g;
+                    s_overlay_palette[s_overlay_pal_n][2] = r;
+                    s_overlay_pal_n++;
+                }
+            }
+        }
+        s_overlay_alpha_val = (uint8_t)(alpha_cnt > 0 ? alpha_sum / alpha_cnt : 128);
+
+        /* Pass 2: assign index bytes. */
+        for (int y = 0; y < img_h; y++) {
+            const uint8_t *src = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
+            uint8_t       *dst = s_overlay_pal + (size_t)y * img_w;
+            for (int x = 0; x < img_w; x++, src += 4, dst++) {
+                uint8_t b = src[0], g = src[1], r = src[2], a = src[3];
+                int ea = (int)a + alphaAdjust;
+                if (ea <= 0 || ea >= 255) { *dst = 0x00; continue; }
+                int best = 0, best_d = 0x7FFFFFFF;
+                for (int i = 0; i < s_overlay_pal_n; i++) {
+                    int db = (int)b - s_overlay_palette[i][0];
+                    int dg = (int)g - s_overlay_palette[i][1];
+                    int dr = (int)r - s_overlay_palette[i][2];
+                    int d  = db*db + dg*dg + dr*dr;
+                    if (d < best_d) { best = i; best_d = d; }
+                    if (d == 0) break;
+                }
+                *dst = (uint8_t)(0x80 | best);
+            }
+        }
+        ESP_LOGI(TAG, "overlay pal: %d colours, alpha_val=%d", s_overlay_pal_n, s_overlay_alpha_val);
+    }
+
+    /* ── Allocate dirty-pixel bitfield from internal DRAM heap ─────────── */
+    size_t dirty_sz = ((size_t)img_w * img_h + 7) / 8;
+    s_dirty_bits = heap_caps_malloc(dirty_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (s_dirty_bits) {
+        memset(s_dirty_bits, 0, dirty_sz);
+        ESP_LOGI(TAG, "dirty bits: %u bytes in DRAM", (unsigned)dirty_sz);
+    } else {
+        ESP_LOGW(TAG, "dirty bits alloc failed (%u bytes) — undraw uses full bbox", (unsigned)dirty_sz);
     }
 
     drawOverlay(s_fb_front);
