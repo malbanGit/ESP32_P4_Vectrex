@@ -34,7 +34,7 @@ int g_line_glow = 2;
 #define GAUSS_SHIFT 14
 #define GAUSS_LUT_SIZE 178
 
-static const uint8_t gauss_lut[GAUSS_LUT_SIZE] = {
+const uint8_t gauss_lut[GAUSS_LUT_SIZE] = {
     255, 247, 240, 232, 225, 218, 211, 205, 199, 192, 187, 181, 175, 170, 165, 160,
     155, 150, 145, 141, 136, 132, 128, 124, 120, 117, 113, 110, 106, 103, 100,  97,
      94,  91,  88,  85,  83,  80,  78,  75,  73,  71,  69,  67,  64,  62,  61,  59,
