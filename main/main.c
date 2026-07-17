@@ -3,6 +3,27 @@ TODO: Calibration Ala Tuts
 
 PNG file loading
 
+overlays in YUV?
+
+Overlays in assembler
+
+1. RGB565 framebuffer (33% bandwidth reduction, system-wide)
+Switch from RGB888 to RGB565. Every framebuffer pixel becomes 2 bytes instead of 3. That's 33% less PSRAM traffic for every read and write — draw, undraw, AND the LCD DMA transfer. Requires changing LCD init, fb allocation, and all pixel write math. But it's a clean architectural change that benefits everything, not just the overlay path.
+
+2. Two-layer PPA compositing (eliminate overlay from CPU entirely)
+ESP32-P4 has a Pixel Processing Accelerator (PPA) hardware block that does alpha blending. The idea:
+
+Emulator renders Vectrex lines on a pure-black fb — no overlay involvement at all
+PPA blends the black fb + overlay → final display fb in hardware, asynchronously
+Core 1 emulator never touches overlay PSRAM at all during rendering
+Draw/undraw becomes trivial: write colored pixels or black. No palette lookup, no alpha, no bbox guards. The CPU completely exits the compositing business.
+
+3. Frame-diff line caching (near-zero cost for static screens)
+Many Vectrex frames are identical or nearly identical to the previous frame. Cache the line list (x0, y0, x1, y1, brightness, thickness) from last frame. If a line is unchanged, skip its draw+undraw entirely. For title screens, menus, or slow-moving games this could eliminate 80%+ of render work.
+
+4. Single frame-start reset instead of per-line undraw
+Instead of N undraws per frame, track the combined bounding box of all lines drawn last frame (6 integers per buffer in DRAM). At frame start: one DMA transfer from overlay_bg covering that combined region resets everything. Then draw all lines fresh. Replaces N×undraw with 1×DMA. DMA runs without CPU, on bus cycles the emulator doesn't use.
+
 
 To start the current version connect USB POW/UART to computer (directly)
 Connect USB (mid /down) to keyboard - the keyboard can be used to control the vectrex
@@ -1187,7 +1208,7 @@ extern int SCREEN_HEIGHT;
         NULL,                    // Parameter
         2,                       // Priorität
         &s_audio_task_handle,    // Handle
-        0                        // Core 0
+        1                        // Core 0
     );
 
     vecx_init();
@@ -1201,7 +1222,7 @@ extern int SCREEN_HEIGHT;
         7,
         s_emu_stack,
         &s_emu_tcb,
-        1
+        0
     );
 
     // Renderer task (core 0) — static stack in internal SRAM
@@ -1210,10 +1231,10 @@ extern int SCREEN_HEIGHT;
         "renderer",
         REND_STACK_SIZE,
         NULL,
-        6,
+        3,
         s_rend_stack,
         &s_rend_tcb,
-        0
+        1
     );
 
     printf("Free internal DRAM: %d bytes\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
