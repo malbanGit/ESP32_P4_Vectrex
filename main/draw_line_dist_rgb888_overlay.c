@@ -85,13 +85,13 @@ IRAM_ATTR void draw_line_rgb888_overlay(
     for (int py = by0; py <= by1; py++) {
         int            cross  = cross_row;
         int            dot    = dot_row;
-        const uint8_t *row_ov = overlay + ((size_t)py * fb_w + bx0) * 4; /* alpha stride */
+        const uint8_t *row_ov = overlay + ((size_t)py * fb_w + bx0) * 4;
         uint8_t       *row_fb = fb      + (size_t)py * fb_w * 3;
 
         for (int px = bx0; px <= bx1; px++) {
-            /* Only need alpha — dst[] already holds the overlay colour
-             * because drawOverlay() pre-rendered it and undraw restores it. */
-            int ea = effective_alpha(row_ov[(px - bx0) * 4 + 3]);
+            const uint8_t *ov = row_ov + (px - bx0) * 4;   /* B G R A */
+
+            int ea = effective_alpha(ov[3]);
             if (ea >= 255) goto px_next;
 
             {
@@ -118,12 +118,11 @@ IRAM_ATTR void draw_line_rgb888_overlay(
                     if (contrib == 0) goto px_next;
                 }
 
-                /* Brighten the existing overlay colour in dst[] */
                 uint8_t *dst = row_fb + px * 3;
                 int v;
-                v = dst[0] + ((dst[0] * contrib) >> 8); dst[0] = (uint8_t)(v > 255 ? 255 : v);
-                v = dst[1] + ((dst[1] * contrib) >> 8); dst[1] = (uint8_t)(v > 255 ? 255 : v);
-                v = dst[2] + ((dst[2] * contrib) >> 8); dst[2] = (uint8_t)(v > 255 ? 255 : v);
+                v = dst[0] + ((ov[0] * contrib) >> 8); dst[0] = (uint8_t)(v > 255 ? 255 : v);
+                v = dst[1] + ((ov[1] * contrib) >> 8); dst[1] = (uint8_t)(v > 255 ? 255 : v);
+                v = dst[2] + ((ov[2] * contrib) >> 8); dst[2] = (uint8_t)(v > 255 ? 255 : v);
             }
 
         px_next:
