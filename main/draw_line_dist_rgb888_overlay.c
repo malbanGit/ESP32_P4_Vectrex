@@ -123,8 +123,8 @@ IRAM_ATTR void draw_line_rgb888_overlay(
         int            dirty_base = -1;
 
         if (use_pal && (unsigned)ry < (unsigned)s_ov_h) {
-            row_pal    = s_overlay_pal  + (size_t)ry * s_ov_w - s_ov_off_x;
-            dirty_base = ry * s_ov_w   - s_ov_off_x;
+            row_pal    = s_overlay_pal + (size_t)ry * s_ov_w - s_ov_off_x;
+            dirty_base = ry * s_ov_w;  /* bit_idx = dirty_base + rx */
         }
 
         /* Fallback: original BGRA overlay row. */
@@ -186,7 +186,8 @@ IRAM_ATTR void draw_line_rgb888_overlay(
 
                 /* Mark pixel dirty (DRAM bit op — fast). */
                 if (s_dirty_bits && dirty_base >= 0) {
-                    int bit_idx = dirty_base + px;
+                    int rx2 = px - s_ov_off_x;
+                    int bit_idx = dirty_base + rx2;
                     s_dirty_bits[bit_idx >> 3] |= (uint8_t)(1u << (bit_idx & 7));
                 }
             }
@@ -228,7 +229,7 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
         for (int py = by0; py <= by1; py++) {
             int ry = py - s_ov_off_y;
             if ((unsigned)ry >= (unsigned)s_ov_h) continue;
-            int dirty_base = ry * s_ov_w - s_ov_off_x;
+            int dirty_base = ry * s_ov_w;  /* bit_idx = dirty_base + rx */
             uint8_t *row_fb = fb + (size_t)py * fb_w * 3;
 
             int px = bx0;
@@ -236,7 +237,7 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
                 int rx = px - s_ov_off_x;
                 if ((unsigned)rx >= (unsigned)s_ov_w) { px++; continue; }
 
-                int bit_idx = dirty_base + px;
+                int bit_idx = dirty_base + rx;
                 if (!(s_dirty_bits[bit_idx >> 3] & (uint8_t)(1u << (bit_idx & 7)))) {
                     px++;
                     continue;
@@ -247,7 +248,7 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
                 while (px <= bx1) {
                     int rxi = px - s_ov_off_x;
                     if ((unsigned)rxi >= (unsigned)s_ov_w) break;
-                    int bi = dirty_base + px;
+                    int bi = dirty_base + rxi;
                     if (!(s_dirty_bits[bi >> 3] & (uint8_t)(1u << (bi & 7)))) break;
                     s_dirty_bits[bi >> 3] &= (uint8_t)~(1u << (bi & 7)); /* clear */
                     px++;
