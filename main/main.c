@@ -1208,7 +1208,7 @@ extern int SCREEN_HEIGHT;
         NULL,                    // Parameter
         2,                       // Priorität
         &s_audio_task_handle,    // Handle
-        1                        // Core 0
+        0                        // Core 0
     );
 
     vecx_init();
@@ -1222,7 +1222,7 @@ extern int SCREEN_HEIGHT;
         7,
         s_emu_stack,
         &s_emu_tcb,
-        0
+        1
     );
 
     // Renderer task (core 0) — static stack in internal SRAM
@@ -1234,7 +1234,7 @@ extern int SCREEN_HEIGHT;
         3,
         s_rend_stack,
         &s_rend_tcb,
-        1
+        0
     );
 
     printf("Free internal DRAM: %d bytes\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
