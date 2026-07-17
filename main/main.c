@@ -79,6 +79,10 @@ int vecx_init(void);
 DRAM_ATTR int  g_line_width = 1;      // >= 1
 DRAM_ATTR int  g_line_glow  = 2;
 DRAM_ATTR int  brightnessAdjust = 0;
+/* Global alpha adjustment applied to semi-transparent pixels only.
+ * Range -255..+255.  0 = no change.  Positive = more opaque, negative = more transparent.
+ * Pixels with alpha==0 or alpha==255 are never modified.                  */
+DRAM_ATTR int alphaAdjust = -80;
 
 
 static const char *TAG = "vectrex_example";
@@ -656,16 +660,6 @@ IRAM_ATTR static void renderer_task(void *arg)
 
         undraw_previous_fb(fb_idx);             // undraw all from that framebuffer
 
-void drawOverlay();
-
-        if (s_overlay != NULL) 
-        {
-            drawOverlay();
-
-        }
-
-
-
         // Draw new frame lines into backbuffer and remember them
         // linecount from "frame" (collection of lines)
         for (int i = 0; i < line_count; ++i) {
@@ -759,10 +753,6 @@ DRAM_ATTR unsigned char cartData[MAX_CART_SIZE];
 long cartSize = 0;
 #include "file.i"
 
-/* Global alpha adjustment applied to semi-transparent pixels only.
- * Range -255..+255.  0 = no change.  Positive = more opaque, negative = more transparent.
- * Pixels with alpha==0 or alpha==255 are never modified.                  */
-int alphaAdjust = 0;
 
 /* Write s_overlay (BGRA, 4 bytes/pixel) into s_fb_back (BGR, 3 bytes/pixel).
  * Destination is assumed to be black, so partial-alpha pixels scale the source
@@ -770,12 +760,11 @@ int alphaAdjust = 0;
  *   alpha == 0   → skip (dest stays black)
  *   alpha == 255 → straight copy
  *   otherwise    → alpha clamped by alphaAdjust, then out = src * a / 255     */
-void drawOverlay()
+void drawOverlay(uint8_t *dest)
 {
     if (s_overlay == NULL) return;
 
     const uint8_t *src  = s_overlay;
-    uint8_t       *dest = s_fb_back;
     int total = LCD_H_RES * LCD_V_RES;
 
     for (int i = 0; i < total; i++, src += 4, dest += 3)
@@ -884,6 +873,8 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         return ret;
     }
 
+
+
     /* centre position */
     int off_x = (LCD_H_RES - img_w) / 2;
     int off_y = (LCD_V_RES - img_h) / 2;
@@ -897,6 +888,10 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     }
 
     heap_caps_free(scaled);
+
+    drawOverlay(s_fb_front);
+    drawOverlay(s_fb_back);
+
 
     ESP_LOGI(TAG, "overlay: %s scaled to %dx%d, centred on %dx%d screen (BGRA)",
              name, img_w, img_h, LCD_H_RES, LCD_V_RES);
