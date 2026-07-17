@@ -219,50 +219,29 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
     int bx1 = iclamp((x0 > x1 ? x0 : x1) + R, 0, fb_w - 1);
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
     int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
-/*
-    if (s_dirty_bits && s_overlay_bg) 
-    {
-        //
-        // Dirty-bit path: restore only pixels that draw actually modified.
-        // Per row, find contiguous dirty runs and memcpy each from s_overlay_bg.
-        // Bits are cleared as we go so the next frame starts clean.
-        //
+
+    if (s_dirty_bits && s_overlay_pal && s_overlay_bg) {
         for (int py = by0; py <= by1; py++) {
             int ry = py - s_ov_off_y;
             if ((unsigned)ry >= (unsigned)s_ov_h) continue;
-            int dirty_base = ry * s_ov_w;  // bit_idx = dirty_base + rx 
-            uint8_t *row_fb = fb + (size_t)py * fb_w * 3;
-
-            int px = bx0;
-            while (px <= bx1) {
+            int            dirty_base = ry * s_ov_w;
+            uint8_t       *row_fb    = fb           + (size_t)py * fb_w * 3;
+            const uint8_t *row_bg    = s_overlay_bg + (size_t)py * fb_w * 3;
+            for (int px = bx0; px <= bx1; px++) {
                 int rx = px - s_ov_off_x;
-                if ((unsigned)rx >= (unsigned)s_ov_w) { px++; continue; }
-
-                int bit_idx = dirty_base + rx;
-                if (!(s_dirty_bits[bit_idx >> 3] & (uint8_t)(1u << (bit_idx & 7)))) {
-                    px++;
-                    continue;
-                }
-
-                // Dirty pixel found — extend the run. 
-                int run_start = px;
-                while (px <= bx1) {
-                    int rxi = px - s_ov_off_x;
-                    if ((unsigned)rxi >= (unsigned)s_ov_w) break;
-                    int bi = dirty_base + rxi;
-                    if (!(s_dirty_bits[bi >> 3] & (uint8_t)(1u << (bi & 7)))) break;
-                    s_dirty_bits[bi >> 3] &= (uint8_t)~(1u << (bi & 7)); // clear 
-                    px++;
-                }
-                // Sequential memcpy for this dirty run.
-                int run3 = (px - run_start) * 3;
-                memcpy(row_fb + run_start * 3,
-                       s_overlay_bg + ((size_t)py * fb_w + run_start) * 3,
-                       (size_t)run3);
+                if ((unsigned)rx >= (unsigned)s_ov_w) continue;
+                int     bit_idx = dirty_base + rx;
+                uint8_t *byte   = &s_dirty_bits[bit_idx >> 3];
+                uint8_t  mask   = (uint8_t)(1u << (bit_idx & 7));
+                if (!(*byte & mask)) continue;
+                *byte &= ~mask;
+                const uint8_t *src = row_bg  + px * 3;
+                uint8_t       *dst = row_fb  + px * 3;
+                dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
             }
         }
     } else 
-    */
+        
     if (s_overlay_bg) {
         /* Fast fallback: one memcpy per row, full bounding-box width. */
         int span3 = (bx1 - bx0 + 1) * 3;

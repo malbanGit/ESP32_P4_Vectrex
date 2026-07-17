@@ -20,7 +20,7 @@
 extern char *cartName;
 extern long cartSize;
 
-#define MAX_CART_SIZE    32768 // for now! (256*1024)
+#define MAX_CART_SIZE    32768*2 // for now! (256*1024)
 extern DRAM_ATTR unsigned char cartData[MAX_CART_SIZE];
 
 

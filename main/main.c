@@ -1200,4 +1200,7 @@ extern int SCREEN_HEIGHT;
         &s_rend_tcb,
         0
     );
+
+    printf("Free internal DRAM: %d bytes\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    printf("Largest free DRAM block: %d bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));    
 }
