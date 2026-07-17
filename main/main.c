@@ -96,7 +96,8 @@ DRAM_ATTR static int LCD_H_RES = 1280;
 DRAM_ATTR static int LCD_V_RES = 720;
 //hdmi 1280x720
 //vdsl 480x800
-static uint8_t *s_overlay = NULL;
+static uint8_t *s_overlay    = NULL;
+uint8_t        *s_overlay_bg = NULL;   /* precomputed RGB888 overlay-over-black */
 
 // ----------------------------------------------------
 // Types
@@ -859,12 +860,9 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
     if (img_h <= 0 || img_h > LCD_V_RES) img_h = LCD_V_RES;
 
-    /* free previous overlay */
-    if (s_overlay != NULL)
-    {
-        heap_caps_free(s_overlay);
-        s_overlay = NULL;
-    }
+    /* free previous overlay buffers */
+    if (s_overlay != NULL)    { heap_caps_free(s_overlay);    s_overlay    = NULL; }
+    if (s_overlay_bg != NULL) { heap_caps_free(s_overlay_bg); s_overlay_bg = NULL; }
 
     /* allocate full-screen BGRA overlay buffer in PSRAM (4 bytes/pixel) */
     size_t buf_sz = (size_t)LCD_H_RES * LCD_V_RES * 4;
@@ -913,6 +911,34 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     }
 
     heap_caps_free(scaled);
+
+    /* Build precomputed RGB888 background (overlay-over-black).
+     * undraw_line_rgb888_overlay restores from this — no per-pixel alpha
+     * math in the hot path, just two memcpys per bounding-box row.        */
+    size_t bg_sz = (size_t)LCD_H_RES * LCD_V_RES * 3;
+    s_overlay_bg = heap_caps_malloc(bg_sz, MALLOC_CAP_SPIRAM);
+    if (s_overlay_bg) {
+        const uint8_t *src = s_overlay;
+        uint8_t       *dst = s_overlay_bg;
+        int total = LCD_H_RES * LCD_V_RES;
+        for (int i = 0; i < total; i++, src += 4, dst += 3) {
+            uint8_t a = src[3];
+            if (a == 0) {
+                dst[0] = dst[1] = dst[2] = 0;
+            } else if (a == 255) {
+                dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
+            } else {
+                int ea = (int)a + alphaAdjust;
+                if (ea <= 0) { dst[0] = dst[1] = dst[2] = 0; }
+                else {
+                    if (ea > 255) ea = 255;
+                    dst[0] = (uint8_t)((src[0] * ea) >> 8);
+                    dst[1] = (uint8_t)((src[1] * ea) >> 8);
+                    dst[2] = (uint8_t)((src[2] * ea) >> 8);
+                }
+            }
+        }
+    }
 
     drawOverlay(s_fb_front);
     drawOverlay(s_fb_back);

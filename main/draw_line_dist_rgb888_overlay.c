@@ -22,6 +22,7 @@ static DRAM_ATTR uint8_t s_ov_row[OV_ROW_MAX * 4];
 extern int           g_line_glow;          /* draw_line_dist_rgb888.c */
 extern const uint8_t gauss_lut[];          /* draw_line_dist_rgb888.c */
 extern int           alphaAdjust;          /* main.c                  */
+extern uint8_t      *s_overlay_bg;         /* main.c — RGB888 overlay-over-black */
 
 /* ── Constants matching draw_line_dist_rgb888.c ────────────────────────── */
 #define GAUSS_SHIFT    14
@@ -178,37 +179,46 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
     int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
 
-    int ov_span = bx1 - bx0 + 1;
+    int ov_span  = bx1 - bx0 + 1;
+    int span3    = ov_span * 3;
 
-    for (int py = by0; py <= by1; py++) {
-        memcpy(s_ov_row,
-               overlay + ((size_t)py * fb_w + bx0) * 4,
-               (size_t)ov_span * 4);
-        uint8_t *row_fb = fb + (size_t)py * fb_w * 3;
+    if (s_overlay_bg) {
+        /* Fast path: precomputed RGB888 background available.
+         * Two memcpys per row — no per-pixel logic at all.                */
+        for (int py = by0; py <= by1; py++) {
+            memcpy(s_ov_row,
+                   s_overlay_bg + ((size_t)py * fb_w + bx0) * 3,
+                   (size_t)span3);
+            memcpy(fb + ((size_t)py * fb_w + bx0) * 3,
+                   s_ov_row,
+                   (size_t)span3);
+        }
+    } else {
+        /* Fallback: compute from BGRA overlay (alphaAdjust applied). */
+        for (int py = by0; py <= by1; py++) {
+            memcpy(s_ov_row,
+                   overlay + ((size_t)py * fb_w + bx0) * 4,
+                   (size_t)ov_span * 4);
+            uint8_t *row_fb = fb + (size_t)py * fb_w * 3;
 
-        for (int px = bx0; px <= bx1; px++) {
-            const uint8_t *ov  = s_ov_row + (px - bx0) * 4;   /* B G R A */
-            uint8_t       *dst = row_fb + px * 3;
-            uint8_t        a   = ov[3];
+            for (int px = bx0; px <= bx1; px++) {
+                const uint8_t *ov  = s_ov_row + (px - bx0) * 4;
+                uint8_t       *dst = row_fb + px * 3;
+                uint8_t        a   = ov[3];
 
-            if (a == 0) {
-                /* fully transparent: restore black */
-                dst[0] = dst[1] = dst[2] = 0;
-            } else if (a == 255) {
-                /* fully opaque: restore overlay colour directly */
-                dst[0] = ov[0];
-                dst[1] = ov[1];
-                dst[2] = ov[2];
-            } else {
-                /* semi-transparent: apply alphaAdjust, render over black */
-                int ea = (int)a + alphaAdjust;
-                if (ea <= 0) {
+                if (a == 0) {
                     dst[0] = dst[1] = dst[2] = 0;
+                } else if (a == 255) {
+                    dst[0] = ov[0]; dst[1] = ov[1]; dst[2] = ov[2];
                 } else {
-                    if (ea > 255) ea = 255;
-                    dst[0] = (uint8_t)((ov[0] * ea) >> 8);
-                    dst[1] = (uint8_t)((ov[1] * ea) >> 8);
-                    dst[2] = (uint8_t)((ov[2] * ea) >> 8);
+                    int ea = (int)a + alphaAdjust;
+                    if (ea <= 0) { dst[0] = dst[1] = dst[2] = 0; }
+                    else {
+                        if (ea > 255) ea = 255;
+                        dst[0] = (uint8_t)((ov[0] * ea) >> 8);
+                        dst[1] = (uint8_t)((ov[1] * ea) >> 8);
+                        dst[2] = (uint8_t)((ov[2] * ea) >> 8);
+                    }
                 }
             }
         }
