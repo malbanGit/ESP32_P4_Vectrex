@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 #include <string.h>
-
+#include "esp_attr.h"
 /* Default glow radius used by the wrapper functions (overlay_line_rgb888.c etc.)
  * when they call draw_line_asm_rgb888 without a glow argument.
  * Override from main.c or elsewhere:  g_line_glow = 3;
@@ -33,7 +33,7 @@ extern int g_line_glow;
 #define GAUSS_SHIFT 14
 #define GAUSS_LUT_SIZE 178
 
-const uint8_t gauss_lut[GAUSS_LUT_SIZE] = {
+ const DRAM_ATTR uint8_t gauss_lut[GAUSS_LUT_SIZE] = {
     255, 247, 240, 232, 225, 218, 211, 205, 199, 192, 187, 181, 175, 170, 165, 160,
     155, 150, 145, 141, 136, 132, 128, 124, 120, 117, 113, 110, 106, 103, 100,  97,
      94,  91,  88,  85,  83,  80,  78,  75,  73,  71,  69,  67,  64,  62,  61,  59,

@@ -114,12 +114,6 @@ DRAM_ATTR int      s_ov_off_y = 0;             /* active region y offset   */
 DRAM_ATTR int      s_ov_w     = 0;             /* active region width      */
 DRAM_ATTR int      s_ov_h     = 0;             /* active region height     */
 
-/* ── Dirty-pixel bitfield (undraw optimisation) ───────────────────────────── *
- * One bit per pixel of the active region.  Set by draw, cleared by undraw.
- * Allocated from internal DRAM heap at load time (~50 KB for 564×720).    */
-uint8_t *s_dirty_bits   = NULL;   /* points to current back buffer's bitfield */
-uint8_t *s_dirty_bits_0 = NULL;   /* bitfield for framebuffer 0 */
-uint8_t *s_dirty_bits_1 = NULL;   /* bitfield for framebuffer 1 */
 // ----------------------------------------------------
 // Types
 // ----------------------------------------------------
@@ -749,8 +743,6 @@ IRAM_ATTR static void renderer_task(void *arg)
         int tmp_idx      = s_front_fb_index;
         s_front_fb_index = s_back_fb_index;
         s_back_fb_index  = tmp_idx;
-        /* Swap dirty-bit pointer to match the new back buffer. */
-        s_dirty_bits = (s_back_fb_index == 0) ? s_dirty_bits_0 : s_dirty_bits_1;
         
         // Present new front buffer
         ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(
@@ -895,9 +887,7 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     if (s_overlay != NULL)    { heap_caps_free(s_overlay);    s_overlay    = NULL; }
     if (s_overlay_bg != NULL) { heap_caps_free(s_overlay_bg); s_overlay_bg = NULL; }
     if (s_overlay_pal != NULL){ heap_caps_free(s_overlay_pal);s_overlay_pal= NULL; }
-    if (s_dirty_bits_0 != NULL) { heap_caps_free(s_dirty_bits_0); s_dirty_bits_0 = NULL; }
-    if (s_dirty_bits_1 != NULL) { heap_caps_free(s_dirty_bits_1); s_dirty_bits_1 = NULL; }
-    s_dirty_bits = NULL;    s_overlay_pal_n = 0;
+    s_overlay_pal_n = 0;
     s_ov_w = 0;
 
     /* allocate full-screen BGRA overlay buffer in PSRAM (4 bytes/pixel) */
@@ -1047,22 +1037,7 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         }
         ESP_LOGI(TAG, "overlay pal: %d colours, alpha_val=%d", s_overlay_pal_n, s_overlay_alpha_val);
     }
-
-    /* ── Allocate dirty-pixel bitfield from internal DRAM heap ─────────── */
-    size_t dirty_sz = ((size_t)img_w * img_h + 7) / 8;
-    s_dirty_bits_0 = heap_caps_malloc(dirty_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    s_dirty_bits_1 = heap_caps_malloc(dirty_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (s_dirty_bits_0 && s_dirty_bits_1) {
-        memset(s_dirty_bits_0, 0, dirty_sz);
-        memset(s_dirty_bits_1, 0, dirty_sz);
-        s_dirty_bits = s_dirty_bits_0;
-        ESP_LOGI(TAG, "dirty bits: 2 x %u bytes in DRAM", (unsigned)dirty_sz);
-    } else {
-        if (s_dirty_bits_0) { heap_caps_free(s_dirty_bits_0); s_dirty_bits_0 = NULL; }
-        if (s_dirty_bits_1) { heap_caps_free(s_dirty_bits_1); s_dirty_bits_1 = NULL; }
-        s_dirty_bits = NULL;
-        ESP_LOGW(TAG, "dirty bits alloc failed — undraw uses full bbox");
-    }
+    
     drawOverlay(s_fb_front);
     drawOverlay(s_fb_back);
 

@@ -8,10 +8,9 @@
  *           stays in L1 cache).  Falls back to the original 4-byte BGRA
  *           read if s_overlay_pal is NULL.
  *
- *  UNDRAW — uses s_dirty_bits (DRAM bitfield) to restore only the pixels
- *           that were actually written during draw, skipping bounding-box
+ *  UNDRAW — skipping bounding-box
  *           pixels where glow contribution was zero.  Falls back to the
- *           full-row memcpy when s_dirty_bits is NULL.
+ *           full-row memcpy 
  */
 
 #include <stdint.h>
@@ -36,9 +35,6 @@ extern int      s_ov_off_x;
 extern int      s_ov_off_y;
 extern int      s_ov_w;
 extern int      s_ov_h;
-
-/* Dirty-pixel bitfield */
-extern uint8_t *s_dirty_bits;           /* DRAM: 1 bit/pixel, active region   */
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 #define GAUSS_SHIFT    14
@@ -117,14 +113,12 @@ IRAM_ATTR void draw_line_rgb888_overlay(
         int cross = cross_row;
         int dot   = dot_row;
 
-        /* Row pointers for palette and dirty-bits paths. */
+        /* Row pointers for palette and */
         int            ry         = py - s_ov_off_y;
         const uint8_t *row_pal    = NULL;
-        int            dirty_base = -1;
 
         if (use_pal && (unsigned)ry < (unsigned)s_ov_h) {
             row_pal    = s_overlay_pal + (size_t)ry * s_ov_w - s_ov_off_x;
-            dirty_base = ry * s_ov_w;  /* bit_idx = dirty_base + rx */
         }
 
         /* Fallback: original BGRA overlay row. */
@@ -184,12 +178,6 @@ IRAM_ATTR void draw_line_rgb888_overlay(
                 v = dst[1] + ((g_col * contrib) >> 8); dst[1] = (uint8_t)(v > 255 ? 255 : v);
                 v = dst[2] + ((r_col * contrib) >> 8); dst[2] = (uint8_t)(v > 255 ? 255 : v);
 
-                /* Mark pixel dirty (DRAM bit op — fast). */
-                if (s_dirty_bits && dirty_base >= 0) {
-                    int rx2 = px - s_ov_off_x;
-                    int bit_idx = dirty_base + rx2;
-                    s_dirty_bits[bit_idx >> 3] |= (uint8_t)(1u << (bit_idx & 7));
-                }
             }
 
         px_next:
@@ -220,28 +208,6 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
     int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
 
-    if (s_dirty_bits && s_overlay_pal && s_overlay_bg) {
-        for (int py = by0; py <= by1; py++) {
-            int ry = py - s_ov_off_y;
-            if ((unsigned)ry >= (unsigned)s_ov_h) continue;
-            int            dirty_base = ry * s_ov_w;
-            uint8_t       *row_fb    = fb           + (size_t)py * fb_w * 3;
-            const uint8_t *row_bg    = s_overlay_bg + (size_t)py * fb_w * 3;
-            for (int px = bx0; px <= bx1; px++) {
-                int rx = px - s_ov_off_x;
-                if ((unsigned)rx >= (unsigned)s_ov_w) continue;
-                int     bit_idx = dirty_base + rx;
-                uint8_t *byte   = &s_dirty_bits[bit_idx >> 3];
-                uint8_t  mask   = (uint8_t)(1u << (bit_idx & 7));
-                if (!(*byte & mask)) continue;
-                *byte &= ~mask;
-                const uint8_t *src = row_bg  + px * 3;
-                uint8_t       *dst = row_fb  + px * 3;
-                dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
-            }
-        }
-    } else 
-        
     if (s_overlay_bg) {
         /* Fast fallback: one memcpy per row, full bounding-box width. */
         int span3 = (bx1 - bx0 + 1) * 3;

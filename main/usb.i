@@ -57,12 +57,12 @@ typedef struct {
 
 
 // Speichert den Zustand ALLER HID-Keys (0..255)
-DRAM_ATTR static volatile bool key_state[KBD_MAX_KEYS];
+static volatile bool key_state[KBD_MAX_KEYS];
 // Speichert Modifier-Flags
-DRAM_ATTR static volatile uint8_t key_modifiers = 0;
+static volatile uint8_t key_modifiers = 0;
 
 // Scancode -> ASCII (ohne Funktionstasten usw.)
-DRAM_ATTR static const uint8_t keycode2ascii[57][2] = {
+static const uint8_t keycode2ascii[57][2] = {
     {0, 0}, /* HID_KEY_NO_PRESS        */
     {0, 0}, /* HID_KEY_ROLLOVER        */
     {0, 0}, /* HID_KEY_POST_FAIL       */
@@ -122,13 +122,13 @@ DRAM_ATTR static const uint8_t keycode2ascii[57][2] = {
     {'/', '?'}       /* SLASH                     */
 };
 
-IRAM_ATTR static inline bool kbd_is_shift(uint8_t modifier)
+ static inline bool kbd_is_shift(uint8_t modifier)
 {
     return ((modifier & HID_LEFT_SHIFT)  == HID_LEFT_SHIFT) ||
            ((modifier & HID_RIGHT_SHIFT) == HID_RIGHT_SHIFT);
 }
 
-IRAM_ATTR static inline bool kbd_scancode_to_char(uint8_t modifier,
+ static inline bool kbd_scancode_to_char(uint8_t modifier,
                                         uint8_t key_code,
                                         unsigned char *out_char)
 {
@@ -140,7 +140,7 @@ IRAM_ATTR static inline bool kbd_scancode_to_char(uint8_t modifier,
     return (*out_char != 0);
 }
 
-IRAM_ATTR static inline void kbd_print_char(unsigned char c)
+ static inline void kbd_print_char(unsigned char c)
 {
     if (!c) return;
 
@@ -156,7 +156,7 @@ IRAM_ATTR static inline void kbd_print_char(unsigned char c)
 // ---------------------------------------------------------
 // Keyboard-Report-Callback (pro HID-Report vom Keyboard)
 // ---------------------------------------------------------
-IRAM_ATTR static void kbd_report_callback(const uint8_t *data, int length)
+ static void kbd_report_callback(const uint8_t *data, int length)
 {
     if (length < (int)sizeof(hid_keyboard_input_report_boot_t)) {
         return;
@@ -210,7 +210,7 @@ if (kbd_scancode_to_char(kb->modifier.val, new_key, &ch))  kbd_print_char(ch);
 // Wir interessieren uns nur für KEYBOARD.
 // ---------------------------------------------------------
 
-IRAM_ATTR static void hid_interface_callback(hid_host_device_handle_t hid_dev,
+ static void hid_interface_callback(hid_host_device_handle_t hid_dev,
                                    const hid_host_interface_event_t event,
                                    void *arg)
 {
@@ -258,7 +258,7 @@ IRAM_ATTR static void hid_interface_callback(hid_host_device_handle_t hid_dev,
 // HID-Device-Callback (Connection / Disconnection)
 // ---------------------------------------------------------
 
-IRAM_ATTR static void hid_device_event_handler(hid_host_device_handle_t hid_dev,
+ static void hid_device_event_handler(hid_host_device_handle_t hid_dev,
                                      const hid_host_driver_event_t event,
                                      void *arg)
 {
@@ -278,7 +278,7 @@ IRAM_ATTR static void hid_device_event_handler(hid_host_device_handle_t hid_dev,
 }
 
 // Wird im Keyboard-Task aufgerufen
-IRAM_ATTR static void kbd_handle_device_event(const kbd_hid_evt_t *evt)
+ static void kbd_handle_device_event(const kbd_hid_evt_t *evt)
 {
     hid_host_dev_params_t params;
     ESP_ERROR_CHECK(hid_host_device_get_params(evt->handle, &params));
@@ -323,7 +323,7 @@ IRAM_ATTR static void kbd_handle_device_event(const kbd_hid_evt_t *evt)
 // Keyboard-Event-Task: verarbeitet HID-Device-Events aus der Queue
 // ---------------------------------------------------------
 
-IRAM_ATTR static void usb_keyboard_task(void *arg)
+ static void usb_keyboard_task(void *arg)
 {
     (void)arg;
     kbd_hid_evt_t evt;
@@ -337,7 +337,7 @@ IRAM_ATTR static void usb_keyboard_task(void *arg)
     }
 }
 
-IRAM_ATTR static void usb_host_event_task(void *arg)
+ static void usb_host_event_task(void *arg)
 {
     (void)arg;
     uint32_t event_flags;
@@ -351,13 +351,13 @@ IRAM_ATTR static void usb_host_event_task(void *arg)
     }
 }
 
-IRAM_ATTR bool isKeyDown(uint8_t hid_code)
+ bool isKeyDown(uint8_t hid_code)
 {
     // if (hid_code >= KBD_MAX_KEYS) return false;
     return key_state[hid_code];
 }
 
-IRAM_ATTR bool isAsciiDown(char c)
+ bool isAsciiDown(char c)
 {
     // case-insensitive
     if (c >= 'A' && c <= 'Z') c = c + 32;
@@ -372,15 +372,15 @@ IRAM_ATTR bool isAsciiDown(char c)
 }
 
 // Modifier-Abfragen
-IRAM_ATTR bool isShiftDown(void)
+ bool isShiftDown(void)
 {
     return (key_modifiers & (HID_LEFT_SHIFT | HID_RIGHT_SHIFT)) != 0;
 }
-IRAM_ATTR bool isCtrlDown(void)
+ bool isCtrlDown(void)
 {
     return (key_modifiers & (HID_LEFT_CONTROL | HID_RIGHT_CONTROL)) != 0;
 }
-IRAM_ATTR bool isAltDown(void)
+ bool isAltDown(void)
 {
     return (key_modifiers & (HID_LEFT_ALT | HID_RIGHT_ALT)) != 0;
 }

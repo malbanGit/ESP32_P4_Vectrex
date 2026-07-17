@@ -70,7 +70,7 @@ DRAM_ATTR int reg14Out = 0xff;
 DRAM_ATTR static int SAMPLE_THRESHOLD = 25;
 DRAM_ATTR static int digitByteCounter =0;       
 
-#define MAX_DIGIT_BUFFER 10000
+#define MAX_DIGIT_BUFFER 5000
 DRAM_ATTR static int digitByte[MAX_DIGIT_BUFFER];
 
 DRAM_ATTR int tickpos=0;

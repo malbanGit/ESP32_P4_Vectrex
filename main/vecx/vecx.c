@@ -6,7 +6,8 @@
 #include "e6809.h"
 #include "e8910.h"
 #include "vecx.h"
-#include "system.h"
+//#include "system.h"
+#include "skip.h"
 
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
@@ -20,7 +21,7 @@
 extern char *cartName;
 extern long cartSize;
 
-#define MAX_CART_SIZE    32768*2 // for now! (256*1024)
+#define MAX_CART_SIZE    8192 //32768 // for now! (256*1024)
 extern DRAM_ATTR unsigned char cartData[MAX_CART_SIZE];
 
 
@@ -249,7 +250,8 @@ void vecx_emu (long cycles);
 #include "usb/hid_usage_keyboard.h"
 
 
-IRAM_ATTR static einline void readevents()
+//IRAM_ATTR 
+static einline void readevents()
 {
 	// Public API:
 	extern IRAM_ATTR bool isKeyDown(uint8_t hid_code);
@@ -595,7 +597,7 @@ static inline __attribute__((always_inline, hot)) unsigned char makeUnsigned(sig
 // assuming
 // 64k carts are two banks of 32k
 // 256k carts (VB) are 4 banks of 64k
-void setBank()
+IRAM_ATTR void setBank()
 {
 	currentBank = 0;
 	if (BANK_MAX == 1) return;
@@ -608,7 +610,7 @@ void setBank()
 		if (currentIRQ) currentBank+=2;
 	}
 }
-void setPB6FromVectrex(int tobe_via_orb, int  tobe_via_ddrb, int orbInitiated)
+IRAM_ATTR void setPB6FromVectrex(int tobe_via_orb, int  tobe_via_ddrb, int orbInitiated)
 {
 	if (BANK_MAX <= 1) return;
 
@@ -627,7 +629,7 @@ void setPB6FromExternal(int b)
 
 }
 	
-void setIRQFromVectrex(int irq)
+IRAM_ATTR void setIRQFromVectrex(int irq)
 {
 	if (BANK_MAX <= 2) return;
 	currentIRQ = !irq;
