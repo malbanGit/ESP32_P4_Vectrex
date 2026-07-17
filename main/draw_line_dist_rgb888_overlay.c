@@ -12,12 +12,6 @@
 #include "esp_attr.h"
 #include "draw_line_dist_rgb888_overlay.h"
 
-/* One overlay row cached in IRAM so the inner loop never reads PSRAM directly.
- * Sized for the maximum supported framebuffer width (1920 × 4 bytes = 7680 B).
- * Both functions run on core 0 only, so a single static buffer is safe.      */
-#define OV_ROW_MAX 1920
-static DRAM_ATTR uint8_t s_ov_row[OV_ROW_MAX * 4];
-
 /* ── Shared globals ────────────────────────────────────────────────────── */
 extern int           g_line_glow;          /* draw_line_dist_rgb888.c */
 extern const uint8_t gauss_lut[];          /* draw_line_dist_rgb888.c */
@@ -34,16 +28,12 @@ static inline int iclamp(int v, int lo, int hi)
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-/* Same formula as gauss_scale() in draw_line_dist_rgb888.c:
- *   gauss_scale * glow_r2 >> GAUSS_SHIFT == 177
- *   → gauss_scale = 177 << GAUSS_SHIFT / glow_r2                         */
 static inline uint32_t gs_for_glow(int glow_r)
 {
     int gr2 = glow_r * glow_r;
     return (gr2 == 0) ? 0u : (uint32_t)((177u << GAUSS_SHIFT) / (uint32_t)gr2);
 }
 
-/* Effective alpha after alphaAdjust (only modifies semi-transparent pixels). */
 static inline int effective_alpha(uint8_t raw_a)
 {
     if (raw_a == 0 || raw_a == 255) return raw_a;
@@ -51,10 +41,8 @@ static inline int effective_alpha(uint8_t raw_a)
     return iclamp(ea, 0, 255);
 }
 
-/* Distance² in Q16 (i.e. actual_d² * 65536) for a cap endpoint.           */
 static inline uint32_t cap_d2_q16(int apx, int apy)
 {
-    /* (apx<<8)² + (apy<<8)² — safe for |apx|,|apy| ≤ beam_r+glow ≤ ~16  */
     uint32_t ax = (uint32_t)(apx << 8);
     uint32_t ay = (uint32_t)(apy << 8);
     return ax * ax + ay * ay;
@@ -85,62 +73,51 @@ IRAM_ATTR void draw_line_rgb888_overlay(
     int dy   = y1 - y0;
     int len2 = dx * dx + dy * dy;
 
-    uint32_t beam_r2_q16 = cap_d2_q16(beam_r, 0);          /* (beam_r<<8)² */
+    uint32_t beam_r2_q16 = cap_d2_q16(beam_r, 0);
     uint32_t gs           = gs_for_glow(glow);
     uint32_t inv_len2     = (len2 > 0)
                           ? (uint32_t)(0xFFFFFFFFULL / (uint32_t)len2)
                           : 0u;
 
-    /* Incremental cross / dot at (bx0, by0) */
     int cross_row = dx * (by0 - y0) - dy * (bx0 - x0);
     int dot_row   = (bx0 - x0) * dx + (by0 - y0) * dy;
 
-    int ov_span = bx1 - bx0 + 1;   /* pixels to copy per row */
-
     for (int py = by0; py <= by1; py++) {
-        int            cross   = cross_row;
-        int            dot     = dot_row;
-        /* Copy the needed overlay span from PSRAM into IRAM once per row. */
-        memcpy(s_ov_row,
-               overlay + ((size_t)py * fb_w + bx0) * 4,
-               (size_t)ov_span * 4);
-        uint8_t        *row_fb = fb + (size_t)py * fb_w * 3;
+        int            cross  = cross_row;
+        int            dot    = dot_row;
+        const uint8_t *row_ov = overlay + ((size_t)py * fb_w + bx0) * 4;
+        uint8_t       *row_fb = fb      + (size_t)py * fb_w * 3;
 
         for (int px = bx0; px <= bx1; px++) {
-            const uint8_t *ov = s_ov_row + (px - bx0) * 4;   /* B G R A */
+            const uint8_t *ov = row_ov + (px - bx0) * 4;   /* B G R A */
 
-            /* ── Alpha gate: skip if overlay is opaque ── */
             int ea = effective_alpha(ov[3]);
             if (ea >= 255) goto px_next;
 
             {
-                /* ── Distance² in Q16 ── */
                 uint32_t d2_q16;
                 if (len2 == 0 || dot <= 0) {
                     d2_q16 = cap_d2_q16(px - x0, py - y0);
                 } else if (dot >= len2) {
                     d2_q16 = cap_d2_q16(px - x1, py - y1);
                 } else {
-                    /* interior: d2_q16 = cross² * inv_len2 >> 16 */
-                    int64_t  c2   = (int64_t)cross * cross;
+                    int64_t c2 = (int64_t)cross * cross;
                     d2_q16 = (uint32_t)(((uint64_t)c2 * inv_len2) >> 16);
                 }
 
-                /* ── Beam / glow → contrib ── */
                 int contrib;
                 if (d2_q16 <= beam_r2_q16) {
                     contrib = brightness;
                 } else if (gs == 0) {
                     goto px_next;
                 } else {
-                    uint32_t glow_d2  = d2_q16 - beam_r2_q16;
-                    uint32_t lut_idx  = (uint32_t)(((uint64_t)glow_d2 * gs) >> 30);
+                    uint32_t glow_d2 = d2_q16 - beam_r2_q16;
+                    uint32_t lut_idx = (uint32_t)(((uint64_t)glow_d2 * gs) >> 30);
                     if (lut_idx >= GAUSS_LUT_SIZE) goto px_next;
                     contrib = (brightness * (int)gauss_lut[lut_idx]) >> 8;
                     if (contrib == 0) goto px_next;
                 }
 
-                /* ── Write: dst += overlay_bgr * contrib / 255 (saturating) ── */
                 uint8_t *dst = row_fb + px * 3;
                 int v;
                 v = dst[0] + ((ov[0] * contrib) >> 8); dst[0] = (uint8_t)(v > 255 ? 255 : v);
@@ -158,9 +135,6 @@ IRAM_ATTR void draw_line_rgb888_overlay(
 
 /* ════════════════════════════════════════════════════════════════════════
  * undraw_line_rgb888_overlay
- *
- * For each pixel in the bounding box, restore the overlay-over-black
- * rendering (destination is treated as black — no read of the framebuffer).
  * ════════════════════════════════════════════════════════════════════════ */
 IRAM_ATTR void undraw_line_rgb888_overlay(
         uint8_t *fb, int fb_w, int fb_h,
@@ -179,30 +153,24 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
     int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
     int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
 
-    int ov_span  = bx1 - bx0 + 1;
-    int span3    = ov_span * 3;
+    int span3 = (bx1 - bx0 + 1) * 3;
 
     if (s_overlay_bg) {
-        /* Fast path: precomputed RGB888 background available.
-         * Two memcpys per row — no per-pixel logic at all.                */
+        /* Fast path: one memcpy per row directly from precomputed RGB888. */
         for (int py = by0; py <= by1; py++) {
-            memcpy(s_ov_row,
+            memcpy(fb          + ((size_t)py * fb_w + bx0) * 3,
                    s_overlay_bg + ((size_t)py * fb_w + bx0) * 3,
-                   (size_t)span3);
-            memcpy(fb + ((size_t)py * fb_w + bx0) * 3,
-                   s_ov_row,
                    (size_t)span3);
         }
     } else {
         /* Fallback: compute from BGRA overlay (alphaAdjust applied). */
+        int ov_span = bx1 - bx0 + 1;
         for (int py = by0; py <= by1; py++) {
-            memcpy(s_ov_row,
-                   overlay + ((size_t)py * fb_w + bx0) * 4,
-                   (size_t)ov_span * 4);
-            uint8_t *row_fb = fb + (size_t)py * fb_w * 3;
+            const uint8_t *row_ov = overlay + ((size_t)py * fb_w + bx0) * 4;
+            uint8_t       *row_fb = fb      + (size_t)py * fb_w * 3;
 
             for (int px = bx0; px <= bx1; px++) {
-                const uint8_t *ov  = s_ov_row + (px - bx0) * 4;
+                const uint8_t *ov  = row_ov + (px - bx0) * 4;
                 uint8_t       *dst = row_fb + px * 3;
                 uint8_t        a   = ov[3];
 
