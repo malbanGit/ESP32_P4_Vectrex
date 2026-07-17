@@ -1,8 +1,11 @@
+// NEW
+
+//#define PROFILING 1
+
 #include <stdio.h>
 #include "e6809.h"
 #include "e8910.h"
 #include "vecx.h"
-#include "cart.h"
 #include "system.h"
 
 #include "esp_attr.h"
@@ -14,6 +17,17 @@
 
 #define einline __inline
 
+extern char *cartName;
+extern long cartSize;
+
+#define MAX_CART_SIZE    32768 // for now! (256*1024)
+extern DRAM_ATTR unsigned char cartData[MAX_CART_SIZE];
+
+
+
+DRAM_ATTR static long xChange = 0;
+DRAM_ATTR static long rChange = 0;
+
 DRAM_ATTR static long cyclesRunning = 0;
 DRAM_ATTR static int thisWaitRecal = 0;
 DRAM_ATTR static long lastWaitRecal=0;
@@ -24,7 +38,7 @@ DRAM_ATTR static int config_autoSync = 1;
 DRAM_ATTR static int sig_ramp = 0; 
 DRAM_ATTR static int sig_blank = 0; // moved out of emu_loop for lightpen access
 DRAM_ATTR static int sig_zero = 0;
-DRAM_ATTR static int alternate = 0;
+DRAM_ATTR static uint8_t alternate = 0;
 DRAM_ATTR static int currentBank = 0;
 DRAM_ATTR static int currentIRQ = 1;
 DRAM_ATTR static int currentPB6 = 1;
@@ -33,19 +47,15 @@ DRAM_ATTR static int pb6_out = 0x40; // out from vectrex
 DRAM_ATTR static int BANK_MAX = 1;
 //void timerAddItem(int value, void *destination, int t);
 
-
-
 #define EMU_TIMER 20 /* the emulators heart beats at 20 milliseconds */
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 1280
+int SCREEN_WIDTH=800;
+int SCREEN_HEIGHT=1280;
 
 DRAM_ATTR static long scl_factorx;
 DRAM_ATTR static long scl_factory;
 DRAM_ATTR static long offx;
 DRAM_ATTR static long offy;
 
-//static char *romfilename = "rom.dat";
-DRAM_ATTR static char *cartfilename = NULL;
 
 //unsigned char rom[8192];
 DRAM_ATTR unsigned char *rom = (unsigned char *)bios_data;
@@ -64,27 +74,27 @@ DRAM_ATTR static unsigned via_ddra;
 DRAM_ATTR static unsigned via_ddrb;
 DRAM_ATTR static unsigned via_t1on;  /* is timer 1 on? */
 DRAM_ATTR static unsigned via_t1int; /* are timer 1 interrupts allowed? */
-DRAM_ATTR static unsigned via_t1c;
-DRAM_ATTR static unsigned via_t1ll;
-DRAM_ATTR static unsigned via_t1lh;
+DRAM_ATTR static uint16_t via_t1c;
+DRAM_ATTR static uint8_t  via_t1ll;
+DRAM_ATTR static uint8_t  via_t1lh;
 DRAM_ATTR static unsigned via_t1pb7; /* timer 1 controlled version of pb7 */
 DRAM_ATTR static unsigned via_t2on;  /* is timer 2 on? */
 DRAM_ATTR static unsigned via_t2int; /* are timer 2 interrupts allowed? */
-DRAM_ATTR static unsigned via_t2c;
-DRAM_ATTR static unsigned via_t2ll;
-DRAM_ATTR static unsigned via_sr;
-DRAM_ATTR static unsigned via_srb;   /* number of bits shifted so far */
-DRAM_ATTR static unsigned via_src;   /* shift counter */
-DRAM_ATTR static unsigned via_srclk;
-DRAM_ATTR static unsigned via_acr;
-DRAM_ATTR static unsigned via_pcr;
-DRAM_ATTR static unsigned via_ifr;
-DRAM_ATTR static unsigned via_ier;
-DRAM_ATTR static unsigned old_via_ca1;
-DRAM_ATTR static unsigned via_ca1;
-DRAM_ATTR static unsigned via_ca2;
-DRAM_ATTR static unsigned via_cb2h;  /* basic handshake version of cb2 */
-DRAM_ATTR static unsigned via_cb2s;  /* version of cb2 controlled by the shift register */
+DRAM_ATTR static uint16_t via_t2c;
+DRAM_ATTR static uint8_t via_t2ll;
+DRAM_ATTR static uint8_t via_sr;
+DRAM_ATTR static uint8_t via_srb;   /* number of bits shifted so far */
+DRAM_ATTR static uint8_t via_src;   /* shift counter */
+DRAM_ATTR static uint8_t via_srclk;
+DRAM_ATTR static uint8_t via_acr;
+DRAM_ATTR static uint8_t via_pcr;
+DRAM_ATTR static uint8_t via_ifr;
+DRAM_ATTR static uint8_t via_ier;
+DRAM_ATTR static uint8_t old_via_ca1;
+DRAM_ATTR static uint8_t via_ca1;
+DRAM_ATTR static uint8_t via_ca2;
+DRAM_ATTR static uint8_t via_cb2h;  /* basic handshake version of cb2 */
+DRAM_ATTR static uint8_t via_cb2s;  /* version of cb2 controlled by the shift register */
 
 /* analog devices */
 
@@ -114,7 +124,7 @@ enum {
 
 	/* number of 6809 cycles before a frame redraw */
 
-	FCYCLES_INIT    = VECTREX_MHZ / VECTREX_PDECAY,
+	FCYCLES_INIT    = 30000,//VECTREX_MHZ / VECTREX_PDECAY,
 
 	/* max number of possible vectors that maybe on the screen at one time.
 	 * one only needs VECTREX_MHZ / VECTREX_PDECAY but we need to also store
@@ -134,6 +144,9 @@ DRAM_ATTR static long alg_vector_dy;
 DRAM_ATTR static unsigned char alg_vector_color;
 
 
+#include "e8910.c"
+
+
 // we must put following data into PSRAM, the internal RAM is not enough!
 
 // this could be optimized with a linked list!
@@ -149,7 +162,22 @@ typedef struct TimerItem_s
 	int type;
 	int active;
 } TimerItem;
-DRAM_ATTR  TimerItem timerItemArray[MAX_TIMER]; // should be saved
+DRAM_ATTR TimerItem timerItemArray[MAX_TIMER]; // should be saved
+
+// Doppelt verketteter Listen-Knoten
+typedef struct TimerNode_s {
+    struct TimerNode_s *prev;
+    struct TimerNode_s *next;
+    TimerItem          *item;
+} TimerNode;
+
+// Knotenpuffer (nicht "persistent" nötig)
+DRAM_ATTR static TimerNode timerNodeArray[MAX_TIMER];
+
+// Listen-Köpfe
+DRAM_ATTR static TimerNode *freeListHead = NULL;   // ungenutzte Items
+DRAM_ATTR static TimerNode *usedListHead = NULL;   // genutzte Items
+
 
 // these are types, and Array Index, both!
 enum
@@ -173,24 +201,42 @@ enum
 	TIMER_SHIFT_WRITE = 13+1024, // the delay is the normal "SHIFT"
     TIMER_SHIFT_READ = 13+2048, // the delay is the normal "SHIFT"
 };
+
 DRAM_ATTR static int DELAYS[]={
 	0,  // TIMER_ACTION_NONE = 0,
 	5,  // TIMER_ZERO = 1,
 	0,  // TIMER_BLANK_ON_CHANGE = 2,
+#define TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL 1
 	0,  // TIMER_BLANK_OFF_CHANGE = 3,
+#define TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL 1
+
 	12, // TIMER_RAMP_CHANGE = 4,
 	14, // TIMER_MUX_Y_CHANGE = 5,
+#define TIMER_MUX_S_CHANGE_VALUE_IS_NULL 1	
 	0,  // TIMER_MUX_S_CHANGE = 6,
+#define TIMER_MUX_Z_CHANGE_VALUE_IS_NULL 1	
 	0,  // TIMER_MUX_Z_CHANGE = 7,
+#define TIMER_MUX_R_CHANGE_VALUE_IS_NULL 1
 	0,  // TIMER_MUX_R_CHANGE = 8,
-	15, // TIMER_XSH_CHANGE = 9,
+	12, // TIMER_XSH_CHANGE = 9,					// if this gets too high - then line buffer will explode, since a "fake" middline change is registered, and lines are splitted
+#define TIMER_LIGHTPEN_VALUE_IS_NULL 1
 	0,  // TIMER_LIGHTPEN = 10,
 	15, // TIMER_RAMP_OFF_CHANGE = 11,
 	1,  // TIMER_MUX_SEL_CHANGE = 12, 
+#define TIMER_SHIFT_VALUE_IS_NULL 1	
 	0,  // TIMER_SHIFT = 13, 
+	
+#define TIMER_T1_VALUE_IS_NULL	1
 	0,  // TIMER_T1 = 14, 
+#define TIMER_T2_VALUE_IS_NULL	1
 	0   // TIMER_T2 = 15,
 	}; // no need to be saved
+DRAM_ATTR int rampOnFractionValue = -10;
+DRAM_ATTR int rampOffFractionValue = -15;
+DRAM_ATTR int blankOnDelay = -2; // Karl -2
+DRAM_ATTR int blankOffDelay = -2;
+DRAM_ATTR bool rampOnFraction = false;
+DRAM_ATTR bool rampOffFraction = false;
 
 
 DRAM_ATTR static long fcycles;
@@ -200,88 +246,309 @@ void emu_begin_frame(void);
 void emu_end_frame(void);
 void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // For ESP32
 void vecx_emu (long cycles);
+#include "usb/hid_usage_keyboard.h"
+
 
 IRAM_ATTR static einline void readevents()
 {
+	// Public API:
+	extern IRAM_ATTR bool isKeyDown(uint8_t hid_code);
+	extern IRAM_ATTR bool isAsciiDown(char c);
+	extern IRAM_ATTR bool isShiftDown(void);
+	extern IRAM_ATTR bool isCtrlDown(void);
+	extern IRAM_ATTR bool isAltDown(void);
+
+	#ifndef HID_KEY_LEFT_ARROW
+	#define HID_KEY_LEFT_ARROW   0x50
+	#endif
+
+	#ifndef HID_KEY_RIGHT_ARROW
+	#define HID_KEY_RIGHT_ARROW  0x4F
+	#endif
+
+	#ifndef HID_KEY_UP_ARROW
+	#define HID_KEY_UP_ARROW     0x52
+	#endif
+
+	#ifndef HID_KEY_DOWN_ARROW
+	#define HID_KEY_DOWN_ARROW   0x51
+	#endif
+
+// center is default unless pressed!
+alg_jch0=127;
+alg_jch1=127;
+alg_jch2=127;
+alg_jch3=127;
+   /* Player 1 */
+ 	if (isKeyDown(HID_KEY_LEFT_ARROW)) alg_jch0 = 0;
+ 	if (isKeyDown(HID_KEY_RIGHT_ARROW)) alg_jch0 = 255;
+ 	if (isKeyDown(HID_KEY_UP_ARROW)) alg_jch1 = 255;
+ 	if (isKeyDown(HID_KEY_DOWN_ARROW)) alg_jch1 = 0;
+
+extern  int  g_line_width;      
+extern  int  g_line_glow;
+extern  int brightnessAdjust;
+
+long load_rom_file(const char *rom_name, uint8_t *buffer, long max_size);
+static int loadNum = 0;
+int vecx_init();
+char  *name[]={
+	"SWEEP.BIN", 
+	"KARL.BIN",
+	"TGARD.BIN",
+	"VBLADE.NIB",
+	"ARMOR.BIN",
+	"BERZERK.BIN",
+	"RELEASE.BIN",
+	"SPIKE.BIN"
+};
+
+   	if (isAsciiDown('o'))
+	{
+		loadNum--;
+		if (loadNum<0) loadNum = 7;
+        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+		vecx_init();
+	}
+   	if (isAsciiDown('p'))
+	{
+		loadNum++;
+		if (loadNum>7) loadNum = 0;
+        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+		vecx_init();
+	}
+	if (isKeyDown(HID_KEY_F11))
+	{
+		brightnessAdjust = brightnessAdjust - 1;
+		printf("brightnessAdjust: %d\n", brightnessAdjust);
+	}
+	if (isKeyDown(HID_KEY_F12))
+	{
+		brightnessAdjust = brightnessAdjust + 1;
+		printf("brightnessAdjust: %d\n", brightnessAdjust);
+	}
+   
+	if (isKeyDown(HID_KEY_F1))
+	{
+		g_line_width = g_line_width - 1;
+		if (g_line_width<0) g_line_width = 0;
+		printf("g_line_width: %d\n", g_line_width);
+	}
+	if (isKeyDown(HID_KEY_F2))
+	{
+		g_line_width = g_line_width + 1;
+		printf("g_line_width: %d\n", g_line_width);
+	}
+	if (isKeyDown(HID_KEY_F3))
+	{
+		g_line_glow = g_line_glow - 1;
+		if (g_line_glow<0) g_line_glow = 0;
+		printf("g_line_glow: %d\n", g_line_glow);
+	}
+	if (isKeyDown(HID_KEY_F4))
+	{
+		g_line_glow = g_line_glow + 1;
+		printf("g_line_glow: %d\n", g_line_glow);
+	}
+	
+	if (isKeyDown(HID_KEY_1))
+	{
+		blankOnDelay = blankOnDelay - 1;
+		printf("blankOnDelay: %d\n", blankOnDelay);
+	}
+	if (isKeyDown(HID_KEY_2))
+	{
+		blankOnDelay = blankOnDelay + 1;
+		printf("blankOnDelay: %d\n", blankOnDelay);
+	}
+
+	if (isKeyDown(HID_KEY_3))
+	{
+		blankOffDelay = blankOffDelay - 1;
+		printf("blankOffDelay: %d\n", blankOffDelay);
+	}
+	if (isKeyDown(HID_KEY_4))
+	{
+		blankOffDelay = blankOffDelay + 1;
+		printf("blankOffDelay: %d\n", blankOffDelay);
+	}
+	if (isKeyDown(HID_KEY_5))
+	{
+		rampOnFractionValue = rampOnFractionValue - 1;
+		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
+	}
+	if (isKeyDown(HID_KEY_6))
+	{
+		rampOnFractionValue = rampOnFractionValue + 1;
+		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
+	}
+	if (isKeyDown(HID_KEY_7))
+	{
+		rampOffFractionValue = rampOffFractionValue - 1;
+		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
+	}
+	if (isKeyDown(HID_KEY_8))
+	{
+		rampOffFractionValue = rampOffFractionValue + 1;
+		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
+	}
+
+
+
+   if (isAsciiDown('a'))
+      snd_regs[14] &= ~1;
+   else
+      snd_regs[14] |= 1;
+
+   if (isAsciiDown('s'))
+      snd_regs[14] &= ~2;
+   else
+      snd_regs[14] |= 2;
+
+   if (isAsciiDown('d'))
+      snd_regs[14] &= ~4;
+   else
+      snd_regs[14] |= 4;
+
+   if (isAsciiDown('f'))
+      snd_regs[14] &= ~8;
+   else
+      snd_regs[14] |= 8;
+
+   /* Player 2 */
+ 	if (isKeyDown('h')) alg_jch2 = 0; // left
+ 	if (isKeyDown('j')) alg_jch2 = 255;
+ 	if (isKeyDown('u')) alg_jch3 = 255; // up
+ 	if (isKeyDown('n')) alg_jch3 = 0;
+	
+   if (isAsciiDown('q'))
+      snd_regs[14] &= ~16;
+   else
+      snd_regs[14] |= 16;
+
+   if (isAsciiDown('w'))
+      snd_regs[14] &= ~32;
+   else
+      snd_regs[14] |= 32;
+
+   if (isAsciiDown('e'))
+      snd_regs[14] &= ~64;
+   else
+      snd_regs[14] |= 64;
+
+   if (isAsciiDown('r'))
+      snd_regs[14] &= ~128;
+   else
+      snd_regs[14] |= 128;
 }
 
-void osint_emuloop()
+void osint_emuloop(int cycles)
 {
-	vecx_emu((VECTREX_MHZ / 1000) * EMU_TIMER);
+	vecx_emu(cycles);
 	readevents();
 }
 
+// resize and center to given width / height
 void resize(int width, int height){
-	long sclx, scly;
 
-	long screenx = width;
-	long screeny = height;
+	scl_factorx = ALG_MAX_X / width;
+	scl_factory = ALG_MAX_Y / height;
 
-	sclx = ALG_MAX_X / SCREEN_WIDTH;
-	scly = ALG_MAX_Y / SCREEN_HEIGHT;
 
-	scl_factorx = -sclx;
-	scl_factory = -scly;
+	offx = (width - ALG_MAX_X / scl_factorx) / 2;
+	offy = (height - ALG_MAX_Y / scl_factory) / 2;
 
-	offx = (screenx - ALG_MAX_X / scl_factorx) / 2;
-	offy = (screeny - ALG_MAX_Y / scl_factory) / 2;
-}
-
-static void init()
-{
-/*	
-	FILE *f;
-	if(!(f = fopen(romfilename, "rb"))){
-		perror(romfilename);
-		exit(EXIT_FAILURE);
-	}
-	if(fread(rom, 1, sizeof (rom), f) != sizeof (rom)){
-		printf("Invalid rom length\n");
-		exit(EXIT_FAILURE);
-	}
-	fclose(f);
-*/
-	cartInit(cartfilename);
+	offx = (  ALG_MAX_X / scl_factorx) / 2;
+	offy = (  ALG_MAX_Y / scl_factory) / 2;
+	offx = (SCREEN_WIDTH-width)/2;
+	offy = (SCREEN_HEIGHT-height)/2;
 }
 
 int vecx_init()
 {
-	init();
-
-	resize(SCREEN_WIDTH, SCREEN_HEIGHT);
+	if (cartSize != 0)
+	{
+		//cartData
+		// a cartridge was loaded!
+	}
+	
+//	resize(SCREEN_HEIGHT*3/4, SCREEN_HEIGHT); // this is easily to much for high resolutions
+	resize(500, 700);
 
 	vecx_reset();
 	e8910_init_sound();
-//	osint_emuloop();
 //	e8910_done_sound();
 	return 0;
 }
 
 IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
 {
-	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color*2); // For ESP32
+	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
+//	emu_draw_line(offx + x0 / scl_factorx, offy -y0 / scl_factory, offx + x1 / scl_factorx, offy - y1 / scl_factory, color); // For ESP32
 	return;
 }
 
-static IRAM_ATTR einline void timerAddItem(int value, void *destination, int t)
+static IRAM_ATTR einline void detach_from_list(TimerNode **head, TimerNode *node)
 {
-	for (int i=0;i<MAX_TIMER;i++)
-	{
-		if (timerItemArray[i].active == 0)
-		{
-			timerItemArray[i].active = 1;
-			timerItemArray[i].valueToSet = value&0xff;
-			timerItemArray[i].whereToSet = destination;
-			timerItemArray[i].type = t; 
-			timerItemArray[i].countDown = DELAYS[(t&0xff)];
-			return;
-		}
-	}
-	printf("NOT ENOUGH TIMERS! PANIC!!!\n");
-	exit(3);
+    if (node == NULL) return;
+
+    if (node->prev != NULL) {
+        node->prev->next = node->next;
+    } else {
+        // node war Kopf
+        *head = node->next;
+    }
+
+    if (node->next != NULL) {
+        node->next->prev = node->prev;
+    }
+
+    node->prev = NULL;
+    node->next = NULL;
 }
 
-IRAM_ATTR static einline void doCheckRamp(int fromOrbWrite)
+// Knoten vorne an eine Liste anhängen
+static IRAM_ATTR einline  void push_front(TimerNode **head, TimerNode *node)
+{
+    if (node == NULL) return;
+
+    node->prev = NULL;
+    node->next = *head;
+
+    if (*head != NULL) {
+        (*head)->prev = node;
+    }
+
+    *head = node;
+}
+
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void timerAddItem(int value, void *destination, int ty)
+{
+
+    if (freeListHead == NULL) {
+		printf("NOT ENOUGH TIMERS! PANIC!!!\n");
+		exit(3);
+    }
+
+ // Kopf von freeList nehmen
+    TimerNode *node = freeListHead;
+    detach_from_list(&freeListHead, node);
+
+    TimerItem *t = node->item;
+
+    t->countDown  = DELAYS[(ty&0xff)];
+    t->valueToSet = value&0xff;
+    t->whereToSet = destination;
+    t->type       = ty;
+    t->active     = 1;
+
+    // vorne in usedList einfügen
+    push_front(&usedListHead, node);
+}
+
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void doCheckRamp(int fromOrbWrite)
 {
 	if (!fromOrbWrite)
 	{
@@ -308,16 +575,19 @@ IRAM_ATTR static einline void doCheckRamp(int fromOrbWrite)
 
 // this might be done "nicer" - 
 // didn'T think about it much.... it works... so be it...
-IRAM_ATTR static einline  signed int makeSigned(unsigned char data)
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) signed int makeSigned(unsigned char data)
 {
    if (data > 127) return -(256-data);
    return data;
 }
 
-IRAM_ATTR static einline  unsigned char makeUnsigned(signed int data)
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) unsigned char makeUnsigned(signed int data)
 {
    return data&0xff;
 }
+
 
 /* update IRQ and bit-7 of the ifr register after making an adjustment to
  * ifr.
@@ -365,7 +635,8 @@ void setIRQFromVectrex(int irq)
 	setBank();
 }
 
-IRAM_ATTR static einline  void int_update ()
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void int_update ()
 {
 	if ( (((via_ifr & 0x7f) & (via_ier & 0x7f))) != 0   ) 
 	{
@@ -379,7 +650,8 @@ IRAM_ATTR static einline  void int_update ()
 }
 
 /* update the various analog values when orb is written. */
-IRAM_ATTR static einline void doCheckMultiplexer()
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void doCheckMultiplexer()
 {
    /* compare the current joystick direction with a reference */
 	switch (via_orb & 0x06) 
@@ -414,107 +686,148 @@ IRAM_ATTR static einline void doCheckMultiplexer()
 			break;
 		case 0x02:
 			/* demultiplexor is on */
+#ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
+			alg_rsh = makeSigned(alg_xsh);
+#else
 			timerAddItem(alg_DAC, 0, TIMER_MUX_R_CHANGE);
+#endif
+
 			break;
 		case 0x04:
 			/* demultiplexor is on */
+#ifdef TIMER_MUX_Z_CHANGE_VALUE_IS_NULL	
+			alg_zsh = alg_DAC;
+#else
 			timerAddItem(alg_DAC , &alg_zsh, TIMER_MUX_Z_CHANGE);
+#endif
+
 // todo
 			//			intensityDrift = 0;
 			break;
 		case 0x06:
 			/* sound output line */
+#ifdef TIMER_MUX_S_CHANGE_VALUE_IS_NULL	
+			alg_ssh = makeSigned(alg_DAC);
+#else
 			timerAddItem(alg_DAC , &alg_ssh, TIMER_MUX_S_CHANGE);
+#endif
+
 			break;
 			
 	}
 }
 
-void initTimerArray()
+void TimerList_init(void)
 {
-	for (int i=0;i<MAX_TIMER;i++)
+    freeListHead = NULL;
+    usedListHead = NULL;
+
+    for (int i = 0; i < MAX_TIMER; i++) 
 	{
-		timerItemArray[i].countDown = 0;
-		timerItemArray[i].valueToSet = 0;
-		timerItemArray[i].whereToSet = 0;
-		timerItemArray[i].type = TIMER_ACTION_NONE;
-		timerItemArray[i].active = 0;
-	}
+        timerItemArray[i].active     = 0;
+        timerItemArray[i].countDown  = 0;
+        timerItemArray[i].valueToSet = 0;
+        timerItemArray[i].whereToSet = NULL;
+        timerItemArray[i].type       = TIMER_ACTION_NONE;
+
+  // Knoten verbinden
+        TimerNode *node = &timerNodeArray[i];
+        node->item = &timerItemArray[i];
+
+        // vorne an freeList einfügen
+        node->prev = NULL;
+        node->next = freeListHead;
+
+        if (freeListHead != NULL) {
+            freeListHead->prev = node;
+        }
+        freeListHead = node;
+    }
 }
-//return 1 on success
-//return 0 on fail
-IRAM_ATTR einline int removeTimer(TimerItem *t)
-{
-	for (int i=0;i<MAX_TIMER;i++)
-	{
-		if (&timerItemArray[i] == t)
-		{
-			timerItemArray[i].active = 0;
-			return 1;
-		}
-	}
-	return 0;
-}
+
 
 static IRAM_ATTR einline void timerDoStep()
 {
-	for (int i=0;i<MAX_TIMER;i++)
+	int doInt = 0;
+	int doMUL = 0;
+	int doRamp = 0;
+	TimerNode *node = usedListHead;
+
+
+	while (node != NULL)
 	{
-		if (timerItemArray[i].active == 0) continue;
-		timerItemArray[i].countDown--;
-		if (timerItemArray[i].countDown <=0)
+		TimerItem *item = node->item;
+
+		item->countDown--;
+		if (item->countDown <=0)
 		{
-			if (timerItemArray[i].type == TIMER_SHIFT_READ)
+#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+#else
+			if (item->type == TIMER_SHIFT_READ)
 			{
 				alternate = 1;
 				//lastShiftTriggered = cyclesRunning;
 				via_ifr &= 0xfb; /* remove shift register interrupt flag */
 				via_srb = 0;
 				via_srclk = 1;
-				int_update ();
+				doInt++;
 			} 
-			else if (timerItemArray[i].type == TIMER_SHIFT_WRITE)
+			else if (item->type == TIMER_SHIFT_WRITE)
 			{
 				alternate = 1;
 				//via_stalling = 0;
 				//lastShiftTriggered = cyclesRunning;
-				via_sr = timerItemArray[i].valueToSet;
+				via_sr = item->valueToSet;
 				via_ifr &= 0xfb; /* remove shift register interrupt flag */
 				via_srb = 0;
 				via_srclk = 1;
-				int_update ();
+				doInt++;
 			}
-			else if (timerItemArray[i].type == TIMER_T1)
+			else 
+#endif
+#ifdef TIMER_T1_VALUE_IS_NULL	
+#else
+			if (item->type == TIMER_T1)
 			{
 				via_t1on = 1; /* timer 1 starts running */
-				via_t1lh = timerItemArray[i].valueToSet;
+				via_t1lh = item->valueToSet;
 				via_t1c = (via_t1lh << 8) | via_t1ll;
 				via_ifr &= 0xbf; /* remove timer 1 interrupt flag */
 				via_t1int = 1;
 
 				via_t1pb7 = 0;
-				doCheckRamp(0);
-				int_update ();
+				doRamp++;
+				doInt++;
 			}
-			else if (timerItemArray[i].type == TIMER_T2)
+			else 
+#endif
+#ifdef TIMER_T2_VALUE_IS_NULL	
+#else
+			if (item->type == TIMER_T2)
 			{
-				via_t2c = ((timerItemArray[i].valueToSet) << 8) | via_t2ll;
+				via_t2c = ((item->valueToSet) << 8) | via_t2ll;
 				via_t2c += 0; // hack, it seems vectrex (via) takes two cycles to "process" the setting...
 				via_ifr &= 0xdf;
 				via_t2on = 1; /* timer 2 starts running */
 				via_t2int = 1;
-				int_update ();
+				doInt++;
 			}
-			
-			else if (timerItemArray[i].type == TIMER_MUX_R_CHANGE)
+			else 
+#endif			
+#ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
+#else
+			if (item->type == TIMER_MUX_R_CHANGE)
 			{
 				//noiseCycles = cyclesRunning;
 				// setDigitalVoltage(timerItemArray[i].valueToSet); 
 				alg_rsh = alg_xsh;
 			}
-			else if (timerItemArray[i].whereToSet != 0)   
+			else 
+#endif
+			
+			if (item->whereToSet != 0)   
 			{
-				if (timerItemArray[i].type == TIMER_RAMP_OFF_CHANGE) 
+				if (item->type == TIMER_RAMP_OFF_CHANGE) 
 				{
 					// difference of 3 is to much, but we have no "smaller" unit than
 					// cycles ticks
@@ -522,12 +835,14 @@ static IRAM_ATTR einline void timerDoStep()
 					// the fraction here is not KNOWN, it is
 					// experimented
 					// analog curcuits don't really care about cycles...
-//					if ((t.whereToSet& 0xff) != (t.valueToSet & 0xff))
-//					{
-//						rampOffFraction = 1;
-//					}
+					if ((*item->whereToSet & 0xff) != (item->valueToSet & 0xff))
+					{
+						rampOffFraction = 1;
+					}
+					rChange = cyclesRunning;
+
 				}
-				else if (timerItemArray[i].type == TIMER_RAMP_CHANGE) 
+				else if (item->type == TIMER_RAMP_CHANGE) 
 				{
 					// difference of 3 is to much, but we have no "smaller" unit than
 					// cycles ticks
@@ -535,10 +850,11 @@ static IRAM_ATTR einline void timerDoStep()
 					// the fraction here is not KNOWN, it is
 					// experimented
 					// analog curcuits don't really care about cycles...
-//					if ((t.whereToSet& 0xff) != (t.valueToSet & 0xff))
-//					{
-//						rampOnFraction = 1;
-//					}
+					if ((*item->whereToSet & 0xff) != (item->valueToSet & 0xff))
+					{
+						rampOnFraction = 1;
+					}
+					rChange = cyclesRunning;
 				}
 /*                    
 				// ATTENTION!
@@ -555,27 +871,44 @@ static IRAM_ATTR einline void timerDoStep()
 					t.whereToSet = via_ora & 0xff;
 				}
 */
-				if (timerItemArray[i].type != TIMER_MUX_Z_CHANGE) // Z must not be negative
+				if (item->type == TIMER_MUX_Z_CHANGE) // Z must not be negative
 				{
-					*timerItemArray[i].whereToSet = makeSigned(timerItemArray[i].valueToSet);
+					*item->whereToSet = makeUnsigned(item->valueToSet & 0xff);
 				}
 				else
 				{
-					*timerItemArray[i].whereToSet = timerItemArray[i].valueToSet;
+					*item->whereToSet = makeSigned(item->valueToSet & 0xff);
+					if (item->type == TIMER_XSH_CHANGE)
+						xChange = cyclesRunning;
 				}
+				if (item->type == TIMER_MUX_SEL_CHANGE)
+					doMUL++;
+#ifdef TIMER_MUX_Z_CHANGE_VALUE_IS_NULL	
+#else
+#endif
 
-				if (timerItemArray[i].type == TIMER_MUX_SEL_CHANGE)
-					doCheckMultiplexer();
 			
 			}
-			timerItemArray[i].active = 0;
+
+			item->active = 0;
+			TimerNode *n = node->next;
+			detach_from_list(&usedListHead, node);
+			push_front(&freeListHead, node);
+			node = n;
+			continue;
+
 		}
+		node = node->next;
 	}
+	if (doRamp>0) doCheckRamp(0);
+	if (doInt>0) int_update ();
+	if (doMUL>0) doCheckMultiplexer();
 }
 
 
 /* update the snd chips internal registers when via_ora/via_orb changes */
-IRAM_ATTR static einline void snd_update(int command)
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void snd_update(int command)
 {
    switch (via_orb & 0x18)
    {
@@ -724,7 +1057,17 @@ IRAM_ATTR unsigned char read8 (unsigned address)
                break;
             case 0xa:
                data = (unsigned char) via_sr&0xff;
+
+#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+				alternate = 1;
+				//lastShiftTriggered = cyclesRunning;
+				via_ifr &= 0xfb; /* remove shift register interrupt flag */
+				via_srb = 0;
+				via_srclk = 1;
+				int_update ();
+#else
                timerAddItem(via_sr, 0, TIMER_SHIFT_READ);
+#endif
                break;
             case 0xb:
                data = (unsigned char) via_acr;
@@ -748,12 +1091,10 @@ IRAM_ATTR unsigned char read8 (unsigned address)
 	// 
 	else if( address < 0xc000 )
 	{
-		/* Todo
 	   if (BANK_MAX<4) 
-		   data = cart[address+(currentBank *32768)] & 0xff; // 
+		   data = cartData[address+(currentBank *32768)] & 0xff; // 
 	   else 
-		   data = cart[address+(currentBank *65536)] & 0xff; // 
-		*/
+		   data = cartData[address+(currentBank *65536)] & 0xff; // 
 	}
    else
       data = 0xff;
@@ -792,7 +1133,13 @@ IRAM_ATTR void write8 (unsigned address, unsigned char data)
 					 * goes low whenever orb is written.
 					 */
 					via_cb2h = 0;
-					timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
+#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+sig_blank = 0;
+#else
+timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
+#endif
+
+
 	
 				}
 				doCheckRamp(1);
@@ -841,7 +1188,23 @@ IRAM_ATTR void write8 (unsigned address, unsigned char data)
                break;
             case 0x5:
                /* T1 high order counter */
+
+
+#ifdef TIMER_T1_VALUE_IS_NULL	
+				via_t1on = 1; /* timer 1 starts running */
+				via_t1lh = data;
+				via_t1c = (via_t1lh << 8) | via_t1ll;
+				via_ifr &= 0xbf; /* remove timer 1 interrupt flag */
+				via_t1int = 1;
+
+				via_t1pb7 = 0;
+				doCheckRamp(0);
+				int_update ();
+#else
                timerAddItem(data,0, TIMER_T1);
+#endif
+
+
                break;
             case 0x6:
                /* T1 low order latch */
@@ -860,10 +1223,33 @@ IRAM_ATTR void write8 (unsigned address, unsigned char data)
                break;
             case 0x9:
                /* T2 high order latch/counter */
+
+#ifdef TIMER_T2_VALUE_IS_NULL	
+				via_t2c = ((data) << 8) | via_t2ll;
+				via_t2c += 0; // hack, it seems vectrex (via) takes two cycles to "process" the setting...
+				via_ifr &= 0xdf;
+				via_t2on = 1; /* timer 2 starts running */
+				via_t2int = 1;
+				int_update ();
+#else
                timerAddItem(data,0, TIMER_T2);
+#endif
+
+
                break;
             case 0xa:
-				timerAddItem(data, 0, TIMER_SHIFT_WRITE);
+#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+				alternate = 1;
+				//via_stalling = 0;
+				//lastShiftTriggered = cyclesRunning;
+				via_sr = data;
+				via_ifr &= 0xfb; /* remove shift register interrupt flag */
+				via_srb = 0;
+				via_srclk = 1;
+				int_update ();
+#else
+				timerAddItem(data, &via_sr, TIMER_SHIFT_WRITE);
+#endif
                break;
             case 0xb:
 				if ((via_acr & 0x1c) != (data & 0x1c))
@@ -873,7 +1259,12 @@ IRAM_ATTR void write8 (unsigned address, unsigned char data)
 					}
 					else // use the last shift
 					{
-						timerAddItem(0, &sig_blank, TIMER_BLANK_ON_CHANGE);
+#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+sig_blank = 0;
+#else
+timerAddItem(0, &sig_blank, TIMER_BLANK_ON_CHANGE);
+#endif
+
 					}
 				}
 				if ((via_acr & 0xc0) != (data & 0xc0))
@@ -906,13 +1297,21 @@ IRAM_ATTR void write8 (unsigned address, unsigned char data)
 					{
 						/* cb2 is outputting low */
 						via_cb2h = 0;
-						timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
+#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+sig_blank = 0;
+#else
+timerAddItem(0, &sig_blank, TIMER_BLANK_ON_CHANGE);
+#endif
 					} 
 					else if ((via_pcr & 0xe0) == 0xe0) 
 					{
 						/* cb2 is outputting high */
 						via_cb2h = 1;
-						timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
+sig_blank = 1;
+#else
+timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+#endif
 					} 
 					else 
 					{
@@ -920,7 +1319,11 @@ IRAM_ATTR void write8 (unsigned address, unsigned char data)
 						 * outputting high.
 						 */
 						via_cb2h = 1;
-						timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
+sig_blank = 1;
+#else
+timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+#endif
 					}
 				}
 				break;
@@ -1031,9 +1434,24 @@ void vecx_reset (void)
 	currentIRQ = 1;
 	
 	BANK_MAX = 1;
-	initTimerArray();
-	cyclesRunning = 0;
 
+
+	BANK_MAX = 1;
+	{
+	  currentBank = 0; // 
+	  if (cartSize > 50000)
+	  {
+		BANK_MAX = 2;
+		currentBank = 1; // 
+	  }
+	  if (cartSize > 100000)
+	  {
+		BANK_MAX = 4;
+		currentBank = 3; // 
+	  }
+	}
+	TimerList_init();
+	cyclesRunning = 0;
 
 	e6809_reset ();
 }
@@ -1043,164 +1461,246 @@ void vecx_reset (void)
  * via_sstep0 is the first postion of the emulation.
  */
 
-IRAM_ATTR static einline void via_sstep0 (void)
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 {
-	int t2shift;
-	if (via_t1on!=0) 
+    int t2shift;
+//    uint8_t acr = via_acr;   // einmal lesen, fürs Maskieren verwenden
+
+    /* --- T1-Timer --- */
+	if (via_t1on) 
 	{
-		
 		via_t1c--;
-		if ((via_t1c & 0xffff) == 0xffff) // two cycle "MORE" since in via manual it says timer runs 1,5 cycles to long
+		if (via_t1c == 0xFFFFu)
 		{
-			/* counter just rolled over */
-			if ((via_acr & 0x40) != 0)
+			if (via_acr & 0x40u)
 			{
-				/* continuous interrupt mode */
-				via_ifr |= 0x40;
-				int_update ();
-				via_t1pb7 = 0x80 - via_t1pb7;
+				via_ifr |= 0x40u;
+				int_update();
+				via_t1pb7 = 0x80u - via_t1pb7;
 				doCheckRamp(0);
-				/* reload counter */
-				via_t1c = ((via_t1lh << 8)&0xff00) | (via_t1ll&0xff);
-			} 
-			else 
+				via_t1c = ((uint16_t)via_t1lh << 8) | via_t1ll;
+			}
+			else
 			{
-				/* one shot mode */
-				if (via_t1pb7 != 0x80)
+				if (via_t1pb7 != 0x80u)
 				{
-					via_t1pb7 = 0x80;
+					via_t1pb7 = 0x80u;
 					doCheckRamp(0);
 				}
 				else
 				{
-					via_t1pb7 = 0x80;
+					via_t1pb7 = 0x80u;
 				}
-				if (via_t1int != 0) 
+
+				if (via_t1int)
 				{
-					via_ifr |= 0x40;
-					int_update ();
+					via_ifr |= 0x40u;
+					int_update();
 					via_t1int = 0;
 				}
 			}
 		}
 	}
+	
+    /* --- T2-Timer (nur wenn nicht Shift-Clock-Modus) --- */
+    if (via_t2on && ((via_acr & 0x20u) == 0u)) 
+    {
+        via_t2c--;
 
-	if ((via_t2on!=0) && (via_acr & 0x20) == 0x00) 
-	{
-		via_t2c--;
-		if ((via_t2c & 0xffff) == 0xffff) // two cycle "MORE" since in via manual it says timer runs 1,5 cycles to long
-		{
-			/* one shot mode */
-			if (via_t2int!=0) 
-			{
-				via_ifr |= 0x20;
-				int_update ();
-				via_t2int = 0;
-				syncImpulse = 1;
-			}
-		}
-	}
+        if ((uint16_t)via_t2c == 0xFFFFu)   // "läuft 1,5 Takte zu lang"
+        {
+            /* one shot mode */
+            if (via_t2int) 
+            {
+                via_ifr |= 0x20;
+                int_update();
+                via_t2int = 0;
+                syncImpulse = 1;
+            }
+        }
+    }
 
-	// shift counter 
+
+
+
+
+
+
+	/* Gemeinsame Shift-Out-Sequenz */
+	#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+	#define DO_SHIFT_OUT()                           \
+		do {                                         \
+			via_cb2s = (via_sr >> 7) & 1u;           \
+			via_sr <<= 1;                            \
+			via_sr |= via_cb2s;                      \
+			sig_blank = via_cb2s;                    \
+		} while (0)
+	#else
+	#define DO_SHIFT_OUT()                           \
+		do {                                         \
+			via_cb2s = (via_sr >> 7) & 1u;           \
+			via_sr <<= 1;                            \
+			via_sr |= via_cb2s;                      \
+			timerAddItem(                            \
+				via_cb2s,                            \
+				&sig_blank,                          \
+				(via_cb2s == 1u) ? TIMER_BLANK_OFF_CHANGE \
+								: TIMER_BLANK_ON_CHANGE  \
+			);                                       \
+		} while (0)
+	#endif
+
+	/* --- Shift-Teil von via_sstep0 --- */
+
+	if (via_srb >= 8u)
+		return;    /* oder zum Ende von via_sstep0 springen */
+
+
+	/* Shift-Counter: exakt wie vorher, nur enger geschrieben */
 	via_src--;
-	if ((via_src & 0xff) == 0xff) 
+	if (via_src == 0xFFu)
 	{
 		via_src = via_t2ll;
-		if (via_srclk == 3) 
-		{
-			t2shift = 1;
-			via_srclk = 0;
-		} 
-		else 
-		{
-			t2shift = 0;
-			via_srclk = (via_srclk+1)%4;
+
+		if (via_srclk == 3u) {
+			t2shift  = 1;
+			via_srclk = 0u;
+		} else {
+			t2shift  = 0;
+			via_srclk = (uint8_t)((via_srclk + 1u) & 3u);  /* schneller als %4 */
 		}
-	} 
-	else 
+	}
+	else
 	{
 		t2shift = 0;
 	}
-	if (via_srb < 8) 
+
+	/* Shift-Register nur solange noch Bits zu schieben sind */
+	if (via_srb < 8u)
 	{
-		switch (via_acr & 0x1c) 
+		uint8_t mode = via_acr & 0x1Cu;
+
+		switch (mode)
 		{
-			case 0x00:
-				// disabled 
+			case 0x18:
+				/* shift out unter System-Clock, jeder zweite Zyklus */
+				alternate = !alternate;
+				if (likely(alternate)) {
+					DO_SHIFT_OUT();
+					via_srb++;
+				}
 				break;
+
+			case 0x10:
+				/* shift out unter T2-Kontrolle (free run) */
+				if (t2shift) {
+					DO_SHIFT_OUT();
+				}
+				break;
+
+			case 0x14:
+				/* shift out unter T2-Kontrolle */
+				if (t2shift) {
+					DO_SHIFT_OUT();
+					via_srb++;
+				}
+				break;
+
+			case 0x1C:
+				/* shift out unter CB1-Kontrolle */
+				break;
+
+			case 0x00:
+				/* disabled */
+				break;
+
 			case 0x04:
-				// shift in under control of t2 
-				if (t2shift!=0) 
-				{
-					// shifting in 0s since cb2 is always an output 
+				/* shift in unter Kontrolle von T2 */
+				if (t2shift) {
+					/* 0-en reinschieben (CB2 ist immer Output) */
 					via_sr <<= 1;
 					via_srb++;
 				}
 				break;
+
 			case 0x08:
-				// shift in under system clk control 
+				/* shift in unter System-Clock */
 				via_sr <<= 1;
 				via_srb++;
 				break;
-			case 0x0c:
-				// shift in under cb1 control 
-				break;
-			case 0x10:
-				// shift out under t2 control (free run) 
-				if (t2shift!=0) 
-				{
-					via_cb2s = (via_sr >> 7) & 1;
-					via_sr <<= 1;
-					via_sr |= via_cb2s;
 
-					timerAddItem(via_cb2s, &sig_blank, (via_cb2s==1) ? TIMER_BLANK_OFF_CHANGE : TIMER_BLANK_ON_CHANGE);
-				}
+			case 0x0C:
+				/* shift in unter CB1-Kontrolle */
 				break;
-			case 0x14:
-				/// shift out under t2 control 
-				if (t2shift!=0) 
-				{
-					via_cb2s = (via_sr >> 7) & 1;
-					via_sr <<= 1;
-					via_sr |= via_cb2s;
-					timerAddItem(via_cb2s, &sig_blank, (via_cb2s==1) ? TIMER_BLANK_OFF_CHANGE : TIMER_BLANK_ON_CHANGE);
-					via_srb++;
-				}
-				break;
-			case 0x18:
-/*                    
-				// shift out under system clock control 
-*/                    
-				// System Time -> look at hardware manual
-				// only every SECOND cycle!
-				alternate = !alternate;
-				if (alternate)
-				{
-					via_cb2s = (via_sr >> 7) & 1;
-					via_sr <<= 1;
-					via_sr |= via_cb2s;
-					timerAddItem(via_cb2s, &sig_blank, (via_cb2s==1) ? TIMER_BLANK_OFF_CHANGE : TIMER_BLANK_ON_CHANGE);
-					via_srb++;
-				}
-				break;
-			case 0x1c:
-				// shift out under cb1 control 
-				break;
+
 		}
-		
-		if (via_srb == 8)
+
+		if (via_srb == 8u)
 		{
-			via_ifr |= 0x04;
-			int_update ();
-			//lastShift = via_cb2s;
+			via_ifr |= 0x04u;
+			int_update();
+			/* lastShift = via_cb2s;  // falls du das später wieder brauchst */
 		}
 	}
+
+
+
+
+
+
+
+
+
+
+
+	
+
 }
 
 
 /* perform the second part of the via emulation */
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void via_sstep1(void)
+{
 
-IRAM_ATTR static einline void via_sstep1 (void)
+    /* CA2 pulse mode: restore to '1' after pulse */
+    if ((via_pcr & 0x0Eu) == 0x0Au)
+    {
+        via_ca2 = 1;
+        timerAddItem(via_ca2, &sig_zero, TIMER_ZERO);
+    }
+
+    /* CB2 pulse mode: restore to '1' after pulse */
+    if ((via_pcr & 0xE0u) == 0xA0u)
+    {
+        via_cb2h = 1;
+    #ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
+        sig_blank = 1;
+    #else
+        timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+    #endif
+    }
+
+    /* CA1 edge detection / interrupt */
+    if (via_ca1 != old_via_ca1)
+    {
+        // via_pcr bit0: 1 = low->high triggers, 0 = high->low triggers
+        uint8_t trigger_on_rising = (via_pcr & 0x01u) != 0u;
+
+        if (trigger_on_rising ? (via_ca1 != 0u) : (via_ca1 == 0u))
+        {
+            via_ifr |= 0x02u;
+            int_update();
+        }
+    }
+
+    // Remember last CA1 state
+    old_via_ca1 = via_ca1;
+}
+
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void _old (void)
 {
 	if ((via_pcr & 0x0e) == 0x0a) 
 	{
@@ -1217,7 +1717,11 @@ IRAM_ATTR static einline void via_sstep1 (void)
 		 * it gets restored to '1' after the pulse.
 		 */
 		via_cb2h = 1;
-		timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
+sig_blank = 1;
+#else
+timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+#endif
 	}
 
 	// documentation of VIA
@@ -1244,8 +1748,11 @@ IRAM_ATTR static einline void via_sstep1 (void)
 
 }
 
+
 /* perform a single cycle worth of analog emulation */
-IRAM_ATTR static einline void alg_sstep (void)
+
+IRAM_ATTR
+static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 {
 	long sig_dx=0, sig_dy=0;
 
@@ -1265,9 +1772,30 @@ IRAM_ATTR static einline void alg_sstep (void)
 	{
 		sig_dx += alg_xsh;
 		sig_dy += -alg_ysh;
+		if (rampOnFraction)
+		{
+			rampOnFraction = false;
+			alg_curr_x -= (makeSigned(alg_xsh)*(rampOnFractionValue))/10;
+			alg_curr_y -= - (makeSigned(alg_ysh)*(rampOnFractionValue))/10;
+
+		}
 	} 
 	else 
 	{
+		if (rampOffFraction)
+		{
+			rampOffFraction = false;
+			alg_curr_x += (makeSigned(alg_xsh)*(rampOffFractionValue))/10;
+			alg_curr_y += - (makeSigned(alg_ysh)*(rampOffFractionValue))/10;
+                if (alg_vectoring == 1 && alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y) 
+                {
+                    /* we're vectoring ... current point is still within limits so
+                     * extend the current vector.
+                     */
+                    alg_vector_x1 = (int)alg_curr_x;
+                    alg_vector_y1 = (int)alg_curr_y;
+                }  
+		}
 	}
 
 
@@ -1277,23 +1805,29 @@ IRAM_ATTR static einline void alg_sstep (void)
    {
       if ((sig_blank == 1 
 		
-		&& 
-		alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && 
-		alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y
-		
-	) 
+			&& 
+			alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && 
+			alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y
+			
+		) 
 		&& (((alg_zsh &0x80) ==0) &&  ((alg_zsh&0x7f) !=0) ) )
       {
 
          /* start a new vector */
 
          alg_vectoring = 1;
-         alg_vector_x0 = alg_curr_x + DELAYS[TIMER_BLANK_OFF_CHANGE]*alg_xsh;
-         alg_vector_y0 = alg_curr_y + DELAYS[TIMER_BLANK_OFF_CHANGE]*alg_ysh;
-         alg_vector_x1 = alg_curr_x;
+
+		long adderX = (long)((blankOffDelay*makeSigned(alg_xsh))/10);
+		long adderY = (long)((blankOffDelay*makeSigned(alg_ysh))/10);
+
+
+		 alg_vector_x0 = alg_curr_x + adderX;
+         alg_vector_y0 = alg_curr_y + adderY;
+
+		 alg_vector_x1 = alg_curr_x;
          alg_vector_y1 = alg_curr_y;
-         alg_vector_dx = sig_dx;
-         alg_vector_dy = sig_dy;
+		 alg_vector_dx = alg_xsh;
+		 alg_vector_dy = -alg_ysh;
 		 alg_ramping = (sig_ramp== 0);
          alg_vector_color = makeUnsigned((signed int)alg_zsh);
       }
@@ -1314,10 +1848,16 @@ IRAM_ATTR static einline void alg_sstep (void)
 
 		if (sig_blank == 0)
 		{
+
+
+		// Jul 26
+			long adderX = (long)((blankOnDelay*makeSigned(alg_xsh))/10);
+			long adderY = (long)((blankOnDelay*makeSigned(alg_ysh))/10);
+
 			alg_addline (alg_vector_x0, 
 						 alg_vector_y0, 
-						 alg_vector_x1 + DELAYS[TIMER_BLANK_ON_CHANGE]*alg_xsh, 
-						 alg_vector_y1 + DELAYS[TIMER_BLANK_ON_CHANGE]*alg_ysh, 
+						 alg_vector_x1 + adderX, 
+						 alg_vector_y1 + adderY, 
 						 alg_vector_color);
 		}
 		else
@@ -1330,12 +1870,41 @@ IRAM_ATTR static einline void alg_sstep (void)
 						 alg_vector_color);
 		}
       }
-      else if (((sig_dx != alg_vector_dx) && (sig_ramp== 0)) || 
-	           ((sig_dy != alg_vector_dy)&& (sig_ramp== 0)) || 
-			   (makeUnsigned((signed int)alg_zsh) != alg_vector_color) || 
-			   ((sig_ramp == 0) != alg_ramping)
+
+//was muss ich nehmen für KQ???
+
+
+
+      else if (((alg_xsh != alg_vector_dx) && (sig_ramp== 0) ) || 
+	           ((-alg_ysh != alg_vector_dy)&& (sig_ramp== 0)) || 
+			   (makeUnsigned((signed int)alg_zsh) != alg_vector_color)  
+// removed Dec 2025		||	   ((sig_ramp == 0) != alg_ramping)
 			   )
+			   
       {
+
+// for splines and curved vectors the following is relevant
+// as it is - for now in this emulator it is not working correctly :-()
+
+		if ((cyclesRunning - rChange) == 0)
+		{
+            alg_vector_x0 = alg_curr_x;
+            alg_vector_y0 = alg_curr_y;
+            alg_vector_x1 = alg_curr_x;
+            alg_vector_y1 = alg_curr_y;
+			if (sig_ramp==0)
+			{
+				alg_vector_dx = alg_xsh;
+				alg_vector_dy = -alg_ysh;
+			}
+			else
+			{
+				alg_vector_dx = 0;
+				alg_vector_dy = 0;
+			}
+			goto contx;
+		}
+
          /* the parameters of the vectoring processing has changed.
           * so end the current line.
           */
@@ -1344,7 +1913,16 @@ IRAM_ATTR static einline void alg_sstep (void)
 							 alg_vector_x1, 
 							 alg_vector_y1, 
 							 alg_vector_color);
+/*
+							 printf("-changed-");
 
+		if (alg_xsh!=alg_vector_dx) printf("(alg_xsh(%d)!=alg_vector_dx(%d)- (%ld), xChange=%ld, rChange=%ld\n",alg_xsh,(int)alg_vector_dx, cyclesRunning, (cyclesRunning - xChange), (cyclesRunning - rChange));
+		if (-alg_ysh!=alg_vector_dy) printf("(alg_ysh(%d)!=alg_vector_dy(%d)\n", (-alg_ysh), (int)alg_vector_dy);
+		if (makeUnsigned((signed int)alg_zsh) != alg_vector_color) 
+			printf("(makeUnsigned((signed int)alg_zsh)(%d) != alg_vector_color(%d))\n", makeUnsigned((signed int)alg_zsh), alg_vector_color );
+//		if ((sig_ramp == 0) != alg_ramping) printf("((sig_ramp == 0) != alg_ramping)\n");
+
+*/
 
          /* we continue vectoring with a new set of parameters if the
           * current point is not out of limits.
@@ -1368,6 +1946,7 @@ IRAM_ATTR static einline void alg_sstep (void)
 				alg_vector_dy = 0;
 			}
             alg_vector_color = makeUnsigned((signed int)alg_zsh);
+contx:			
          }
          else
             alg_vectoring = 0;
@@ -1403,61 +1982,82 @@ IRAM_ATTR void vecxSteps (long icycles)
 	}
 }
 */
+
 IRAM_ATTR void vecx_emu (long cycles)
 {
 	extern unsigned reg_pc;
 	unsigned icycles;
 
+#ifdef PROFILING
+uint64_t d0 = 0;
+uint64_t d1 = 0;
+uint64_t d2 = 0;
+uint64_t d3 = 0;
+uint64_t d4 = 0;
+
+uint64_t d0s = 0;
+uint64_t d1s = 0;
+uint64_t d2s = 0;
+uint64_t d3s = 0;
+uint64_t d4s = 0;
+#endif
 	while (cycles > 0) 
 	{
+#ifdef PROFILING
+uint64_t m0 = esp_timer_get_time();
+#endif
+
 		icycles = e6809_sstep (via_ifr & 0x80, 0);
 	    if (reg_pc == 0xf1a2) thisWaitRecal = 1;
-		cyclesRunning += icycles;
+
+#ifdef PROFILING
+uint64_t m1 = esp_timer_get_time();
+d0 = m1-m0;
+d1 = 0;d2 = 0;d3 = 0;d4 = 0;
+#endif
 
 		for (int c = 0; c < icycles; c++) {
-
+			cyclesRunning++;
 			via_sstep0 ();
+#ifdef PROFILING
+uint64_t m2 = esp_timer_get_time();
+			d1 += (m2-m1);
+#endif
 		    timerDoStep();
+#ifdef PROFILING
+uint64_t m3 = esp_timer_get_time();
+			d2 += (m3-m2);
+#endif
 			alg_sstep ();
+#ifdef PROFILING
+uint64_t m4 = esp_timer_get_time();
+			d3 += (m4-m3);
+#endif
 			via_sstep1 ();
-			e8910_tick ();
-			
+#ifdef PROFILING
+uint64_t m5 = esp_timer_get_time();
+			d4 += (m5-m4);
+#endif
+
+#ifdef PROFILING
+		 m1 = esp_timer_get_time();
+#endif
 		}
 
-/*
-// Handshake semaphores
-extern SemaphoreHandle_t sem_job_available;   // Core0 waits on this
-extern SemaphoreHandle_t sem_job_done;   // Core1 waits on this
-
-// Data passed from Core1 -> Core0
-extern volatile uint16_t core0_cycles;
-
-        // 2. Dispatch previous instruction's cycles to Core 0, if we have one
-        {
-            // Wait until previous Core 0 job is done
-            // (this will not block if Core 0 has already finished)
-            xSemaphoreTake(sem_job_done, portMAX_DELAY);
-
-            // Pass last_cycles to Core 0 and wake worker
-            core0_cycles = icycles;
-            xSemaphoreGive(sem_job_available);
-            // Core 0 will now run the per-cycle loop for last_cycles
-        }
-*/
-
-
-
-
-
-
-
-
+#ifdef PROFILING
+d0s += d0;
+d1s += d1;
+d2s += d2;
+d3s += d3;
+d4s += d4;
+#endif
 
 
 		cycles -= (long) icycles;
 		fcycles -= (long) icycles;
 		int doSync = 0;
 		
+config_autoSync=1;		
 		if (config_autoSync)
 		{
 			if (syncImpulse)
@@ -1488,7 +2088,7 @@ extern volatile uint16_t core0_cycles;
 			}
 			else if (fcycles < 0) 
 			{
-				doSync = 1;
+				//doSync = 1;
 			}
 		}
 		else
@@ -1512,4 +2112,14 @@ extern volatile uint16_t core0_cycles;
 			emu_end_frame();
 		}	  
 	}
+#ifdef PROFILING
+printf("6809 : %d\n", (int)d0s);
+printf("via 0: %d\n", (int)d1s);		
+printf("timer: %d\n", (int)d2s);		
+printf("alg  : %d\n", (int)d3s);		
+printf("via 1: %d\n", (int)d4s);		
+#endif
+
 }
+
+

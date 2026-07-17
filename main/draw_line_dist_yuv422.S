@@ -23,7 +23,7 @@
  *   t4  = px
  *   t5  = row  (fb + py*fb_w*2)
  *   t6  = py
- *
+ * 
  * Stack frame (80 bytes):
  *   sp+ 0  : saved ra
  *   sp+ 4  : saved s0..s11  (48 bytes, sp+4..sp+51)

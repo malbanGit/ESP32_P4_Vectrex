@@ -1,12 +1,11 @@
+#vecx/e8910.c
 idf_component_register(
-    SRCS "main.c" "draw_line.S" "overlay_line.c" "overlay_fast.c" "overlay_fast_asm.S"
-         "draw_line_dist_rgb888.c" "draw_line_dist_rgb888.S" "overlay_line_rgb888.c"
-         "overlay_fast_rgb888.c" "overlay_fast_asm_rgb888.S"
-         "draw_line_dist_yuv422.S" "overlay_line_yuv422.c"
-         "overlay_fast_yuv422.c" "overlay_fast_asm_yuv422.S"
-         "lodepng.c"
-         vecx/cart.c vecx/e8910.c vecx/e6809.c vecx/vecx.c
+    SRCS "draw_line_dist_yuv422.S" "draw_line_dist_rgb888.S" "draw_line_dist_rgb888.c" "lodepng.c" "hdmi.c" "lvds.c" "mire.c" "main.c" vecx/e6809.c  vecx/vecx.c
     INCLUDE_DIRS "." vecx
-    REQUIRES esp_lcd esp32_p4_nano_custom
-    PRIV_REQUIRES esp_timer fatfs esp_psram esp_mm esp_codec_dev
+    REQUIRES esp_lcd esp32_p4_nano_custom fatfs sd_card
+    PRIV_REQUIRES esp_timer esp_psram esp_mm esp_codec_dev esp_driver_i2s esp_driver_gpio
 )
+
+set(CONFIG_USB_HOST_ENABLED y)
+set(CONFIG_USB_HOST_HID_ENABLED y)
+set(CONFIG_USB_HOST_HID_TASK_STACK_SIZE 4096)

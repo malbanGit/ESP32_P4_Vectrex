@@ -13,17 +13,16 @@
  * 'glow' parameter controls the glow radius in pixels beyond the beam edge.
  * Gaussian is normalised so it decays to ~1/255 at exactly glow pixels out.
  * glow=0 → hard beam, no fringe.  glow=2 is a good default for thin lines.
- */
+ */ 
 
 #include <stdint.h>
 #include <string.h>
-#include "draw_line_rgb888.h"
 
 /* Default glow radius used by the wrapper functions (overlay_line_rgb888.c etc.)
  * when they call draw_line_asm_rgb888 without a glow argument.
  * Override from main.c or elsewhere:  g_line_glow = 3;
  */
-int g_line_glow = 2;
+extern int g_line_glow;
 
 /* Gaussian LUT: gauss_lut[i] = round(255 * exp(-i / 32))
  * Indexed by: (glow_d2_q16 * gauss_scale) >> (GAUSS_SHIFT + 16)
@@ -48,26 +47,3 @@ const uint8_t gauss_lut[GAUSS_LUT_SIZE] = {
       2,   2,   2,   2,   2,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
       1,   1,
 };
-
-static inline int iclamp(int v, int lo, int hi)
-{
-    return v < lo ? lo : (v > hi ? hi : v);
-}
-
-/* Compute LUT scale factor so that glow_d² = glow_r² maps to lut index ~177.
- * gauss_scale * glow_r2_q16 >> GAUSS_SHIFT == 177
- * gauss_scale = 177 << GAUSS_SHIFT / glow_r2_q16
- * We use a precomputed shift of glow_r²: glow_r2_q16 = glow_r² * 65536
- * → gauss_scale = 177 * 65536 / (glow_r² * 65536 >> GAUSS_SHIFT)
- *               = 177 << GAUSS_SHIFT / glow_r²
- */
-static inline int gauss_scale(int glow_r)
-{
-    int gr2 = glow_r * glow_r;
-    if (gr2 == 0) return 0;
-    return (177 << GAUSS_SHIFT) / gr2;
-}
-
-/* draw_line_asm_rgb888 is implemented in draw_line_dist_rgb888.S */
-
-/* undraw_line_asm_rgb888 is implemented in draw_line_dist_rgb888.S */

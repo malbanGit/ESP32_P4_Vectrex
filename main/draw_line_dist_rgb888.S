@@ -66,10 +66,10 @@ draw_line_asm_rgb888:
     mv      s9, a7          /* brightness */
 
     /* Early exits */
-    beqz    s0, .Ldraw_ret
-    blez    s1, .Ldraw_ret
-    blez    a2, .Ldraw_ret          /* fb_h */
-    blez    s9, .Ldraw_ret
+//    beqz    s0, .Ldraw_ret
+//    blez    s1, .Ldraw_ret
+//    blez    a2, .Ldraw_ret          /* fb_h */
+//    blez    s9, .Ldraw_ret
 
     /* Save coordinate args */
     sw      a3, 52(sp)      /* x0 */
@@ -466,9 +466,9 @@ undraw_line_asm_rgb888:
     mv      s1, a1          /* fb_w  */
 
     /* Early exits */
-    beqz    s0, .Lundraw_ret
-    blez    s1, .Lundraw_ret
-    blez    a2, .Lundraw_ret    /* fb_h */
+//    beqz    s0, .Lundraw_ret
+//    blez    s1, .Lundraw_ret
+//    blez    a2, .Lundraw_ret    /* fb_h */
 
     /* Save x0,y0,x1,y1 */
     sw      a3, 32(sp)
