@@ -759,9 +759,17 @@ DRAM_ATTR unsigned char cartData[MAX_CART_SIZE];
 long cartSize = 0;
 #include "file.i"
 
-/* Composite s_overlay (BGRA, 4 bytes/pixel) onto s_fb_back (BGR, 3 bytes/pixel).
- * Alpha=255 → fully opaque overlay pixel.  Alpha=0 → framebuffer pixel unchanged.
- * Pixels where alpha < 8 are skipped entirely (common for fully-transparent areas). */
+/* Global alpha adjustment applied to semi-transparent pixels only.
+ * Range -255..+255.  0 = no change.  Positive = more opaque, negative = more transparent.
+ * Pixels with alpha==0 or alpha==255 are never modified.                  */
+int alphaAdjust = 0;
+
+/* Write s_overlay (BGRA, 4 bytes/pixel) into s_fb_back (BGR, 3 bytes/pixel).
+ * Destination is assumed to be black, so partial-alpha pixels scale the source
+ * colour directly: out = src * effective_alpha / 255.
+ *   alpha == 0   → skip (dest stays black)
+ *   alpha == 255 → straight copy
+ *   otherwise    → alpha clamped by alphaAdjust, then out = src * a / 255     */
 void drawOverlay()
 {
     if (s_overlay == NULL) return;
@@ -773,16 +781,19 @@ void drawOverlay()
     for (int i = 0; i < total; i++, src += 4, dest += 3)
     {
         uint8_t a = src[3];
-        if (a == 0)   continue;          /* fully transparent — skip */
+        if (a == 0) continue;            /* fully transparent — leave black */
+
         if (a == 255) {                  /* fully opaque — straight copy */
             dest[0] = src[0];
             dest[1] = src[1];
             dest[2] = src[2];
-        } else {                         /* partial alpha blend */
-            uint16_t ia = 255 - a;
-            dest[0] = (uint8_t)((src[0] * a + dest[0] * ia) >> 8);
-            dest[1] = (uint8_t)((src[1] * a + dest[1] * ia) >> 8);
-            dest[2] = (uint8_t)((src[2] * a + dest[2] * ia) >> 8);
+        } else {                         /* semi-transparent: scale over black */
+            int ea = (int)a + alphaAdjust;
+            if (ea <= 0)  continue;      /* adjusted away to transparent */
+            if (ea > 255) ea = 255;
+            dest[0] = (uint8_t)((src[0] * ea) >> 8);
+            dest[1] = (uint8_t)((src[1] * ea) >> 8);
+            dest[2] = (uint8_t)((src[2] * ea) >> 8);
         }
     }
 }
