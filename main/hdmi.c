@@ -6,6 +6,45 @@
 #include "board.h"
 #include "esp_check.h"
 #include "esp_lcd_panel_ops.h"
+#define ESP_LCD_LT8912B_VIDEO_TIMING_1280x720_60Hz_60() \
+    {                               \
+        .hfp            = 48,      \
+        .hs             = 32,       \
+        .hbp            = 80,      \
+        .hact           = 1280,     \
+        .htotal         = 1440,     \
+        .vfp            = 21,        \
+        .vs             = 5,        \
+        .vbp            = 180,       \
+        .vact           = 720,      \
+        .vtotal         = 926,      \
+        .h_polarity     = 1,        \
+        .v_polarity     = 0,        \
+        .vic            = 0,        \
+        .aspect_ratio   = LT8912B_ASPECT_RATION_16_9, \
+        .pclk_mhz       = 80,    \
+    }
+
+#define LT8912B_1280x720_PANEL_60HZ_DPI_CONFIG() LT8912B_1280x720_PANEL_60HZ_DPI_CONFIG_WITH_FBS(1)
+#define LT8912B_1280x720_PANEL_60HZ_DPI_CONFIG_WITH_FBS_60(NUM_FBS) \
+{                           \
+        .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT,       \
+        .dpi_clock_freq_mhz = 80,                          \
+        .virtual_channel = 0,                              \
+        .in_color_format = LCD_COLOR_PIXEL_FORMAT_RGB888,     \
+        .num_fbs = NUM_FBS,                                      \
+        .video_timing = {                                  \
+            .h_size = 1280,                       \
+            .v_size = 720,                       \
+            .hsync_back_porch = 80,                        \
+            .hsync_pulse_width = 32,                      \
+            .hsync_front_porch = 48,                       \
+            .vsync_back_porch = 180,                        \
+            .vsync_pulse_width = 5,                        \
+            .vsync_front_porch = 21,                        \
+        },                                                 \
+        .flags.disable_lp = true,                          \
+    }
 
 static const char *TAG = "hdmi";
 

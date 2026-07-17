@@ -1,0 +1,8 @@
+# On your local machine, in the repo directory
+git add -A
+git commit -m "local changes sync"
+git push origin claude/funny-ptolemy-6tx52k
+
+#fetch
+git fetch origin
+git reset --hard origin/claude/funny-ptolemy-6tx52k
