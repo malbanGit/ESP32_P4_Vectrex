@@ -214,10 +214,10 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
                                 int x0, int y0, int x1, int y1,
                                 int brightness, int thickness);
 
-
+#include "draw_line_dist_rgb888_overlay.h"
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
-    #if VIDEO_FB_YUV422 == 1
+#if VIDEO_FB_YUV422 == 1
     if (brightness == 0) 
     {
         undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
@@ -239,7 +239,15 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
     #else
     if (brightness == 0) 
     {
-        undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+        if (s_overlay == NULL)
+        {
+            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+        }
+        else        
+        {
+            undraw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width, s_overlay);
+
+        }
     }
     else
     {
@@ -247,13 +255,30 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
         {
             int b = brightness*4+brightnessAdjust;
             if (b>0)
-                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+            {
+                if (s_overlay == NULL)
+                {
+                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                }
+                else
+                {
+                    draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                }
+            }
             return;
         }
         int b = brightness*4/3+brightnessAdjust;
         if (b>0)
-            draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-
+        {
+            if (s_overlay == NULL)
+            {
+                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+            }
+            else
+            {
+                draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+            }
+        }
     }
     #endif
 }
@@ -933,6 +958,7 @@ esp_log_level_set("*", ESP_LOG_DEBUG);
         {
             printf("ROM Name: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
+            cartSize = load_rom_file("SWEEP.BIN", cartData, sizeof(cartData));
             if (cartSize < 0) {
                 printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
                 cartSize = 0;
@@ -957,8 +983,6 @@ esp_log_level_set("*", ESP_LOG_DEBUG);
     ESP_ERROR_CHECK(gpio_config(&btn));
 
 */
-
-
 
     if (usb_keyboard_init() != ESP_OK)
     {
@@ -985,7 +1009,7 @@ extern int SCREEN_HEIGHT;
 
 
 
- loadOverlayRGB("/sdcard/mine.png", 564, 720);
+ loadOverlayRGB("/sdcard/sweep.png", 564, 720);
 
 
 
