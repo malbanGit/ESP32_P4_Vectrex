@@ -442,7 +442,7 @@ char  *name[]={
       snd_regs[14] |= 128;
 }
 
-void osint_emuloop(int cycles)
+IRAM_ATTR void osint_emuloop(int cycles)
 {
 	vecx_emu(cycles);
 	readevents();
