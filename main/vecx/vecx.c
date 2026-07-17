@@ -442,7 +442,7 @@ char  *name[]={
       snd_regs[14] |= 128;
 }
 
-void osint_emuloop(int cycles)
+IRAM_ATTR void osint_emuloop(int cycles)
 {
 	vecx_emu(cycles);
 	readevents();
@@ -473,7 +473,7 @@ int vecx_init()
 	}
 	
 //	resize(SCREEN_HEIGHT*3/4, SCREEN_HEIGHT); // this is easily to much for high resolutions
-	resize(500, 700);
+	resize( 500, 700);
 
 	vecx_reset();
 	e8910_init_sound();
@@ -484,7 +484,6 @@ int vecx_init()
 IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
 {
 	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
-//	emu_draw_line(offx + x0 / scl_factorx, offy -y0 / scl_factory, offx + x1 / scl_factorx, offy - y1 / scl_factory, color); // For ESP32
 	return;
 }
 
@@ -1465,8 +1464,6 @@ IRAM_ATTR
 static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 {
     int t2shift;
-//    uint8_t acr = via_acr;   // einmal lesen, fürs Maskieren verwenden
-
     /* --- T1-Timer --- */
 	if (via_t1on) 
 	{
@@ -1507,7 +1504,6 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
     if (via_t2on && ((via_acr & 0x20u) == 0u)) 
     {
         via_t2c--;
-
         if ((uint16_t)via_t2c == 0xFFFFu)   // "läuft 1,5 Takte zu lang"
         {
             /* one shot mode */
@@ -1520,12 +1516,6 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
             }
         }
     }
-
-
-
-
-
-
 
 	/* Gemeinsame Shift-Out-Sequenz */
 	#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
@@ -1555,7 +1545,6 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 
 	if (via_srb >= 8u)
 		return;    /* oder zum Ende von via_sstep0 springen */
-
 
 	/* Shift-Counter: exakt wie vorher, nur enger geschrieben */
 	via_src--;
@@ -1633,7 +1622,6 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 			case 0x0C:
 				/* shift in unter CB1-Kontrolle */
 				break;
-
 		}
 
 		if (via_srb == 8u)
@@ -1643,19 +1631,6 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 			/* lastShift = via_cb2s;  // falls du das später wieder brauchst */
 		}
 	}
-
-
-
-
-
-
-
-
-
-
-
-	
-
 }
 
 
@@ -1699,58 +1674,8 @@ static inline __attribute__((always_inline, hot)) void via_sstep1(void)
     old_via_ca1 = via_ca1;
 }
 
-IRAM_ATTR
-static inline __attribute__((always_inline, hot)) void _old (void)
-{
-	if ((via_pcr & 0x0e) == 0x0a) 
-	{
-		/* if ca2 is in pulse mode, then make sure
-		 * it gets restored to '1' after the pulse.
-		 */
-		via_ca2 = 1;
-		timerAddItem(via_ca2, &sig_zero, TIMER_ZERO);
-	}
-
-	if ((via_pcr & 0xe0) == 0xa0) 
-	{
-		/* if cb2 is in pulse mode, then make sure
-		 * it gets restored to '1' after the pulse.
-		 */
-		via_cb2h = 1;
-#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
-sig_blank = 1;
-#else
-timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
-#endif
-	}
-
-	// documentation of VIA
-	if (via_ca1 !=old_via_ca1)
-	{
-		if ((via_pcr & 0x01) == 0x01) // interrupt flag is set by transition low to high
-		{
-			if (via_ca1 != 0)
-			{
-				via_ifr = via_ifr | 0x02;
-				int_update();
-			}
-		}
-		else // ((via_pcr & 0x01) == 0x00) // interrupt flag is set by transition high to low
-		{
-			if (via_ca1 == 0)
-			{
-				via_ifr = via_ifr | 0x02;
-				int_update();
-			}
-		}
-	}
-	old_via_ca1 =via_ca1;// NEW
-
-}
-
 
 /* perform a single cycle worth of analog emulation */
-
 IRAM_ATTR
 static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 {

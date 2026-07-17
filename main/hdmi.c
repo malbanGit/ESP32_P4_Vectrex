@@ -46,6 +46,83 @@
         .flags.disable_lp = true,                          \
     }
 
+
+    #define ESP_LCD_LT8912B_VIDEO_TIMING_1280x720_30Hz() \
+    {                               \
+        .hfp            = 48,      \
+        .hs             = 32,       \
+        .hbp            = 80,      \
+        .hact           = 1280,     \
+        .htotal         = 1440,     \
+        .vfp            = 21,        \
+        .vs             = 5,        \
+        .vbp            = 180,       \
+        .vact           = 720,      \
+        .vtotal         = 926,      \
+        .h_polarity     = 1,        \
+        .v_polarity     = 0,        \
+        .vic            = 0,        \
+        .aspect_ratio   = LT8912B_ASPECT_RATION_16_9, \
+        .pclk_mhz       = 40,    \
+    }
+
+#define LT8912B_1280x720_PANEL_30HZ_DPI_CONFIG_WITH_FBS(NUM_FBS) \
+{                           \
+        .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT,       \
+        .dpi_clock_freq_mhz = 40,                          \
+        .virtual_channel = 0,                              \
+        .in_color_format = LCD_COLOR_PIXEL_FORMAT_RGB888,     \
+        .num_fbs = NUM_FBS,                                      \
+        .video_timing = {                                  \
+            .h_size = 1280,                       \
+            .v_size = 720,                       \
+            .hsync_back_porch = 80,                        \
+            .hsync_pulse_width = 32,                      \
+            .hsync_front_porch = 48,                       \
+            .vsync_back_porch = 180,                        \
+            .vsync_pulse_width = 5,                        \
+            .vsync_front_porch = 21,                        \
+        },                                                 \
+        .flags.disable_lp = true,                          \
+    }
+#define ESP_LCD_LT8912B_VIDEO_TIMING_1280x720_50Hz() \
+    {                               \
+        .hfp            = 440,     \
+        .hs             = 40,      \
+        .hbp            = 220,     \
+        .hact           = 1280,    \
+        .htotal         = 1980,    \
+        .vfp            = 5,       \
+        .vs             = 5,       \
+        .vbp            = 20,      \
+        .vact           = 720,     \
+        .vtotal         = 750,     \
+        .h_polarity     = 1,       \
+        .v_polarity     = 1,       \
+        .vic            = 19,      \
+        .aspect_ratio   = LT8912B_ASPECT_RATION_16_9, \
+        .pclk_mhz       = 74,    \
+    }
+
+#define LT8912B_1280x720_PANEL_50HZ_DPI_CONFIG_WITH_FBS(NUM_FBS) \
+{                           \
+        .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT,       \
+        .dpi_clock_freq_mhz = 74,                          \
+        .virtual_channel = 0,                              \
+        .in_color_format = LCD_COLOR_PIXEL_FORMAT_RGB888,  \
+        .num_fbs = NUM_FBS,                                \
+        .video_timing = {                                  \
+            .h_size = 1280,                                \
+            .v_size = 720,                                 \
+            .hsync_back_porch = 220,                       \
+            .hsync_pulse_width = 40,                       \
+            .hsync_front_porch = 440,                      \
+            .vsync_back_porch = 20,                        \
+            .vsync_pulse_width = 5,                        \
+            .vsync_front_porch = 5,                        \
+        },                                                 \
+        .flags.disable_lp = true,                          \
+    }
 static const char *TAG = "hdmi";
 
 esp_err_t hdmi_start(const esp_lcd_panel_lt8912b_io_t *io, esp_lcd_dsi_bus_handle_t dsi_bus,
@@ -55,7 +132,8 @@ esp_err_t hdmi_start(const esp_lcd_panel_lt8912b_io_t *io, esp_lcd_dsi_bus_handl
 //    static esp_lcd_dpi_panel_config_t dpi = LT8912B_800x600_PANEL_60HZ_DPI_CONFIG_WITH_FBS(2) ; // 60Hz
 //    static esp_lcd_dpi_panel_config_t dpi = LT8912B_1280x800_PANEL_60HZ_DPI_CONFIG_WITH_FBS(2) ; // 70Hz
 //    static esp_lcd_dpi_panel_config_t dpi = LT8912B_1920x1080_PANEL_30HZ_DPI_CONFIG_WITH_FBS(2) ; // 36Hz
-    static esp_lcd_dpi_panel_config_t dpi = LT8912B_1280x720_PANEL_60HZ_DPI_CONFIG_WITH_FBS_60(2) ; // 60Hz
+//    static esp_lcd_dpi_panel_config_t dpi = LT8912B_1280x720_PANEL_60HZ_DPI_CONFIG_WITH_FBS_60(2) ; // 60Hz
+    static esp_lcd_dpi_panel_config_t dpi = LT8912B_1280x720_PANEL_60HZ_DPI_CONFIG_WITH_FBS_60(2);
 
     
 
@@ -68,6 +146,7 @@ esp_err_t hdmi_start(const esp_lcd_panel_lt8912b_io_t *io, esp_lcd_dsi_bus_handl
 //        .video_timing = ESP_LCD_LT8912B_VIDEO_TIMING_800x600_60Hz(),
 //        .video_timing = ESP_LCD_LT8912B_VIDEO_TIMING_1280x800_60Hz(),
 //        .video_timing = ESP_LCD_LT8912B_VIDEO_TIMING_1920x1080_30Hz(),
+//        .video_timing = ESP_LCD_LT8912B_VIDEO_TIMING_1280x720_60Hz_60(),
         .video_timing = ESP_LCD_LT8912B_VIDEO_TIMING_1280x720_60Hz_60(),
         
         .mipi_config = { .dsi_bus = dsi_bus, .dpi_config = &dpi, .lane_num = 2 },
