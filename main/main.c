@@ -759,28 +759,41 @@ DRAM_ATTR unsigned char cartData[MAX_CART_SIZE];
 long cartSize = 0;
 #include "file.i"
 
+/* Composite s_overlay (BGRA, 4 bytes/pixel) onto s_fb_back (BGR, 3 bytes/pixel).
+ * Alpha=255 → fully opaque overlay pixel.  Alpha=0 → framebuffer pixel unchanged.
+ * Pixels where alpha < 8 are skipped entirely (common for fully-transparent areas). */
 void drawOverlay()
 {
-    if (s_overlay==NULL) return;
+    if (s_overlay == NULL) return;
 
-    uint8_t *tmpSrc = s_overlay;
-    uint8_t *tmpDest = s_fb_back;
-    for (int y=0;y<LCD_V_RES;y++)
+    const uint8_t *src  = s_overlay;
+    uint8_t       *dest = s_fb_back;
+    int total = LCD_H_RES * LCD_V_RES;
+
+    for (int i = 0; i < total; i++, src += 4, dest += 3)
     {
-        for (int x=0;x<LCD_H_RES;x++)
-        {
-            *tmpDest++ = *tmpSrc++;
-            *tmpDest++ = *tmpSrc++;
-            *tmpDest++ = *tmpSrc++;
+        uint8_t a = src[3];
+        if (a == 0)   continue;          /* fully transparent — skip */
+        if (a == 255) {                  /* fully opaque — straight copy */
+            dest[0] = src[0];
+            dest[1] = src[1];
+            dest[2] = src[2];
+        } else {                         /* partial alpha blend */
+            uint16_t ia = 255 - a;
+            dest[0] = (uint8_t)((src[0] * a + dest[0] * ia) >> 8);
+            dest[1] = (uint8_t)((src[1] * a + dest[1] * ia) >> 8);
+            dest[2] = (uint8_t)((src[2] * a + dest[2] * ia) >> 8);
         }
     }
 }
 
 
 // ---------------------------------------------------------------------------
-// overlay_load_png_rgb888
+// overlay_load_png_bgra  — decode PNG into a BGRA (4 bytes/pixel) buffer.
+// lodepng gives RGBA; we store as BGRA to match the framebuffer's BGR order.
+// fb must be fb_w * fb_h * 4 bytes.
 // ---------------------------------------------------------------------------
-esp_err_t overlay_load_png_rgb888(const char *path, uint8_t *fb, int fb_w, int fb_h)
+esp_err_t overlay_load_png_bgra(const char *path, uint8_t *fb, int fb_w, int fb_h)
 {
     unsigned char *raw   = NULL;
     unsigned       width = 0, height = 0;
@@ -791,17 +804,18 @@ esp_err_t overlay_load_png_rgb888(const char *path, uint8_t *fb, int fb_w, int f
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "PNG %s  %u×%u → %d×%d", path, width, height, fb_w, fb_h);
+    ESP_LOGI(TAG, "PNG %s  %u×%u → %d×%d (BGRA)", path, width, height, fb_w, fb_h);
 
     for (int y = 0; y < fb_h; y++) {
         unsigned src_y = (unsigned)((uint64_t)y * height / (unsigned)fb_h);
         for (int x = 0; x < fb_w; x++) {
             unsigned src_x = (unsigned)((uint64_t)x * width / (unsigned)fb_w);
             const unsigned char *px = raw + (src_y * width + src_x) * 4;
-            uint8_t *dst = fb + (y * fb_w + x) * 3;
-            dst[0] = px[2]; // B  (framebuffer is BGR; lodepng gives RGBA)
+            uint8_t *dst = fb + ((size_t)y * fb_w + x) * 4;
+            dst[0] = px[2]; // B  (swap R↔B for BGR framebuffer)
             dst[1] = px[1]; // G
             dst[2] = px[0]; // R
+            dst[3] = px[3]; // A  (preserved)
         }
     }
 
@@ -810,9 +824,10 @@ esp_err_t overlay_load_png_rgb888(const char *path, uint8_t *fb, int fb_w, int f
 }
 
 // returns pointer 
-/* Load a PNG, scale it to (img_w x img_h), centre it on the full-screen
- * overlay buffer (LCD_H_RES x LCD_V_RES), and fill the surrounding area
- * with black.  Pass img_w=0 / img_h=0 to fill the whole screen.         */
+/* Load a PNG (with alpha), scale it to (img_w x img_h), and centre it on a
+ * full-screen BGRA overlay buffer (LCD_H_RES x LCD_V_RES, 4 bytes/pixel).
+ * Surrounding area is filled with transparent black (alpha=0).
+ * Pass img_w=0 / img_h=0 to stretch to full screen.                      */
 esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 {
     /* clamp / default to full screen */
@@ -826,8 +841,8 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         s_overlay = NULL;
     }
 
-    /* allocate full-screen BGR888 overlay buffer in PSRAM */
-    size_t buf_sz = (size_t)LCD_H_RES * LCD_V_RES * 3;
+    /* allocate full-screen BGRA overlay buffer in PSRAM (4 bytes/pixel) */
+    size_t buf_sz = (size_t)LCD_H_RES * LCD_V_RES * 4;
     s_overlay = heap_caps_malloc(buf_sz, MALLOC_CAP_SPIRAM);
     if (!s_overlay)
     {
@@ -835,11 +850,11 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         return ESP_ERR_NO_MEM;
     }
 
-    /* fill entire buffer with black */
+    /* fill entire buffer with transparent black */
     memset(s_overlay, 0, buf_sz);
 
-    /* decode + scale PNG into a temporary buffer (img_w x img_h) */
-    uint8_t *scaled = heap_caps_malloc((size_t)img_w * img_h * 3, MALLOC_CAP_SPIRAM);
+    /* decode + scale PNG into a temporary BGRA buffer (img_w x img_h) */
+    uint8_t *scaled = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
     if (!scaled)
     {
         ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
@@ -848,7 +863,7 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         return ESP_ERR_NO_MEM;
     }
 
-    esp_err_t ret = overlay_load_png_rgb888(name, scaled, img_w, img_h);
+    esp_err_t ret = overlay_load_png_bgra(name, scaled, img_w, img_h);
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "PNG load failed");
@@ -865,14 +880,14 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     /* blit scaled image into the centre of the full-screen buffer */
     for (int y = 0; y < img_h; y++)
     {
-        const uint8_t *src = scaled  + (size_t)y * img_w * 3;
-        uint8_t       *dst = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 3;
-        memcpy(dst, src, (size_t)img_w * 3);
+        const uint8_t *src = scaled    + (size_t)y * img_w * 4;
+        uint8_t       *dst = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
+        memcpy(dst, src, (size_t)img_w * 4);
     }
 
     heap_caps_free(scaled);
 
-    ESP_LOGI(TAG, "overlay: %s scaled to %dx%d, centred on %dx%d screen",
+    ESP_LOGI(TAG, "overlay: %s scaled to %dx%d, centred on %dx%d screen (BGRA)",
              name, img_w, img_h, LCD_H_RES, LCD_V_RES);
     return ESP_OK;
 }
