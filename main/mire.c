@@ -58,7 +58,7 @@ static inline void px(uint8_t *rgb, int w, int h, int x, int y, uint8_t r, uint8
 {
     if ((unsigned)x >= (unsigned)w || (unsigned)y >= (unsigned)h) return;
     uint8_t *p = rgb + ((size_t)y * w + x) * 3;
-    p[0] = r; p[1] = g; p[2] = b;
+    p[0] = b; p[1] = g; p[2] = r;  /* framebuffer is BGR */
 }
 
 static void fill_rect(uint8_t *rgb, int w, int h, int x0, int y0, int rw, int rh,

@@ -799,9 +799,9 @@ esp_err_t overlay_load_png_rgb888(const char *path, uint8_t *fb, int fb_w, int f
             unsigned src_x = (unsigned)((uint64_t)x * width / (unsigned)fb_w);
             const unsigned char *px = raw + (src_y * width + src_x) * 4;
             uint8_t *dst = fb + (y * fb_w + x) * 3;
-            dst[0] = px[0]; // R
+            dst[0] = px[2]; // B  (framebuffer is BGR; lodepng gives RGBA)
             dst[1] = px[1]; // G
-            dst[2] = px[2]; // B  (alpha ignored)
+            dst[2] = px[0]; // R
         }
     }
 
