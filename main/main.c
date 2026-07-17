@@ -138,6 +138,14 @@ DRAM_ATTR static int          s_build_frame_index = 0;   // Slot, in den der Emu
 // Per-framebuffer line storage for undraw (Hardware-FBs)
 // ----------------------------------------------------
 
+/* Task stacks pinned to internal SRAM so function calls never touch PSRAM. */
+#define EMU_STACK_SIZE  8192
+#define REND_STACK_SIZE 8192
+static DRAM_ATTR StackType_t  s_emu_stack[EMU_STACK_SIZE];
+static DRAM_ATTR StaticTask_t s_emu_tcb;
+static DRAM_ATTR StackType_t  s_rend_stack[REND_STACK_SIZE];
+static DRAM_ATTR StaticTask_t s_rend_tcb;
+
 // Diese beschreiben, was aktuell in jedem Hardware-Framebuffer gezeichnet ist
 DRAM_ATTR static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER];
 DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
@@ -1063,25 +1071,27 @@ extern int SCREEN_HEIGHT;
 
     vecx_init();
 
-    // Emulator task (core 1)
-    xTaskCreatePinnedToCore(
+    // Emulator task (core 1) — static stack in internal SRAM
+    xTaskCreateStaticPinnedToCore(
         emulator_task,
         "emulator",
-        8192,
+        EMU_STACK_SIZE,
         NULL,
-        7,      // Prio
-        NULL,
-        1   // core 1
+        7,
+        s_emu_stack,
+        &s_emu_tcb,
+        1
     );
 
-    // Renderer task (core 0)
-    xTaskCreatePinnedToCore(
+    // Renderer task (core 0) — static stack in internal SRAM
+    xTaskCreateStaticPinnedToCore(
         renderer_task,
         "renderer",
-        8192,
+        REND_STACK_SIZE,
         NULL,
         6,
-        NULL,
-        0   // core 0
+        s_rend_stack,
+        &s_rend_tcb,
+        0
     );
 }
