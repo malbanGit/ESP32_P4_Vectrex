@@ -810,32 +810,70 @@ esp_err_t overlay_load_png_rgb888(const char *path, uint8_t *fb, int fb_w, int f
 }
 
 // returns pointer 
-esp_err_t loadOverlayRGB(char *name)
+/* Load a PNG, scale it to (img_w x img_h), centre it on the full-screen
+ * overlay buffer (LCD_H_RES x LCD_V_RES), and fill the surrounding area
+ * with black.  Pass img_w=0 / img_h=0 to fill the whole screen.         */
+esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 {
-    if (s_overlay != NULL) 
+    /* clamp / default to full screen */
+    if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
+    if (img_h <= 0 || img_h > LCD_V_RES) img_h = LCD_V_RES;
+
+    /* free previous overlay */
+    if (s_overlay != NULL)
     {
-        free(s_overlay);
+        heap_caps_free(s_overlay);
         s_overlay = NULL;
     }
 
-    /* 2. Allocate RGB888 overlay buffer from PSRAM */
-    s_overlay = heap_caps_malloc((size_t)LCD_V_RES * LCD_H_RES * 3, MALLOC_CAP_SPIRAM);
-    if (!s_overlay) 
+    /* allocate full-screen BGR888 overlay buffer in PSRAM */
+    size_t buf_sz = (size_t)LCD_H_RES * LCD_V_RES * 3;
+    s_overlay = heap_caps_malloc(buf_sz, MALLOC_CAP_SPIRAM);
+    if (!s_overlay)
     {
-        ESP_LOGE(TAG, "PSRAM alloc failed (%u bytes)", LCD_V_RES * LCD_H_RES * 3);
+        ESP_LOGE(TAG, "PSRAM alloc failed (%u bytes)", buf_sz);
         return ESP_ERR_NO_MEM;
     }
 
- /* 3. Load PNG → scale to FW×FH → write RGB into overlay buffer */
-    esp_err_t ret = overlay_load_png_rgb888(name, s_overlay, LCD_H_RES, LCD_V_RES);
-    if (ret != ESP_OK) 
+    /* fill entire buffer with black */
+    memset(s_overlay, 0, buf_sz);
+
+    /* decode + scale PNG into a temporary buffer (img_w x img_h) */
+    uint8_t *scaled = heap_caps_malloc((size_t)img_w * img_h * 3, MALLOC_CAP_SPIRAM);
+    if (!scaled)
+    {
+        ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
+        heap_caps_free(s_overlay);
+        s_overlay = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t ret = overlay_load_png_rgb888(name, scaled, img_w, img_h);
+    if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "PNG load failed");
-        free(s_overlay);
+        heap_caps_free(scaled);
+        heap_caps_free(s_overlay);
         s_overlay = NULL;
         return ret;
     }
-    ESP_LOGI(TAG, "mine.png loaded into RGB888 overlay (%dx%d)", LCD_H_RES, LCD_V_RES);
+
+    /* centre position */
+    int off_x = (LCD_H_RES - img_w) / 2;
+    int off_y = (LCD_V_RES - img_h) / 2;
+
+    /* blit scaled image into the centre of the full-screen buffer */
+    for (int y = 0; y < img_h; y++)
+    {
+        const uint8_t *src = scaled  + (size_t)y * img_w * 3;
+        uint8_t       *dst = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 3;
+        memcpy(dst, src, (size_t)img_w * 3);
+    }
+
+    heap_caps_free(scaled);
+
+    ESP_LOGI(TAG, "overlay: %s scaled to %dx%d, centred on %dx%d screen",
+             name, img_w, img_h, LCD_H_RES, LCD_V_RES);
     return ESP_OK;
 }
 
@@ -926,7 +964,7 @@ extern int SCREEN_HEIGHT;
 
 
 
- loadOverlayRGB("/sdcard/mine.png");
+ loadOverlayRGB("/sdcard/mine.png", 564, 720);
 
 
 
