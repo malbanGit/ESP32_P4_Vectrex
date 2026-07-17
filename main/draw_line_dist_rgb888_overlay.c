@@ -77,12 +77,20 @@ IRAM_ATTR void draw_line_rgb888_overlay(
 
     int glow   = (g_line_glow < 0) ? 0 : g_line_glow;
     int beam_r = thickness >> 1;
-    int R      = beam_r + glow;
 
-    int bx0 = iclamp((x0 < x1 ? x0 : x1) - R, 0, fb_w - 1);
-    int bx1 = iclamp((x0 > x1 ? x0 : x1) + R, 0, fb_w - 1);
-    int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
-    int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
+    int R      = beam_r + glow;
+    int Rb     = R > 0 ? R - 1 : 0;
+
+    int bx0 = iclamp((x0 < x1 ? x0 : x1) - Rb, 0, fb_w - 1);
+    int bx1 = iclamp((x0 > x1 ? x0 : x1) + Rb, 0, fb_w - 1);
+    int by0 = iclamp((y0 < y1 ? y0 : y1) - Rb, 0, fb_h - 1);
+    int by1 = iclamp((y0 > y1 ? y0 : y1) + Rb, 0, fb_h - 1);
+
+    int wx0 = (x0 < x1 ? x0 : x1) - Rb;
+    int wx1 = (x0 > x1 ? x0 : x1) + Rb;
+    int wy0 = (y0 < y1 ? y0 : y1) - Rb;
+    int wy1 = (y0 > y1 ? y0 : y1) + Rb;
+
 
     int dx   = x1 - x0;
     int dy   = y1 - y0;
@@ -169,6 +177,7 @@ IRAM_ATTR void draw_line_rgb888_overlay(
                     if (contrib == 0) goto px_next;
                 }
 
+if (px < wx0 || px > wx1 || py < wy0 || py > wy1) goto px_next;
                 uint8_t *dst = row_fb + px * 3;
                 int v;
                 v = dst[0] + ((b_col * contrib) >> 8); dst[0] = (uint8_t)(v > 255 ? 255 : v);
@@ -200,11 +209,19 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
     int beam_r = thickness >> 1;
     int R      = beam_r + glow;
 
-    int bx0 = iclamp((x0 < x1 ? x0 : x1) - R, 0, fb_w - 1);
-    int bx1 = iclamp((x0 > x1 ? x0 : x1) + R, 0, fb_w - 1);
-    int by0 = iclamp((y0 < y1 ? y0 : y1) - R, 0, fb_h - 1);
-    int by1 = iclamp((y0 > y1 ? y0 : y1) + R, 0, fb_h - 1);
+    int Rb     = R > 0 ? R - 1 : 0;
 
+    int bx0 = iclamp((x0 < x1 ? x0 : x1) - Rb, 0, fb_w - 1);
+    int bx1 = iclamp((x0 > x1 ? x0 : x1) + Rb, 0, fb_w - 1);
+    int by0 = iclamp((y0 < y1 ? y0 : y1) - Rb, 0, fb_h - 1);
+    int by1 = iclamp((y0 > y1 ? y0 : y1) + Rb, 0, fb_h - 1);
+
+    int wx0 = (x0 < x1 ? x0 : x1) - Rb;
+    int wx1 = (x0 > x1 ? x0 : x1) + Rb;
+    int wy0 = (y0 < y1 ? y0 : y1) - Rb;
+    int wy1 = (y0 > y1 ? y0 : y1) + Rb;
+
+    
     if (s_overlay_pal) {
         /* Palette path: 1 PSRAM byte/pixel read, DRAM palette lookup.
          * Transparent pixels (!(pidx & 0x80)) are skipped — draw never
@@ -221,6 +238,8 @@ IRAM_ATTR void undraw_line_rgb888_overlay(
                 if (rx >= (unsigned)s_ov_w) continue;
                 uint8_t pidx = row_pal[px];
                 if (!(pidx & 0x80)) continue;
+                if (px < wx0 || px > wx1 || py < wy0 || py > wy1) continue;
+                
                 const uint8_t *c   = s_overlay_palette[pidx & 0x7F];
                 uint8_t       *dst = row_fb + px * 3;
                 dst[0] = (uint8_t)((c[0] * ea) >> 8);
