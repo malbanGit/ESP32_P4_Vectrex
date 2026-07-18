@@ -117,13 +117,16 @@ void initAY()
 	// that is the buf size for 1 second
 	// if I want to generate 50 times per second, then divide by 50
 	// 16 bits - but the buffer size is in bytes - not bits
-	audio_bufsize /= audio_bufsize; // 3528
+	audio_bufsize /= 50; // 3528
 ;
 	if ((audio_buf = (char*) heap_caps_malloc((size_t)audio_bufsize, MALLOC_CAP_SPIRAM)) == NULL) 
 	{
-		fprintf (stderr, "Can't allocate sound buffer\n");
+		printf ( "Can't allocate sound buffer\n");
+		return;
 	}
 	ayemu_init(&ay);
+	ayemu_set_sound_format(&ay, 44100, 2, 16);
+	ayemu_set_chip_freq(&ay, 1500000);  // Vectrex PSG clock
 	ayemu_set_stereo(&ay, AYEMU_ABC, NULL);
 
 }
@@ -333,7 +336,6 @@ void e8910_callback(void *userdata, uint8_t *stream, int length)
 		callbackAY(userdata, stream, length);
 		return;
 	}
-
 
 
 	int outn;
