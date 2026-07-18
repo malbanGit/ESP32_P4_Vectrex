@@ -1,3 +1,6 @@
+#include "defines.h"
+
+
 #include <stdio.h>
 #include <string.h>
 
@@ -18,10 +21,12 @@
 //extern const uint8_t music_pcm_end[]   asm("_binary_canon_pcm_end");
 
 
+
 /* Example configurations (wie bei deinem bisherigen Code) */
 // #define EXAMPLE_RECV_BUF_SIZE   (2400)
 // #define EXAMPLE_SAMPLE_RATE     (16000)
-#define EXAMPLE_SAMPLE_RATE     (44100)
+#define EXAMPLE_SAMPLE_RATE     (AY_FREQUENCY)
+
 
 
 //#define EXAMPLE_MCLK_MULTIPLE   (384) // If not using 24-bit data width, 256 should be enough
@@ -112,10 +117,20 @@ static esp_err_t audio_i2s_init(void)
     /* Standard-I2S-Konfiguration */
     i2s_std_config_t std_cfg = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(EXAMPLE_SAMPLE_RATE),
+
+#if AY_CHANNEL==2
+#if AY_BITS==16
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
-//        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-
-
+#else
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_8BIT, I2S_SLOT_MODE_STEREO),
+#endif         
+#else
+#if AY_BITS==16
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+#else
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_8BIT, I2S_SLOT_MODE_MONO),
+#endif         
+#endif
         .gpio_cfg = {
             .mclk = I2S_MCK_IO,
             .bclk = I2S_BCK_IO,
@@ -220,9 +235,8 @@ static esp_err_t audio_codec_init(void)
 */    
 esp_codec_dev_sample_info_t fs = {
     .sample_rate     = EXAMPLE_SAMPLE_RATE,
-//    .channel         = 1,         // <<< MONO
-    .channel         = 2,         // <<< MONO
-    .bits_per_sample = 16,
+    .channel         = AY_CHANNEL,         // <<< STEREO
+    .bits_per_sample = AY_BITS,
 };
 
 ESP_RETURN_ON_ERROR(esp_codec_dev_open(s_codec_dev, &fs),
@@ -234,21 +248,33 @@ ESP_RETURN_ON_ERROR(esp_codec_dev_open(s_codec_dev, &fs),
 /* Öffentliche Init-Funktion für dein Projekt */
 esp_err_t audio_init(void)
 {
-    
     // Jul 26 assuming done in main!
     // audio_gpio_init();
-
-
 
     ESP_RETURN_ON_ERROR(audio_i2c_init(),   TAG_A, "audio_i2c_init failed");
     ESP_RETURN_ON_ERROR(audio_i2s_init(),   TAG_A, "audio_i2s_init failed");
     ESP_RETURN_ON_ERROR(audio_codec_init(), TAG_A, "audio_codec_init failed");
 
+	int freq = AY_FREQUENCY;
+	int chans = AY_CHANNEL;  /* 1=mono, 2=stereo */
+	int bits = AY_BITS;  /* 16 or 8 bit */
 
-void initAY(); // libayemu
 
-initAY(); 
+	/* Allocate audio buffer for one AY frame */
+	audio_bufsize = freq * chans * (bits >> 3);
 
+	// that is the buf size for 1 second
+	// if I want to generate 50 times per second, then divide by 50
+	// 16 bits - but the buffer size is in bytes - not bits
+	audio_bufsize /= 50; // 3528 4 bytes -> 882 "frames" per call
+
+	if ((audio_buf = (char*) heap_caps_malloc((size_t)audio_bufsize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)) == NULL) 
+	{
+		printf ( "Can't allocate sound buffer\n");
+		return ESP_OK;
+	}
+    void initAY(int freq, int chans, int bits); // libayemu
+    initAY(freq, chans, bits); 
 
 
     return ESP_OK;
@@ -295,9 +321,14 @@ void audio_deinit(void)
         i2c_del_master_bus(s_i2c_bus_handle);
         s_i2c_bus_handle = NULL;
     }
-}
 
-//#define AUDIO_FRAME_SAMPLES  882
+	if (audio_buf != NULL) 
+	{
+		free(audio_buf);
+		audio_buf = NULL;
+	}
+
+}
 
 //DRAM_ATTR int16_t audioBuffer[AUDIO_FRAME_SAMPLES];
 /* Callback-Typ: mono, 16 Bit, length = Anzahl Samples */

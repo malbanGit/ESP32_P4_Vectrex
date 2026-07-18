@@ -1,7 +1,9 @@
+#include "defines.h"
+
 /* AY/YM emulator implementation. */
 #include <stdio.h>
 
-#include "ayemu.h"
+#include "ayemu.h" 
 
 #define debuglog stderr;
 
@@ -436,7 +438,7 @@ static void prepare_generation(ayemu_ay_t *ay)
 
 	if (ay->default_stereo_flag) ayemu_set_stereo(ay, AYEMU_ABC, NULL);
 
-	if (ay->default_sound_format_flag) ayemu_set_sound_format(ay, 44100, 2, 16);
+	if (ay->default_sound_format_flag) ayemu_set_sound_format(ay, AY_FREQUENCY, AY_CHANNEL, AY_BITS);
 
 	ay->ChipTacts_per_outcount = ay->ChipFreq / ay->sndfmt.freq / 8;
 
@@ -498,7 +500,7 @@ void *ayemu_gen_sound(ayemu_ay_t *ay, void *buff, size_t frame_count)
 				ay->bit_c = ! ay->bit_c;
 			}
 			
-			/* GenNoise (c) Hacker KAY & Sergey Bulba */
+			// GenNoise (c) Hacker KAY & Sergey Bulba 
 			if (++ay->cnt_n >= (ay->regs.noise * 2)) {
 				ay->cnt_n = 0;
 				ay->Cur_Seed = (ay->Cur_Seed * 2 + 1) ^ \
@@ -531,8 +533,8 @@ void *ayemu_gen_sound(ayemu_ay_t *ay, void *buff, size_t frame_count)
 				mix_l += ay->vols[4][tmpvol];
 				mix_r += ay->vols[5][tmpvol];
 			}			
-		} /* end for (m=0; ...) */
-		
+		} // end for (m=0; ...) 
+
 		mix_l /= ay->Amp_Global;
 		mix_r /= ay->Amp_Global;
 		

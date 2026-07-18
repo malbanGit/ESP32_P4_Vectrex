@@ -1,47 +1,15 @@
-#define VECX_DEBUG 0
-#define MAX_EMU_FPS 50
-#define ENABLE_OVERLAYS 0
-#define LINE_WIDTH 1
-#define LINE_GLOW_WIDTH 2
-#define BRIGHTNESS_ADJUST 0
-#define GLOBAL_OVERLAY_ALPHA 40
-#define AUDIO_OUT_HDMI  1 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
-
-#define SIMPLE_UNDRAW 0 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames
-
-#define HUGE_DATA_LOCATION DRAM_ATTR // /*DRAM_ATTR*/EXT_RAM_BSS_ATTR  
-
-// Following are defined in vecx.h
-// #define MAX_CART_SIZE   32768*2 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
-// #define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
-
-// following is defined in board.h
-// #define VIDEO_FB_YUV422          0 // YUV only supported when overlays are disabled
+// spike is now very VERY slow???? -> Spike IS so slow!!!
+#include "defines.h"
 
 
-typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
-#define VIDEO_OUT_SELECTED VIDEO_OUT_HDMI
-
-
-
-
-
-
-
-
-
-
-#define MAX_LINE_BUFFER   1000
-#define NUM_FB            2        // Hardware-Framebuffer
-#define NUM_FRAME_SLOTS   3        // Logische Emu-Frames (Linien)
 
 /*
-AutoSync not working good!
--> spike speach
--> Minestorm end of level
+Sound canibalizes output to screen
+
+SOUND + Screen both!p
 
 
-SOUND
+
 Vectorblade
 Highscore saving
 joystick
@@ -143,7 +111,10 @@ Sound
 
 #include "draw_line_dist_rgb888_overlay.h"
 
-#define INI_FILE_PATH   "/sdcard/ESP.INI"
+
+char * audio_buf;
+size_t audio_bufsize;
+
 
 char cartName[MAX_ROM_NAME];
 HUGE_DATA_LOCATION unsigned char cartData[MAX_CART_SIZE];
@@ -226,19 +197,19 @@ typedef struct {
 typedef struct { int bx0, by0, bx1, by1; } line_bbox_t;
 
 // Diese beschreiben, was aktuell in jedem Hardware-Framebuffer gezeichnet ist
-HUGE_DATA_LOCATION  static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
+DRAM_ATTR  static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
 DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
 DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
-HUGE_DATA_LOCATION  static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
+DRAM_ATTR  static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
 
 // ----------------------------------------------------
 // Emulator frame storage (independent of framebuffers)
 // ----------------------------------------------------
 
 // Drei logische Frames als Ringpuffer
-HUGE_DATA_LOCATION static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
+DRAM_ATTR static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
 DRAM_ATTR static int          s_build_frame_index = 0;   // Slot, in den der Emulator gerade schreibt
 
 
@@ -301,7 +272,6 @@ DRAM_ATTR video_out_t mode = VIDEO_OUT_SELECTED;          // default at boot
 #include "sdcard.i"
 #include "usb.i"
 #include "file.i"
-//#include "audio_hdmi.i"
 
 
 
@@ -321,26 +291,6 @@ static inline int bboxes_overlap(const line_bbox_t *a, const line_bbox_t *b)
 {
     return a->bx0 <= b->bx1 && a->bx1 >= b->bx0 &&
            a->by0 <= b->by1 && a->by1 >= b->by0;
-}
-
-// ----------------------------------------------------
-// Hash helpers for change detection
-// ----------------------------------------------------
-IRAM_ATTR static inline uint32_t hash_step(uint32_t h, uint32_t v)
-{
-    h ^= v;
-    h *= 16777619u;
-    return h;
-}
-
-IRAM_ATTR static inline uint32_t hash_line(uint32_t h, const vectrex_line_t *l)
-{
-    h = hash_step(h, (uint32_t)l->x0);
-    h = hash_step(h, (uint32_t)l->y0);
-    h = hash_step(h, (uint32_t)l->x1);
-    h = hash_step(h, (uint32_t)l->y1);
-    h = hash_step(h, (uint32_t)l->brightness);
-    return h;
 }
 
 // ----------------------------------------------------
@@ -661,7 +611,6 @@ IRAM_ATTR void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
         l->brightness = brightness;
 
         // Hash für diesen Frame laufend aktualisieren
-//        fs->hash = hash_line(fs->hash, l);
     }
     else {
         // Buffer voll – zusätzliche Linien werden verworfen
@@ -791,14 +740,13 @@ IRAM_ATTR static void renderer_task(void *arg)
 
         // Wait for next VSYNC
         xSemaphoreTake(s_vsync_sem, portMAX_DELAY);
-//printf (".");
 
         // Einen READY-Slot holen – idealerweise den "neueren".
         int frame_idx  = -1;
         int line_count = 0;
 
 
-// 3 "frames" hier stehen nur die Linien - das hat nichts mit den framebuffern zu tun!
+        // 3 "frames" hier stehen nur die Linien - das hat nichts mit den framebuffern zu tun!
         // Hier: letzter READY in der Schleife gewinnt (neuester)
         for (int i = 0; i < NUM_FRAME_SLOTS; ++i) {
             if (s_frames[i].state == FRAME_READY) {
@@ -809,11 +757,10 @@ IRAM_ATTR static void renderer_task(void *arg)
 
         // Kein fertiger Frame verfügbar
         if (frame_idx < 0) {
-  //          printf("Render skipped, no finished frame found.\n");
             continue;
         }
 
-//printf ("Front index: %i, delete Index: %i\n", s_front_fb_index, frame_idx);
+        //printf ("Front index: %i, delete Index: %i\n", s_front_fb_index, frame_idx);
 
         frame_slot_t *fs = &s_frames[frame_idx]; // frame_idx = 0-2
         fs->state = FRAME_RENDERING;
@@ -912,16 +859,7 @@ IRAM_ATTR static void renderer_task(void *arg)
                 drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
             }
         }
-/*
-        // Step 5: redraw damaged stable lines (before rebuilding old_lines buffer)
-        for (int i = 0; i < old_count; i++) {
-            if (s_diff_old_matched[i] && s_diff_damaged[i]) {
-                vectrex_line_t *l = &old_lines[i];
-                drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
-                drawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
-            }
-        }
-        */
+
         // Step 5a: undraw ALL damaged stable lines
         for (int i = 0; i < old_count; i++) {
             if (s_diff_old_matched[i] && s_diff_damaged[i]) {
@@ -990,9 +928,6 @@ IRAM_ATTR static void renderer_task(void *arg)
 
 IRAM_ATTR void e8910_callback(void *userdata, int16_t *stream, int length);// from e8910.c
 
-extern char * audio_buf;
-extern size_t audio_bufsize;
-
 static void audio_music_task(void *arg)
 {
     while (1)
@@ -1013,16 +948,14 @@ static void audio_music_task(void *arg)
         s_audio_cb(NULL, (int16_t *) audio_buf, audio_bufsize);
 
         esp_err_t ret;
-#if AUDIO_OUT_HDMI
+#if AUDIO_OUT_HDMI == 1
     size_t written = 0;
     ret = i2s_channel_write(s_i2s_tx_chan,
                             (void *)audio_buf,
                             audio_bufsize,
                             &written, portMAX_DELAY);
 #else
-    ret = esp_codec_dev_write(s_codec_dev,
-                              (void *)audio_buf,
-                              audio_bufsize);
+    ret = esp_codec_dev_write(s_codec_dev, (void *)audio_buf, audio_bufsize);
 #endif        
 
         if (ret != ESP_OK)
@@ -1395,7 +1328,7 @@ void app_main(void)
         {
             printf("ROM Name: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
-            cartSize = load_rom_file("unkown SPIKE.BIN", cartData, sizeof(cartData));
+            cartSize = load_rom_file("SPIKE.BIN", cartData, sizeof(cartData));
             if (cartSize < 0) {
                 printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
                 cartSize = 0;
@@ -1445,7 +1378,7 @@ extern int SCREEN_HEIGHT;
     frames_init();
 
 #if ENABLE_OVERLAYS==1
- loadOverlayRGB("/sdcard/mine.png", 564, 720);
+ loadOverlayRGB("/sdcard/spike.png", 564, 720);
 #endif
 
 
@@ -1459,32 +1392,19 @@ extern int SCREEN_HEIGHT;
     ESP_ERROR_CHECK(audio_init());
 
 
-#if AUDIO_OUT_HDMI
+#if AUDIO_OUT_HDMI == 1
     gpio_set_level(GPIO_OUTPUT_PA, 0);   // speaker off
-    //gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
-// 
-//     // gpio_set_level(GPIO_OUTPUT_PA, 0);   /* mute speaker PA */
     /* enable LT8912B I2S audio input — CEC bank reg 0xB2 */
     uint8_t val = 0x01;
     esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-
-/*
-switch off with
-uint8_t val = 0x00;
-esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-
-void audio_hdmi_enable(bool on)
-{
-    uint8_t val = on ? 0x01 : 0x00;
+#else 
+    // switch off with
+    gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
+    uint8_t val = 0x00;
     esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-}
-
-*/
-
 #endif
-void callbackAY(void *userdata, int16_t *stream, int length);
 
-//    audio_set_callback(e8910_callback, NULL);
+    void callbackAY(void *userdata, int16_t *stream, int length);
     audio_set_callback(callbackAY, NULL);
 
     printf("Audio init done\n");
@@ -1494,9 +1414,9 @@ void callbackAY(void *userdata, int16_t *stream, int length);
         "audio_music_task",      // Name
         8192,                    // Stackgröße (Wort, nicht Byte)
         NULL,                    // Parameter
-        2,                       // Priorität
+        20,                       // Priorität
         &s_audio_task_handle,    // Handle
-        0                        // Core 0
+        1                        // Core 0
     );
 
     vecx_init();
@@ -1528,6 +1448,6 @@ void callbackAY(void *userdata, int16_t *stream, int length);
 #if VECX_DEBUG == 1    
     printf("Free internal DRAM: %d bytes\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     printf("Largest free DRAM block: %d bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));    
-    heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+    //heap_caps_print_heap_info(MALLOC_CAP_8BIT);
 #endif    
 }

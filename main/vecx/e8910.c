@@ -1,21 +1,11 @@
+#include "defines.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "../libayemu/ayemu.h"
 ayemu_ay_t ay;
-int freq, chans, bits;
-char * audio_buf;
-size_t audio_bufsize;
-
-
-// not used by AY EMU
-#define SOUND_FREQ   22050
-#define SOUND_SAMPLE  1024
-
-
-
-
 
 /***************************************************************************
 
@@ -82,57 +72,32 @@ DRAM_ATTR int reg14Out = 0xff;
 DRAM_ATTR static int SAMPLE_THRESHOLD = 25;
 DRAM_ATTR static int digitByteCounter =0;       
 
-#define MAX_DIGIT_BUFFER 5000
-DRAM_ATTR static int digitByte[MAX_DIGIT_BUFFER];
+#define MAX_DIGIT_BUFFER 2000
+extern long cyclesRunning;
+
+//
+EXT_RAM_BSS_ATTR static int digitByte[MAX_DIGIT_BUFFER];
 
 DRAM_ATTR int tickpos=0;
 DRAM_ATTR int tickdiv=68;
 DRAM_ATTR int curdac=0;
 DRAM_ATTR int dacto;
 
-
-
-
-
-void deinitAY()
-{
-	if (audio_buf != NULL) 
-	{
-		free(audio_buf);
-		audio_buf = NULL;
-	}
-
-}
-void initAY()
+void initAY(int freq, int chans, int bits)
 {
 	memset (&ay, 0, sizeof(ay));
 
-	freq = 44100;
-	chans = 2;  /* 1=mono, 2=stereo */
-	bits = 16;  /* 16 or 8 bit */
-
-	/* Allocate audio buffer for one AY frame */
-	audio_bufsize = freq * chans * (bits >> 3);
-
-	// that is the buf size for 1 second
-	// if I want to generate 50 times per second, then divide by 50
-	// 16 bits - but the buffer size is in bytes - not bits
-	audio_bufsize /= 50; // 3528
-;
-	if ((audio_buf = (char*) heap_caps_malloc((size_t)audio_bufsize, MALLOC_CAP_SPIRAM)) == NULL) 
-	{
-		printf ( "Can't allocate sound buffer\n");
-		return;
-	}
 	ayemu_init(&ay);
-	ayemu_set_sound_format(&ay, 44100, 2, 16);
+//	ayemu_set_chip_type(&ay, AYEMU_YM, NULL);
+	ayemu_set_sound_format(&ay, freq, chans, bits);
 	ayemu_set_chip_freq(&ay, 1500000);  // Vectrex PSG clock
-	ayemu_set_stereo(&ay, AYEMU_ABC, NULL);
-
+	if (chans==2) ayemu_set_stereo(&ay, AYEMU_ABC, NULL);
+//	ayemu_set_stereo(&ay, AYEMU_MONO, NULL);
 }
 
 void ayemu_set_regs(ayemu_ay_t *ay, unsigned *regs);
 
+// length in byte!
 void callbackAY(void *userdata, uint8_t *stream, int length)
 {
 	(void) userdata;
@@ -143,8 +108,66 @@ void callbackAY(void *userdata, uint8_t *stream, int length)
 		memset(stream, 0, length * sizeof(*stream));
 		return;
 	}
-	ayemu_set_regs(&ay, snd_regs);
-	ayemu_gen_sound (&ay, stream, length);
+
+	// small sample counts are ignored!
+	if ((digitByteCounter>SAMPLE_THRESHOLD) ) // are there any samples?
+	{
+
+		// 30000 cycles = 1/50 second
+		// we are called every 1/50th second 
+/*
+		int sampleCounter = 0;
+
+		// AY_FREQUENCY * AY_CHANNEL * AY_BITS / 50 Hz / 4 bytes  -> 882 "frames" per call
+		// that means 882 frames equal 300000cycles equals 1/50th of a second
+		// len is in byte which mewans it is 3528 = 4*882 -> each frame is 2 words (2 channels a 16bit)
+
+		// that means each sample "length is 882/cyclesPerSample"
+*/
+		if (digitByteCounter > SAMPLE_THRESHOLD)
+		{
+			int out_samples = length / (AY_CHANNEL * (AY_BITS >> 3));
+
+			for (int i = 0; i < out_samples; i++) {
+				int idx = (int)(i * (double)digitByteCounter / out_samples);
+				if (idx >= digitByteCounter) idx = digitByteCounter - 1;
+				int8_t raw = (int8_t)digitByte[idx];
+
+		#if AY_BITS == 16
+				int16_t sample = (int16_t)raw * 64;
+				int16_t *out   = (int16_t *)stream;
+		#  if AY_CHANNEL == 2
+				out[i * 2]     = sample;
+				out[i * 2 + 1] = sample;
+		#  else
+				out[i] = sample;
+		#  endif
+
+		#else  /* AY_BITS == 8 */
+				uint8_t sample = (uint8_t)(raw + 128);
+				uint8_t *out   = (uint8_t *)stream;
+		#  if AY_CHANNEL == 2
+				out[i * 2]     = sample;
+				out[i * 2 + 1] = sample;
+		#  else
+				out[i] = sample;
+		#  endif
+		#endif
+			}
+
+			digitByteCounter = -1;
+			return;
+		}
+	}
+	else
+	{
+		// the set reg as a batch - is buggy
+		// some noises do not fade if  regs are set with the batch!
+		//	ayemu_set_regs(&ay, snd_regs);
+		ayemu_gen_sound(&ay, stream, length / (AY_CHANNEL +(AY_BITS>>3)));
+	}
+	digitByteCounter = -1;
+
 }
 
 
@@ -189,11 +212,13 @@ void e8910_write(int r, int v)
 		// sound sample is active
 		if (digitByteCounter>=MAX_DIGIT_BUFFER) return;
 		if (digitByteCounter==-1) digitByteCounter =0; // -1 means digitizing active, but buffer was reset
-		digitByte[digitByteCounter++] = v;
+		digitByte[digitByteCounter] = v;
+		digitByteCounter++;
 		return;
 	}
 
     snd_regs[r] = v;
+ 	ayemu_set_reg(&ay, r, v);
 
 	/* A note about the period of tones, noise and envelope: for speed reasons,*/
 	/* we count down from the period to 0, but careful studies of the chip     */
@@ -324,15 +349,12 @@ void e8910_write(int r, int v)
 	}
 }
 
+// NOT USED!
+// length is the "frame length"
+// meaning one "unit" of sound samples 16bit stereo - > 1 frame (4 byte!)
 IRAM_ATTR 
 void e8910_callback(void *userdata, uint8_t *stream, int length)
 {
-	if (audio_buf !=NULL)
-	{
-		callbackAY(userdata, stream, length);
-		return;
-	}
-
 
 	int outn;
     int lengthOrg = length;
@@ -343,7 +365,7 @@ void e8910_callback(void *userdata, uint8_t *stream, int length)
 	/* hack to prevent us from hanging when starting filtered outputs */
 	if (!PSG.ready)
 	{
-		memset(stream, 0, length * sizeof(*stream));
+		memset(stream, 0, length*4 * sizeof(*stream));
 		return;
 	}
 
@@ -404,7 +426,7 @@ void e8910_callback(void *userdata, uint8_t *stream, int length)
 	while (length > 0)
 	{
         unsigned vol;
-    int left  = 2;
+	    int left  = 2;
 		/* vola, volb and volc keep track of how long each square wave stays */
 		/* in the 1 position during the sample period. */
 
@@ -593,17 +615,11 @@ void e8910_callback(void *userdata, uint8_t *stream, int length)
 			}
 		}
 
-    vol = (vola * PSG.VolA + volb * PSG.VolB + volc * PSG.VolC) / (3 * STEP);
-    if (--length & 1) *(buf1++) = vol >> 8;
+		vol = (vola * PSG.VolA + volb * PSG.VolB + volc * PSG.VolC) / (3 * STEP);
+		if (--length & 1) 
+			*(buf1++) = vol >> 8;
 	}
 
-
-
-
-
-
-
-	
 	// small sample counts are ignored!
 	if ((digitByteCounter>SAMPLE_THRESHOLD) ) // are there any samples?
 	{
@@ -636,25 +652,25 @@ void e8910_callback(void *userdata, uint8_t *stream, int length)
 	digitByteCounter = -1;
 
 }
-
+/*
 static void e8910_build_mixer_table(void)
 {
 	int i;
 	double out;
 
-	/* calculate the volume->voltage conversion table */
-	/* The AY-3-8910 has 16 levels, in a logarithmic scale (3dB per STEP) */
-	/* The YM2149 still has 16 levels for the tone generators, but 32 for */
-	/* the envelope generator (1.5dB per STEP). */
+	// calculate the volume->voltage conversion table 
+	// The AY-3-8910 has 16 levels, in a logarithmic scale (3dB per STEP) 
+	// The YM2149 still has 16 levels for the tone generators, but 32 for 
+	// the envelope generator (1.5dB per STEP). 
 	out = MAX_OUTPUT;
 	for (i = 31;i > 0;i--)
 	{
-		PSG.VolTable[i] = (unsigned)(out + 0.5);	/* round to nearest */
-		out /= 1.188502227;	/* = 10 ^ (1.5/20) = 1.5dB */
+		PSG.VolTable[i] = (unsigned)(out + 0.5);	// round to nearest 
+		out /= 1.188502227;	// = 10 ^ (1.5/20) = 1.5dB 
 	}
 	PSG.VolTable[0] = 0;
 }
-
+*/
 void e8910_init_sound(void)
 {
 	PSG.RNG     = 1;
@@ -662,7 +678,7 @@ void e8910_init_sound(void)
 	PSG.OutputB = 0;
 	PSG.OutputC = 0;
 	PSG.OutputN = 0xff;
-	e8910_build_mixer_table();
+//	e8910_build_mixer_table();
 	PSG.ready   = 1;
 }
 

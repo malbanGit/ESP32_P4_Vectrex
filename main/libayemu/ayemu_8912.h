@@ -2,7 +2,7 @@
  * AY/YM emulator include file
  */
 
-#ifndef _AYEMU_ay8912_h
+#ifndef _AYEMU_ay8912_h 
 #define _AYEMU_ay8912_h
 
 #include <stddef.h>
@@ -138,8 +138,7 @@ EXTERN int
 ayemu_set_sound_format (ayemu_ay_t *ay, int freq, int chans, int bits);
 
 EXTERN void 
-//ayemu_set_regs (ayemu_ay_t *ay, unsigned char *regs);
-ayemu_set_regs(ayemu_ay_t *ay, unsigned *regs);
+ayemu_set_regs (ayemu_ay_t *ay, unsigned *regs);
 
 EXTERN void 
 ayemu_set_reg (ayemu_ay_t *ay, int reg, unsigned char value);

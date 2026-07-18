@@ -28,7 +28,7 @@ extern  unsigned char cartData[MAX_CART_SIZE];
 DRAM_ATTR static long xChange = 0;
 DRAM_ATTR static long rChange = 0;
 
-DRAM_ATTR static long cyclesRunning = 0;
+DRAM_ATTR long cyclesRunning = 0;
 DRAM_ATTR static int thisWaitRecal = 0;
 DRAM_ATTR static long lastWaitRecal=0;
 DRAM_ATTR static long lastSyncCycles = 0;
