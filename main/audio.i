@@ -21,7 +21,7 @@
 /* Example configurations (wie bei deinem bisherigen Code) */
 // #define EXAMPLE_RECV_BUF_SIZE   (2400)
 // #define EXAMPLE_SAMPLE_RATE     (16000)
-#define EXAMPLE_SAMPLE_RATE     (22050)
+#define EXAMPLE_SAMPLE_RATE     (44100)
 
 
 //#define EXAMPLE_MCLK_MULTIPLE   (384) // If not using 24-bit data width, 256 should be enough
@@ -112,10 +112,8 @@ static esp_err_t audio_i2s_init(void)
     /* Standard-I2S-Konfiguration */
     i2s_std_config_t std_cfg = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(EXAMPLE_SAMPLE_RATE),
-//        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
-//                                                        I2S_SLOT_MODE_STEREO),
-
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+//        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
 
 
         .gpio_cfg = {
@@ -222,7 +220,8 @@ static esp_err_t audio_codec_init(void)
 */    
 esp_codec_dev_sample_info_t fs = {
     .sample_rate     = EXAMPLE_SAMPLE_RATE,
-    .channel         = 1,         // <<< MONO
+//    .channel         = 1,         // <<< MONO
+    .channel         = 2,         // <<< MONO
     .bits_per_sample = 16,
 };
 
@@ -244,6 +243,14 @@ esp_err_t audio_init(void)
     ESP_RETURN_ON_ERROR(audio_i2c_init(),   TAG_A, "audio_i2c_init failed");
     ESP_RETURN_ON_ERROR(audio_i2s_init(),   TAG_A, "audio_i2s_init failed");
     ESP_RETURN_ON_ERROR(audio_codec_init(), TAG_A, "audio_codec_init failed");
+
+
+void initAY(); // libayemu
+
+initAY(); 
+
+
+
     return ESP_OK;
 }
 
@@ -290,9 +297,9 @@ void audio_deinit(void)
     }
 }
 
-#define AUDIO_FRAME_SAMPLES  882
+//#define AUDIO_FRAME_SAMPLES  882
 
-DRAM_ATTR int16_t audioBuffer[AUDIO_FRAME_SAMPLES];
+//DRAM_ATTR int16_t audioBuffer[AUDIO_FRAME_SAMPLES];
 /* Callback-Typ: mono, 16 Bit, length = Anzahl Samples */
 typedef void (*audio_sample_callback_t)(void *userdata, int16_t *stream, int length);
 

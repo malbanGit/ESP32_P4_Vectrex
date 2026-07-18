@@ -989,6 +989,8 @@ IRAM_ATTR static void renderer_task(void *arg)
 
 
 IRAM_ATTR void e8910_callback(void *userdata, int16_t *stream, int length);// from e8910.c
+extern char * audio_buf;
+extern size_t audio_bufsize;
 
 static void audio_music_task(void *arg)
 {
@@ -1000,20 +1002,26 @@ static void audio_music_task(void *arg)
             continue;
         }
 
+        if (audio_buf==NULL)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
         // e8910_callback(NULL, uint16_t *stream, int length)
-        s_audio_cb(NULL, audioBuffer, AUDIO_FRAME_SAMPLES);
+        s_audio_cb(NULL, (int16_t *) audio_buf, audio_bufsize);
 
         esp_err_t ret;
 #if AUDIO_OUT_HDMI
     size_t written = 0;
     ret = i2s_channel_write(s_i2s_tx_chan,
-                            (void *)audioBuffer,
-                            AUDIO_FRAME_SAMPLES * sizeof(int16_t),
+                            (void *)audio_buf,
+                            audio_bufsize,
                             &written, portMAX_DELAY);
 #else
     ret = esp_codec_dev_write(s_codec_dev,
-                              (void *)audioBuffer,
-                              AUDIO_FRAME_SAMPLES * sizeof(int16_t));
+                              (void *)audio_buf,
+                              audio_bufsize);
 #endif        
 
         if (ret != ESP_OK)
@@ -1342,7 +1350,7 @@ void app_main(void)
     // fill rom with 01, see https://vectrex-emu.blogspot.com/2006/07/
     memset(cartData, 0x01, MAX_CART_SIZE * sizeof(uint8_t));
 
-#ifdef VECX_DEBUG == 1    
+#if VECX_DEBUG == 1    
     esp_log_level_set("lcd.dsi.dpi", ESP_LOG_DEBUG);   // show the actual DPI pixel clock achieved
     esp_log_level_set("lcd_panel.dpi", ESP_LOG_DEBUG);
     esp_log_level_set("mipi_dsi", ESP_LOG_DEBUG);
@@ -1514,7 +1522,7 @@ void audio_hdmi_enable(bool on)
         0
     );
 
-#ifdef VECX_DEBUG == 1    
+#if VECX_DEBUG == 1    
     printf("Free internal DRAM: %d bytes\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     printf("Largest free DRAM block: %d bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));    
     heap_caps_print_heap_info(MALLOC_CAP_8BIT);

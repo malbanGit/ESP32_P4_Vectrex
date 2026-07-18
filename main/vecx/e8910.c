@@ -2,8 +2,20 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../libayemu/ayemu.h"
+ayemu_ay_t ay;
+int freq, chans, bits;
+char * audio_buf;
+size_t audio_bufsize;
+
+
+// not used by AY EMU
 #define SOUND_FREQ   22050
 #define SOUND_SAMPLE  1024
+
+
+
+
 
 /***************************************************************************
 
@@ -77,6 +89,73 @@ DRAM_ATTR int tickpos=0;
 DRAM_ATTR int tickdiv=68;
 DRAM_ATTR int curdac=0;
 DRAM_ATTR int dacto;
+
+
+
+
+
+void deinitAY()
+{
+	if (audio_buf != NULL) 
+	{
+		free(audio_buf);
+		audio_buf = NULL;
+	}
+
+}
+void initAY()
+{
+	memset (&ay, 0, sizeof(ay));
+
+	freq = 44100;
+	chans = 2;  /* 1=mono, 2=stereo */
+	bits = 16;  /* 16 or 8 bit */
+
+	/* Allocate audio buffer for one AY frame */
+	audio_bufsize = freq * chans * (bits >> 3);
+
+	// that is the buf size for 1 second
+	// if I want to generate 50 times per second, then divide by 50
+	// 16 bits - but the buffer size is in bytes - not bits
+	audio_bufsize /= audio_bufsize; // 3528
+;
+	if ((audio_buf = (char*) heap_caps_malloc((size_t)audio_bufsize, MALLOC_CAP_SPIRAM)) == NULL) 
+	{
+		fprintf (stderr, "Can't allocate sound buffer\n");
+	}
+	ayemu_init(&ay);
+	ayemu_set_stereo(&ay, AYEMU_ABC, NULL);
+
+}
+
+void ayemu_set_regs(ayemu_ay_t *ay, unsigned *regs);
+
+void callbackAY(void *userdata, uint8_t *stream, int length)
+{
+	int outn;
+    int lengthOrg = length;
+	uint8_t* buf1 = stream;
+
+	(void) userdata;
+
+	/* hack to prevent us from hanging when starting filtered outputs */
+	if (!PSG.ready)
+	{
+		memset(stream, 0, length * sizeof(*stream));
+		return;
+	}
+	ayemu_set_regs(&ay, snd_regs);
+	ayemu_gen_sound (&ay, stream, length);
+}
+
+
+
+
+
+
+
+
+
 
 IRAM_ATTR einline 
 int e8910_read(int reg)
@@ -249,6 +328,14 @@ void e8910_write(int r, int v)
 IRAM_ATTR 
 void e8910_callback(void *userdata, uint8_t *stream, int length)
 {
+	if (audio_buf !=NULL)
+	{
+		callbackAY(userdata, stream, length);
+		return;
+	}
+
+
+
 	int outn;
     int lengthOrg = length;
 	uint8_t* buf1 = stream;
