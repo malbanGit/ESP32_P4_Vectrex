@@ -1,7 +1,53 @@
-/*
-Line buffer used to many times - explore and free DRAM
+#define VECX_DEBUG 0
+#define MAX_EMU_FPS 50
+#define ENABLE_OVERLAYS 0
+#define LINE_WIDTH 1
+#define LINE_GLOW_WIDTH 2
+#define BRIGHTNESS_ADJUST 0
+#define GLOBAL_OVERLAY_ALPHA 40
+#define AUDIO_OUT_HDMI  1 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
 
-dram stack
+#define SIMPLE_UNDRAW 0 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames
+
+#define HUGE_DATA_LOCATION DRAM_ATTR // /*DRAM_ATTR*/EXT_RAM_BSS_ATTR  
+
+// Following are defined in vecx.h
+// #define MAX_CART_SIZE   32768*2 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
+// #define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
+
+// following is defined in board.h
+// #define VIDEO_FB_YUV422          0 // YUV only supported when overlays are disabled
+
+
+typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
+#define VIDEO_OUT_SELECTED VIDEO_OUT_HDMI
+
+
+
+
+
+
+
+
+
+
+#define MAX_LINE_BUFFER   1000
+#define NUM_FB            2        // Hardware-Framebuffer
+#define NUM_FRAME_SLOTS   3        // Logische Emu-Frames (Linien)
+
+/*
+AutoSync not working good!
+-> spike speach
+-> Minestorm end of level
+
+
+SOUND
+Vectorblade
+Highscore saving
+joystick
+settings save ti ini
+toggle overlay on off
+sound volume
 
 
 TODO: Calibration Ala Tuts
@@ -18,6 +64,15 @@ Pessimism to free DRAM
     - moved STACK to PSRAM
     - moved all "line data" to PSRAM
 -> seems not to make a great difference (perhaps 1 FPS?) - but we have some dram to spare - whenever we might need it!
+
+NOTE:
+EMU FPS
+returns the Hz of display of the Vectrex.
+If a game runs too slow - I mean if one round of display takes longer then 30000 cycles,
+the the EMU FPS drops also. 
+This is like the real vectrex - and no slowdown of emulation!
+
+
 
 2. Two-layer PPA compositing (eliminate overlay from CPU entirely)
 ESP32-P4 has a Pixel Processing Accelerator (PPA) hardware block that does alpha blending. The idea:
@@ -91,7 +146,7 @@ Sound
 #define INI_FILE_PATH   "/sdcard/ESP.INI"
 
 char cartName[MAX_ROM_NAME];
-/*DRAM_ATTR*/EXT_RAM_BSS_ATTR  unsigned char cartData[MAX_CART_SIZE];
+HUGE_DATA_LOCATION unsigned char cartData[MAX_CART_SIZE];
 long cartSize = 0;
 
 
@@ -125,18 +180,13 @@ i2c_master_bus_config_t i2c_bus_cfg = {
 // ----------------------------------------------------
 // Global line settings
 // ----------------------------------------------------
-DRAM_ATTR int  g_line_width = 1;      // >= 1
-DRAM_ATTR int  g_line_glow  = 2;
-DRAM_ATTR int  brightnessAdjust = 0;
+DRAM_ATTR int  g_line_width = LINE_WIDTH;      // >= 1
+DRAM_ATTR int  g_line_glow  = LINE_GLOW_WIDTH;
+DRAM_ATTR int  brightnessAdjust = BRIGHTNESS_ADJUST;
 
 
 static const char *TAG = "main";
 
-#define MAX_LINE_BUFFER   1000
-//#define LCD_H_RES         BSP_LCD_H_RES
-//#define LCD_V_RES         BSP_LCD_V_RES
-#define NUM_FB            2        // Hardware-Framebuffer
-#define NUM_FRAME_SLOTS   3        // Logische Emu-Frames (Linien)
 DRAM_ATTR static int LCD_H_RES = 1280;
 DRAM_ATTR static int LCD_V_RES = 720;
 //hdmi 1280x720
@@ -176,19 +226,19 @@ typedef struct {
 typedef struct { int bx0, by0, bx1, by1; } line_bbox_t;
 
 // Diese beschreiben, was aktuell in jedem Hardware-Framebuffer gezeichnet ist
-/*DRAM_ATTR*/EXT_RAM_BSS_ATTR  static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
+HUGE_DATA_LOCATION  static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
 DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
 DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
-/*DRAM_ATTR*/EXT_RAM_BSS_ATTR  static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
+HUGE_DATA_LOCATION  static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
 
 // ----------------------------------------------------
 // Emulator frame storage (independent of framebuffers)
 // ----------------------------------------------------
 
 // Drei logische Frames als Ringpuffer
-/*DRAM_ATTR*/ EXT_RAM_BSS_ATTR static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
+HUGE_DATA_LOCATION static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
 DRAM_ATTR static int          s_build_frame_index = 0;   // Slot, in den der Emulator gerade schreibt
 
 
@@ -201,7 +251,7 @@ DRAM_ATTR static int          s_build_frame_index = 0;   // Slot, in den der Emu
 uint8_t       *s_overlay_pal = NULL;
 DRAM_ATTR uint8_t  s_overlay_palette[128][3];
 DRAM_ATTR int      s_overlay_pal_n   = 0;
-DRAM_ATTR uint8_t  s_overlay_alpha_val = 40;  /* representative raw alpha */
+DRAM_ATTR uint8_t  s_overlay_alpha_val = GLOBAL_OVERLAY_ALPHA;  /* representative raw alpha */
 DRAM_ATTR int      s_ov_off_x = 0;             /* active region x offset   */
 DRAM_ATTR int      s_ov_off_y = 0;             /* active region y offset   */
 DRAM_ATTR int      s_ov_w     = 0;             /* active region width      */
@@ -235,13 +285,11 @@ DRAM_ATTR static esp_lcd_panel_lt8912b_io_t lt_io = {0};
 
 
 
-typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
-#define VIDEO_OUT_SELECTED VIDEO_OUT_HDMI
 
 // Diagnostic: 1 = output the P4 DPI's built-in vertical color bars instead of our
 // frame buffer. Rules out a black/buggy frame buffer and tests the exact
 // P4 DPI -> DSI -> bridge -> LVDS data path with known-good pixels. 0 = normal.
-#define VIDEO_DPI_TEST_PATTERN  1
+// #define VIDEO_DPI_TEST_PATTERN  1
 
 
 DRAM_ATTR static esp_lcd_panel_handle_t s_dpi_panel = NULL;
@@ -253,6 +301,8 @@ DRAM_ATTR video_out_t mode = VIDEO_OUT_SELECTED;          // default at boot
 #include "sdcard.i"
 #include "usb.i"
 #include "file.i"
+//#include "audio_hdmi.i"
+
 
 
 static inline line_bbox_t line_compute_bbox(const vectrex_line_t *l)
@@ -709,7 +759,6 @@ IRAM_ATTR static void emulator_task(void *arg)
 
         osint_emuloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
         uint64_t now = esp_timer_get_time();
-#define MAX_EMU_FPS 100
         // 30000 cycles == 1/50 second
         if (now - start <= 1000000/MAX_EMU_FPS) 
         {
@@ -773,7 +822,7 @@ IRAM_ATTR static void renderer_task(void *arg)
         int fb_idx = s_back_fb_index;           // the current backbuffer - we can write to - it is not displayed!
 //        uint64_t t0 = esp_timer_get_time();
 
-#if 0
+#if SIMPLE_UNDRAW == 1
 
 
         undraw_previous_fb(fb_idx);             // undraw all from that framebuffer
@@ -954,12 +1003,19 @@ static void audio_music_task(void *arg)
         // e8910_callback(NULL, uint16_t *stream, int length)
         s_audio_cb(NULL, audioBuffer, AUDIO_FRAME_SAMPLES);
 
-        const size_t bytes = AUDIO_FRAME_SAMPLES * sizeof(int16_t);
+        esp_err_t ret;
+#if AUDIO_OUT_HDMI
+    size_t written = 0;
+    ret = i2s_channel_write(s_i2s_tx_chan,
+                            (void *)audioBuffer,
+                            AUDIO_FRAME_SAMPLES * sizeof(int16_t),
+                            &written, portMAX_DELAY);
+#else
+    ret = esp_codec_dev_write(s_codec_dev,
+                              (void *)audioBuffer,
+                              AUDIO_FRAME_SAMPLES * sizeof(int16_t));
+#endif        
 
-        // this is a blocking (task freeing block) call
-        esp_err_t ret = esp_codec_dev_write(s_codec_dev,
-                                            (void *)audioBuffer,
-                                            bytes);
         if (ret != ESP_OK)
         {
             ESP_LOGE(TAG, "audio_music_task: esp_codec_dev_write failed: 0x%x", ret);
@@ -1247,6 +1303,35 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     return ESP_OK;
 }
 
+/*
+ * HDMI audio: the board's I2S pins (9-13) reach the LT8912B via the SN74AVC4T245
+ * translator (BOARD_PIN_VCV_NOE). No second I2S channel is needed — we bypass
+ * esp_codec_dev and write directly to the already-open s_i2s_tx_chan.
+ *
+ * The LT8912B audio input must be enabled via I2C register 0xB2 on the CEC bank.
+ * Call audio_hdmi_enable_lt8912b() AFTER hdmi_start() has configured the bridge.
+ */
+
+/* Enable audio embedding in LT8912B (CEC I2C bank, reg 0xB2 bit0 = audio enable) */
+static esp_err_t audio_hdmi_enable_lt8912b(const esp_lcd_panel_lt8912b_io_t *lt_io)
+{
+    /* LT8912B CEC bank reg 0xB2: bit0 enables I2S audio input */
+    uint8_t val = 0x01;
+    return esp_lcd_panel_io_tx_param(lt_io->cec_dsi, 0xB2, &val, 1);
+}
+
+/* Write mono PCM directly to the I2S TX channel, bypassing esp_codec_dev.
+ * The same I2S frame reaches both ES8311 and LT8912B — in HDMI mode the
+ * ES8311 PA pin (GPIO_OUTPUT_PA) should be low so the speaker stays silent. */
+static esp_err_t audio_hdmi_write(const int16_t *mono, int samples)
+{
+    size_t written = 0;
+    return i2s_channel_write(s_i2s_tx_chan,
+                             mono,
+                             (size_t)samples * sizeof(int16_t),
+                             &written,
+                             portMAX_DELAY);
+}
 
 
 // ----------------------------------------------------
@@ -1254,12 +1339,31 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 // ----------------------------------------------------
 void app_main(void)
 {
-    esp_log_level_set("lcd.dsi.dpi", ESP_LOG_DEBUG);   // show the actual DPI pixel clock achieved
+    // fill rom with 01, see https://vectrex-emu.blogspot.com/2006/07/
+    memset(cartData, 0x01, MAX_CART_SIZE * sizeof(uint8_t));
 
-esp_log_level_set("lcd_panel.dpi", ESP_LOG_DEBUG);
-// evtl. auch:
-esp_log_level_set("mipi_dsi", ESP_LOG_DEBUG);
-esp_log_level_set("*", ESP_LOG_DEBUG);  
+#ifdef VECX_DEBUG == 1    
+    esp_log_level_set("lcd.dsi.dpi", ESP_LOG_DEBUG);   // show the actual DPI pixel clock achieved
+    esp_log_level_set("lcd_panel.dpi", ESP_LOG_DEBUG);
+    esp_log_level_set("mipi_dsi", ESP_LOG_DEBUG);
+    esp_log_level_set("*", ESP_LOG_DEBUG);  
+#else    
+    /*
+    ESP_LOG_NONE — no output at all
+    ESP_LOG_ERROR — only errors
+    ESP_LOG_WARN — errors and warnings
+    ESP_LOG_INFO
+    ESP_LOG_DEBUG
+    ESP_LOG_VERBOSE
+    */
+    esp_log_level_set("lcd.dsi.dpi", ESP_LOG_ERROR);   // show the actual DPI pixel clock achieved
+    esp_log_level_set("lcd_panel.dpi", ESP_LOG_ERROR);
+    esp_log_level_set("mipi_dsi", ESP_LOG_ERROR);
+    esp_log_level_set(TAG, ESP_LOG_ERROR);
+    esp_log_level_set(TAG_A, ESP_LOG_ERROR);
+    esp_log_level_set("*", ESP_LOG_ERROR);  
+#endif
+
 
     board_assert_vcv_noe();
     board_enable_dsi_phy_power();
@@ -1282,7 +1386,7 @@ esp_log_level_set("*", ESP_LOG_DEBUG);
         {
             printf("ROM Name: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
-            cartSize = load_rom_file("SWEEP.BIN", cartData, sizeof(cartData));
+            cartSize = load_rom_file("unkown SPIKE.BIN", cartData, sizeof(cartData));
             if (cartSize < 0) {
                 printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
                 cartSize = 0;
@@ -1331,10 +1435,9 @@ extern int SCREEN_HEIGHT;
     // Logische Frame-Slots initialisieren
     frames_init();
 
-
-
- loadOverlayRGB("/sdcard/sweep.png", 564, 720);
-
+#if ENABLE_OVERLAYS==1
+ loadOverlayRGB("/sdcard/mine.png", 564, 720);
+#endif
 
 
     ESP_LOGI(TAG, "Start vectrex tasks");
@@ -1345,6 +1448,32 @@ extern int SCREEN_HEIGHT;
 #endif
 
     ESP_ERROR_CHECK(audio_init());
+
+
+#if AUDIO_OUT_HDMI
+    gpio_set_level(GPIO_OUTPUT_PA, 0);   // speaker off
+    //gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
+// 
+//     // gpio_set_level(GPIO_OUTPUT_PA, 0);   /* mute speaker PA */
+    /* enable LT8912B I2S audio input — CEC bank reg 0xB2 */
+    uint8_t val = 0x01;
+    esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
+
+/*
+switch off with
+uint8_t val = 0x00;
+esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
+
+void audio_hdmi_enable(bool on)
+{
+    uint8_t val = on ? 0x01 : 0x00;
+    esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
+}
+
+*/
+
+#endif
+
     audio_set_callback(e8910_callback, NULL);
 
     printf("Audio init done\n");
@@ -1385,7 +1514,9 @@ extern int SCREEN_HEIGHT;
         0
     );
 
+#ifdef VECX_DEBUG == 1    
     printf("Free internal DRAM: %d bytes\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     printf("Largest free DRAM block: %d bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));    
     heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+#endif    
 }

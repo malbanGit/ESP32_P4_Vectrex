@@ -34,7 +34,7 @@ DRAM_ATTR static long lastWaitRecal=0;
 DRAM_ATTR static long lastSyncCycles = 0;
 DRAM_ATTR static int syncImpulse = 0;
 
-DRAM_ATTR static int config_autoSync = 1;
+DRAM_ATTR static int config_autoSync = DEFAULT_AUTO_SYNC;
 DRAM_ATTR static int sig_ramp = 0; 
 DRAM_ATTR static int sig_blank = 0; // moved out of emu_loop for lightpen access
 DRAM_ATTR static int sig_zero = 0;
@@ -124,7 +124,7 @@ enum {
 
 	/* number of 6809 cycles before a frame redraw */
 
-	FCYCLES_INIT    = 30000,//VECTREX_MHZ / VECTREX_PDECAY,
+	FCYCLES_INIT    = VECTREX_MHZ / VECTREX_PDECAY,
 
 	/* max number of possible vectors that maybe on the screen at one time.
 	 * one only needs VECTREX_MHZ / VECTREX_PDECAY but we need to also store
@@ -1984,7 +1984,6 @@ d4s += d4;
 		fcycles -= (long) icycles;
 		int doSync = 0;
 		
-config_autoSync=1;		
 		if (config_autoSync)
 		{
 			if (syncImpulse)
@@ -2015,7 +2014,7 @@ config_autoSync=1;
 			}
 			else if (fcycles < 0) 
 			{
-				//doSync = 1;
+				doSync = 1;
 			}
 		}
 		else

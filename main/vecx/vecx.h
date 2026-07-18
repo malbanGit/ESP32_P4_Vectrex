@@ -6,7 +6,10 @@ extern "C" {
 #endif
 
 #define MAX_ROM_NAME    128
-#define MAX_CART_SIZE   32768*2*4 // for now! (256*1024)
+#define MAX_CART_SIZE   32768*2 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
+#define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
+
+
 
 enum {
 	VECTREX_MHZ		= 1500000, /* speed of the vectrex being emulated */

@@ -26,6 +26,9 @@ long load_rom_file(const char *rom_name, uint8_t *buffer, long max_size)
     char path[256];
     snprintf(path, sizeof(path), "/sdcard/%s", rom_name);
 
+
+
+
     FILE *f = fopen(path, "rb");
     if (!f) {
         return -1;
