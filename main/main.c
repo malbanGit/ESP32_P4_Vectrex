@@ -1,14 +1,23 @@
 /*
+Line buffer used to many times - explore and free DRAM
+
+dram stack
+
+
 TODO: Calibration Ala Tuts
 
-PNG file loading
+done PNG file loading
 
-overlays in YUV?
+why? overlays in YUV?
 
 Overlays in assembler
 
-1. RGB565 framebuffer (33% bandwidth reduction, system-wide)
-Switch from RGB888 to RGB565. Every framebuffer pixel becomes 2 bytes instead of 3. That's 33% less PSRAM traffic for every read and write — draw, undraw, AND the LCD DMA transfer. Requires changing LCD init, fb allocation, and all pixel write math. But it's a clean architectural change that benefits everything, not just the overlay path.
+
+Pessimism to free DRAM
+    - moved CART_ROM to PSRAM
+    - moved STACK to PSRAM
+    - moved all "line data" to PSRAM
+
 
 2. Two-layer PPA compositing (eliminate overlay from CPU entirely)
 ESP32-P4 has a Pixel Processing Accelerator (PPA) hardware block that does alpha blending. The idea:
@@ -21,8 +30,6 @@ Draw/undraw becomes trivial: write colored pixels or black. No palette lookup, n
 3. Frame-diff line caching (near-zero cost for static screens)
 Many Vectrex frames are identical or nearly identical to the previous frame. Cache the line list (x0, y0, x1, y1, brightness, thickness) from last frame. If a line is unchanged, skip its draw+undraw entirely. For title screens, menus, or slow-moving games this could eliminate 80%+ of render work.
 
-4. Single frame-start reset instead of per-line undraw
-Instead of N undraws per frame, track the combined bounding box of all lines drawn last frame (6 integers per buffer in DRAM). At frame start: one DMA transfer from overlay_bg covering that combined region resets everything. Then draw all lines fresh. Replaces N×undraw with 1×DMA. DMA runs without CPU, on bus cycles the emulator doesn't use.
 
 
 To start the current version connect USB POW/UART to computer (directly)
@@ -75,8 +82,33 @@ Sound
 #include "mire.h"
 #include "hdmi.h"
 #include "lvds.h"
-
 #include "lodepng.h"
+
+#include "vecx\vecx.h"
+
+#include "draw_line_dist_rgb888_overlay.h"
+
+#define INI_FILE_PATH   "/sdcard/ESP.INI"
+
+char cartName[MAX_ROM_NAME];
+/*DRAM_ATTR*/EXT_RAM_BSS_ATTR  unsigned char cartData[MAX_CART_SIZE];
+long cartSize = 0;
+
+
+// ASM H
+void draw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
+                            int x0, int y0, int x1, int y1,
+                            int brightness, int thickness);
+void undraw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
+                            int x0, int y0, int x1, int y1,
+                            int brightness, int thickness);
+void draw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
+                            int x0, int y0, int x1, int y1,
+                            int brightness, int thickness);
+void undraw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
+                            int x0, int y0, int x1, int y1,
+                            int brightness, int thickness);
+
 
 i2c_master_bus_handle_t i2c_bus = NULL;
 i2c_master_bus_config_t i2c_bus_cfg = {
@@ -89,10 +121,6 @@ i2c_master_bus_config_t i2c_bus_cfg = {
 };
 
 
-//#include "esp_lcd_mipi_dsi.h"      // esp_lcd_dpi_panel_* APIs
-//#include "esp_lcd_panel_ops.h"     // esp_lcd_panel_disp_on_off()
-
-int vecx_init(void);
 
 // ----------------------------------------------------
 // Global line settings
@@ -102,7 +130,7 @@ DRAM_ATTR int  g_line_glow  = 2;
 DRAM_ATTR int  brightnessAdjust = 0;
 
 
-static const char *TAG = "vectrex_example";
+static const char *TAG = "main";
 
 #define MAX_LINE_BUFFER   1000
 //#define LCD_H_RES         BSP_LCD_H_RES
@@ -115,6 +143,54 @@ DRAM_ATTR static int LCD_V_RES = 720;
 //vdsl 480x800
 static uint8_t *s_overlay    = NULL;
 uint8_t        *s_overlay_bg = NULL;   /* precomputed RGB888 overlay-over-black */
+
+
+// Logischer Frame-Slot: Liste von Linien + Hash + Status
+// ----------------------------------------------------
+// Types
+// ----------------------------------------------------
+// Frame-Slot-Status für die Logik-Frames (Linien)
+typedef enum {
+    FRAME_FREE = 0,      // vom Emulator frei nutzbar
+    FRAME_BUILDING,      // Emulator schreibt Linien
+    FRAME_READY,         // fertig und wartet auf Renderer
+    FRAME_RENDERING      // Renderer liest/zeichnet
+} frame_state_t;
+
+
+typedef struct {
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+    uint8_t brightness;
+} vectrex_line_t;
+
+typedef struct {
+    vectrex_line_t      lines[MAX_LINE_BUFFER]; // these are the "new" lines - that will be drawn by the renderer
+    int                 line_count;
+    uint32_t            hash;
+    volatile frame_state_t state;
+} frame_slot_t;
+
+typedef struct { int bx0, by0, bx1, by1; } line_bbox_t;
+
+// Diese beschreiben, was aktuell in jedem Hardware-Framebuffer gezeichnet ist
+/*DRAM_ATTR*/EXT_RAM_BSS_ATTR  static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
+DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
+DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
+DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
+DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
+/*DRAM_ATTR*/EXT_RAM_BSS_ATTR  static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
+
+// ----------------------------------------------------
+// Emulator frame storage (independent of framebuffers)
+// ----------------------------------------------------
+
+// Drei logische Frames als Ringpuffer
+/*DRAM_ATTR*/ EXT_RAM_BSS_ATTR static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
+DRAM_ATTR static int          s_build_frame_index = 0;   // Slot, in den der Emulator gerade schreibt
+
 
 /* ── Palettised overlay (draw optimisation) ───────────────────────────────── *
  * s_overlay_pal: 1 byte/pixel covering the active image region only (PSRAM).
@@ -132,77 +208,19 @@ DRAM_ATTR int      s_ov_w     = 0;             /* active region width      */
 DRAM_ATTR int      s_ov_h     = 0;             /* active region height     */
 
 // ----------------------------------------------------
-// Types
-// ----------------------------------------------------
-typedef struct {
-    int x0;
-    int y0;
-    int x1;
-    int y1;
-    uint8_t brightness;
-} vectrex_line_t;
-typedef struct { int bx0, by0, bx1, by1; } line_bbox_t;
-
-static inline line_bbox_t line_compute_bbox(const vectrex_line_t *l)
-{
-    int glow = g_line_glow < 0 ? 0 : g_line_glow;
-    int R    = (g_line_width >> 1) + glow;
-    int Rb   = R > 0 ? R - 1 : 0;
-    line_bbox_t b;
-    b.bx0 = (l->x0 < l->x1 ? l->x0 : l->x1) - Rb;
-    b.bx1 = (l->x0 > l->x1 ? l->x0 : l->x1) + Rb;
-    b.by0 = (l->y0 < l->y1 ? l->y0 : l->y1) - Rb;
-    b.by1 = (l->y0 > l->y1 ? l->y0 : l->y1) + Rb;
-    return b;
-}
-static inline int bboxes_overlap(const line_bbox_t *a, const line_bbox_t *b)
-{
-    return a->bx0 <= b->bx1 && a->bx1 >= b->bx0 &&
-           a->by0 <= b->by1 && a->by1 >= b->by0;
-}
-// Frame-Slot-Status für die Logik-Frames (Linien)
-typedef enum {
-    FRAME_FREE = 0,      // vom Emulator frei nutzbar
-    FRAME_BUILDING,      // Emulator schreibt Linien
-    FRAME_READY,         // fertig und wartet auf Renderer
-    FRAME_RENDERING      // Renderer liest/zeichnet
-} frame_state_t;
-
-// Logischer Frame-Slot: Liste von Linien + Hash + Status
-typedef struct {
-    vectrex_line_t      lines[MAX_LINE_BUFFER];
-    int                 line_count;
-    uint32_t            hash;
-    volatile frame_state_t state;
-} frame_slot_t;
-
-// ----------------------------------------------------
-// Emulator frame storage (independent of framebuffers)
-// ----------------------------------------------------
-
-// Drei logische Frames als Ringpuffer
-DRAM_ATTR static frame_slot_t s_frames[NUM_FRAME_SLOTS];
-DRAM_ATTR static int          s_build_frame_index = 0;   // Slot, in den der Emulator gerade schreibt
-
-// ----------------------------------------------------
 // Per-framebuffer line storage for undraw (Hardware-FBs)
 // ----------------------------------------------------
 
 /* Task stacks pinned to internal SRAM so function calls never touch PSRAM. */
 #define EMU_STACK_SIZE  8192
 #define REND_STACK_SIZE 8192
-static DRAM_ATTR StackType_t  s_emu_stack[EMU_STACK_SIZE];
+static /*DRAM_ATTR*/ StackType_t  s_emu_stack[EMU_STACK_SIZE];
 static DRAM_ATTR StaticTask_t s_emu_tcb;
-static DRAM_ATTR StackType_t  s_rend_stack[REND_STACK_SIZE];
+static /*DRAM_ATTR*/ StackType_t  s_rend_stack[REND_STACK_SIZE];
 static DRAM_ATTR StaticTask_t s_rend_tcb;
 
-// Diese beschreiben, was aktuell in jedem Hardware-Framebuffer gezeichnet ist
-DRAM_ATTR static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER];
-DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
-DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
-DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
-DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
-DRAM_ATTR static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
+
+
 // ----------------------------------------------------
 // Framebuffer / display (2 Hardware-FBs)
 // ----------------------------------------------------
@@ -230,6 +248,30 @@ DRAM_ATTR static esp_lcd_panel_handle_t s_dpi_panel = NULL;
 DRAM_ATTR static SemaphoreHandle_t      s_vsync_sem = NULL;
 DRAM_ATTR video_out_t mode = VIDEO_OUT_SELECTED;          // default at boot
 
+
+#include "audio.i"
+#include "sdcard.i"
+#include "usb.i"
+#include "file.i"
+
+
+static inline line_bbox_t line_compute_bbox(const vectrex_line_t *l)
+{
+    int glow = g_line_glow < 0 ? 0 : g_line_glow;
+    int R    = (g_line_width >> 1) + glow;
+    int Rb   = R > 0 ? R - 1 : 0;
+    line_bbox_t b;
+    b.bx0 = (l->x0 < l->x1 ? l->x0 : l->x1) - Rb;
+    b.bx1 = (l->x0 > l->x1 ? l->x0 : l->x1) + Rb;
+    b.by0 = (l->y0 < l->y1 ? l->y0 : l->y1) - Rb;
+    b.by1 = (l->y0 > l->y1 ? l->y0 : l->y1) + Rb;
+    return b;
+}
+static inline int bboxes_overlap(const line_bbox_t *a, const line_bbox_t *b)
+{
+    return a->bx0 <= b->bx1 && a->bx1 >= b->bx0 &&
+           a->by0 <= b->by1 && a->by1 >= b->by0;
+}
 
 // ----------------------------------------------------
 // Hash helpers for change detection
@@ -263,20 +305,6 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
     return (xHigherPriorityTaskWoken == pdTRUE);
 }
 
-   void draw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
-                              int x0, int y0, int x1, int y1,
-                              int brightness, int thickness);
-   void undraw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
-                                int x0, int y0, int x1, int y1,
-                                int brightness, int thickness);
-   void draw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
-                              int x0, int y0, int x1, int y1,
-                              int brightness, int thickness);
-   void undraw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
-                                int x0, int y0, int x1, int y1,
-                                int brightness, int thickness);
-
-#include "draw_line_dist_rgb888_overlay.h"
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
 #if VIDEO_FB_YUV422 == 1
@@ -913,7 +941,6 @@ IRAM_ATTR static void renderer_task(void *arg)
 
 IRAM_ATTR void e8910_callback(void *userdata, int16_t *stream, int length);// from e8910.c
 
-#include "audio.i"
 static void audio_music_task(void *arg)
 {
     while (1)
@@ -940,19 +967,6 @@ static void audio_music_task(void *arg)
         }
     }
 }
-
-#include "sdcard.i"
-#include "usb.i"
-
-#define INI_FILE_PATH   "/sdcard/ESP.INI"
-#define MAX_ROM_NAME    128
-#define MAX_CART_SIZE   32768*2 // for now! (256*1024)
-
-char cartName[MAX_ROM_NAME];
-DRAM_ATTR unsigned char cartData[MAX_CART_SIZE];
-long cartSize = 0;
-#include "file.i"
-
 
 /* Write s_overlay (BGRA, 4 bytes/pixel) into s_fb_back (BGR, 3 bytes/pixel).
  * Destination is assumed to be black, so partial-alpha pixels scale the source
@@ -1373,4 +1387,5 @@ extern int SCREEN_HEIGHT;
 
     printf("Free internal DRAM: %d bytes\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     printf("Largest free DRAM block: %d bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));    
+    heap_caps_print_heap_info(MALLOC_CAP_8BIT);
 }

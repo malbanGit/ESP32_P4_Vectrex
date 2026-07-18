@@ -43,7 +43,7 @@
 #define I2S_DO_IO       (GPIO_NUM_9)
 #define I2S_DI_IO       (GPIO_NUM_11)
 
-// static const char *TAG = "audio";
+static const char *TAG_A = "audio";
 
 /* Handles für neue Treiber / esp_codec_dev */
 //static i2c_master_bus_handle_t      s_i2c_bus_handle = NULL;
@@ -91,7 +91,7 @@ static esp_err_t audio_i2c_init(void)
     };
 
     ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_cfg, &s_i2c_bus_handle),
-                        TAG, "i2c_new_master_bus failed");
+                        TAG_A, "i2c_new_master_bus failed");
     */
     return ESP_OK;
 }
@@ -107,7 +107,7 @@ static esp_err_t audio_i2s_init(void)
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &s_i2s_tx_chan, &s_i2s_rx_chan),
-                        TAG, "i2s_new_channel failed");
+                        TAG_A, "i2s_new_channel failed");
 
     /* Standard-I2S-Konfiguration */
     i2s_std_config_t std_cfg = {
@@ -133,16 +133,16 @@ static esp_err_t audio_i2s_init(void)
     };
 
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx_chan, &std_cfg),
-                        TAG, "i2s_channel_init_std_mode(TX) failed");
+                        TAG_A, "i2s_channel_init_std_mode(TX) failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_tx_chan),
-                        TAG, "i2s_channel_enable(TX) failed");
+                        TAG_A, "i2s_channel_enable(TX) failed");
 
     /* RX wird für reines Playback nicht benötigt, aber mit angelegt */
     if (s_i2s_rx_chan) {
         ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx_chan, &std_cfg),
-                            TAG, "i2s_channel_init_std_mode(RX) failed");
+                            TAG_A, "i2s_channel_init_std_mode(RX) failed");
         ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_chan),
-                            TAG, "i2s_channel_enable(RX) failed");
+                            TAG_A, "i2s_channel_enable(RX) failed");
     }
 
     /* esp_codec_dev Daten-Interface */
@@ -152,7 +152,7 @@ static esp_err_t audio_i2s_init(void)
         .rx_handle = s_i2s_rx_chan,
     };
     s_codec_data_if = audio_codec_new_i2s_data(&i2s_cfg);
-    ESP_RETURN_ON_FALSE(s_codec_data_if, ESP_FAIL, TAG, "audio_codec_new_i2s_data failed");
+    ESP_RETURN_ON_FALSE(s_codec_data_if, ESP_FAIL, TAG_A, "audio_codec_new_i2s_data failed");
 
     return ESP_OK;
 }
@@ -171,11 +171,11 @@ static esp_err_t audio_codec_init(void)
         .bus_handle = s_i2c_bus_handle,
     };
     const audio_codec_ctrl_if_t *ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
-    ESP_RETURN_ON_FALSE(ctrl_if, ESP_FAIL, TAG, "audio_codec_new_i2c_ctrl failed");
+    ESP_RETURN_ON_FALSE(ctrl_if, ESP_FAIL, TAG_A, "audio_codec_new_i2c_ctrl failed");
 
     /* GPIO-Interface für PA usw. */
     const audio_codec_gpio_if_t *gpio_if = audio_codec_new_gpio();
-    ESP_RETURN_ON_FALSE(gpio_if, ESP_FAIL, TAG, "audio_codec_new_gpio failed");
+    ESP_RETURN_ON_FALSE(gpio_if, ESP_FAIL, TAG_A, "audio_codec_new_gpio failed");
 
     /* Gain-Konfiguration (angepasst an dein Board) */
     esp_codec_dev_hw_gain_t gain = {
@@ -199,7 +199,7 @@ static esp_err_t audio_codec_init(void)
     };
 
     const audio_codec_if_t *codec_if = es8311_codec_new(&es8311_cfg);
-    ESP_RETURN_ON_FALSE(codec_if, ESP_FAIL, TAG, "es8311_codec_new failed");
+    ESP_RETURN_ON_FALSE(codec_if, ESP_FAIL, TAG_A, "es8311_codec_new failed");
 
     /* esp_codec_dev-Device anlegen */
     esp_codec_dev_cfg_t dev_cfg = {
@@ -208,11 +208,11 @@ static esp_err_t audio_codec_init(void)
         .data_if  = s_codec_data_if,
     };
     s_codec_dev = esp_codec_dev_new(&dev_cfg);
-    ESP_RETURN_ON_FALSE(s_codec_dev, ESP_FAIL, TAG, "esp_codec_dev_new failed");
+    ESP_RETURN_ON_FALSE(s_codec_dev, ESP_FAIL, TAG_A, "esp_codec_dev_new failed");
 
     /* Lautstärke und Sample-Format setzen */
     ESP_RETURN_ON_ERROR(esp_codec_dev_set_out_vol(s_codec_dev, (float)EXAMPLE_VOICE_VOLUME),
-                        TAG, "set volume failed");
+                        TAG_A, "set volume failed");
 /*
     esp_codec_dev_sample_info_t fs = {
         .sample_rate     = EXAMPLE_SAMPLE_RATE,
@@ -227,7 +227,7 @@ esp_codec_dev_sample_info_t fs = {
 };
 
 ESP_RETURN_ON_ERROR(esp_codec_dev_open(s_codec_dev, &fs),
-                        TAG, "esp_codec_dev_open failed");
+                        TAG_A, "esp_codec_dev_open failed");
 
     return ESP_OK;
 }
@@ -241,9 +241,9 @@ esp_err_t audio_init(void)
 
 
 
-    ESP_RETURN_ON_ERROR(audio_i2c_init(),   TAG, "audio_i2c_init failed");
-    ESP_RETURN_ON_ERROR(audio_i2s_init(),   TAG, "audio_i2s_init failed");
-    ESP_RETURN_ON_ERROR(audio_codec_init(), TAG, "audio_codec_init failed");
+    ESP_RETURN_ON_ERROR(audio_i2c_init(),   TAG_A, "audio_i2c_init failed");
+    ESP_RETURN_ON_ERROR(audio_i2s_init(),   TAG_A, "audio_i2s_init failed");
+    ESP_RETURN_ON_ERROR(audio_codec_init(), TAG_A, "audio_codec_init failed");
     return ESP_OK;
 }
 

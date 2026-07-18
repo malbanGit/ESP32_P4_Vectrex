@@ -18,11 +18,10 @@
 
 #define einline __inline
 
+// from main
 extern char *cartName;
 extern long cartSize;
-
-#define MAX_CART_SIZE    32768*2 //32768 // for now! (256*1024)
-extern DRAM_ATTR unsigned char cartData[MAX_CART_SIZE];
+extern  unsigned char cartData[MAX_CART_SIZE];
 
 
 

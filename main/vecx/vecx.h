@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#define MAX_ROM_NAME    128
+#define MAX_CART_SIZE   32768*2*4 // for now! (256*1024)
 
 enum {
 	VECTREX_MHZ		= 1500000, /* speed of the vectrex being emulated */
@@ -39,6 +41,7 @@ extern vector_t *vectors_erse;
 
 void vecx_reset (void);
 void vecx_emu (long cycles);
+int vecx_init(void);
 
 
 #ifdef __cplusplus
