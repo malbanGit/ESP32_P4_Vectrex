@@ -141,7 +141,25 @@ typedef struct {
     int y1;
     uint8_t brightness;
 } vectrex_line_t;
+typedef struct { int bx0, by0, bx1, by1; } line_bbox_t;
 
+static inline line_bbox_t line_compute_bbox(const vectrex_line_t *l)
+{
+    int glow = g_line_glow < 0 ? 0 : g_line_glow;
+    int R    = (g_line_width >> 1) + glow;
+    int Rb   = R > 0 ? R - 1 : 0;
+    line_bbox_t b;
+    b.bx0 = (l->x0 < l->x1 ? l->x0 : l->x1) - Rb;
+    b.bx1 = (l->x0 > l->x1 ? l->x0 : l->x1) + Rb;
+    b.by0 = (l->y0 < l->y1 ? l->y0 : l->y1) - Rb;
+    b.by1 = (l->y0 > l->y1 ? l->y0 : l->y1) + Rb;
+    return b;
+}
+static inline int bboxes_overlap(const line_bbox_t *a, const line_bbox_t *b)
+{
+    return a->bx0 <= b->bx1 && a->bx1 >= b->bx0 &&
+           a->by0 <= b->by1 && a->by1 >= b->by0;
+}
 // Frame-Slot-Status für die Logik-Frames (Linien)
 typedef enum {
     FRAME_FREE = 0,      // vom Emulator frei nutzbar
@@ -181,7 +199,10 @@ static DRAM_ATTR StaticTask_t s_rend_tcb;
 // Diese beschreiben, was aktuell in jedem Hardware-Framebuffer gezeichnet ist
 DRAM_ATTR static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER];
 DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
-
+DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
+DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
+DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
+DRAM_ATTR static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
 // ----------------------------------------------------
 // Framebuffer / display (2 Hardware-FBs)
 // ----------------------------------------------------
@@ -660,11 +681,11 @@ IRAM_ATTR static void emulator_task(void *arg)
 
         osint_emuloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
         uint64_t now = esp_timer_get_time();
-
+#define MAX_EMU_FPS 100
         // 30000 cycles == 1/50 second
-        if (now - start <= 1000000/50) 
+        if (now - start <= 1000000/MAX_EMU_FPS) 
         {
-            int delay = (1000000/50) - (now - start);
+            int delay = (1000000/MAX_EMU_FPS) - (now - start);
             esp_rom_delay_us(delay);  
         }
     }
@@ -724,6 +745,9 @@ IRAM_ATTR static void renderer_task(void *arg)
         int fb_idx = s_back_fb_index;           // the current backbuffer - we can write to - it is not displayed!
 //        uint64_t t0 = esp_timer_get_time();
 
+#if 0
+
+
         undraw_previous_fb(fb_idx);             // undraw all from that framebuffer
 
         // Draw new frame lines into backbuffer and remember them
@@ -743,6 +767,116 @@ IRAM_ATTR static void renderer_task(void *arg)
                 printf("-----------------------\n");
             }
         }
+#else            
+
+    // --- Stable/dirty/redraw frame-diff ---
+        unsigned int old_count = s_fb_line_count[fb_idx];
+        vectrex_line_t *old_lines = s_fb_lines[fb_idx];
+
+        // Step 1: match old lines to new lines (exact match)
+        memset(s_diff_old_matched, 0, old_count);
+        memset(s_diff_new_matched, 0, line_count);
+        for (int i = 0; i < old_count; i++) {
+            for (int j = 0; j < line_count; j++) {
+                if (!s_diff_new_matched[j] &&
+                    old_lines[i].x0 == fs->lines[j].x0 &&
+                    old_lines[i].y0 == fs->lines[j].y0 &&
+                    old_lines[i].x1 == fs->lines[j].x1 &&
+                    old_lines[i].y1 == fs->lines[j].y1 &&
+                    old_lines[i].brightness == fs->lines[j].brightness) {
+                    s_diff_old_matched[i] = 1;
+                    s_diff_new_matched[j] = 1;
+                    break;
+                }
+            }
+        }
+
+        // Step 2: compute bboxes for dirty (unmatched) old lines
+        int dirty_bbox_count = 0;
+        for (int i = 0; i < old_count; i++) {
+            if (!s_diff_old_matched[i])
+                s_diff_dirty_bboxes[dirty_bbox_count++] = line_compute_bbox(&old_lines[i]);
+        }
+
+        // Step 3: detect stable lines damaged by dirty bbox overlap
+        memset(s_diff_damaged, 0, old_count);
+        for (int i = 0; i < old_count; i++) {
+            if (!s_diff_old_matched[i]) continue;
+            line_bbox_t sb = line_compute_bbox(&old_lines[i]);
+            for (int d = 0; d < dirty_bbox_count; d++) {
+                if (bboxes_overlap(&sb, &s_diff_dirty_bboxes[d])) {
+                    s_diff_damaged[i] = 1;
+                    break;
+                }
+            }
+        }
+        // Step 3b: propagate damage through stable-stable overlaps
+        // (undrawing a damaged line erases contributions of overlapping stable lines)
+        int propagated = 1;
+        while (propagated) {
+            propagated = 0;
+            for (int i = 0; i < old_count; i++) {
+                if (!s_diff_old_matched[i] || !s_diff_damaged[i]) continue;
+                line_bbox_t ab = line_compute_bbox(&old_lines[i]);
+                for (int k = 0; k < old_count; k++) {
+                    if (!s_diff_old_matched[k] || s_diff_damaged[k]) continue;
+                    line_bbox_t kb = line_compute_bbox(&old_lines[k]);
+                    if (bboxes_overlap(&ab, &kb)) {
+                        s_diff_damaged[k] = 1;
+                        propagated = 1;
+                    }
+                }
+            }
+        }
+        // Step 4: undraw dirty old lines
+        for (int i = 0; i < old_count; i++) {
+            if (!s_diff_old_matched[i]) {
+                vectrex_line_t *l = &old_lines[i];
+                drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+            }
+        }
+/*
+        // Step 5: redraw damaged stable lines (before rebuilding old_lines buffer)
+        for (int i = 0; i < old_count; i++) {
+            if (s_diff_old_matched[i] && s_diff_damaged[i]) {
+                vectrex_line_t *l = &old_lines[i];
+                drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+                drawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+            }
+        }
+        */
+        // Step 5a: undraw ALL damaged stable lines
+        for (int i = 0; i < old_count; i++) {
+            if (s_diff_old_matched[i] && s_diff_damaged[i]) {
+                vectrex_line_t *l = &old_lines[i];
+                drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+            }
+        }
+
+        // Step 5b: redraw ALL damaged stable lines
+        for (int i = 0; i < old_count; i++) {
+            if (s_diff_old_matched[i] && s_diff_damaged[i]) {
+                vectrex_line_t *l = &old_lines[i];
+                drawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+            }
+        }
+
+
+        // Step 6: draw dirty new lines + rebuild s_fb_lines for next frame
+        s_fb_line_count[fb_idx] = 0;
+        for (int j = 0; j < line_count; j++) {
+            vectrex_line_t *src = &fs->lines[j];
+            if (!s_diff_new_matched[j])
+                drawLine_raw(src->x0, src->y0, src->x1, src->y1, src->brightness);
+            if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
+                s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
+            } else {
+                printf("-----------------------\n");
+                printf("Line Buffer Exceeded!!!\n");
+                printf("-----------------------\n");
+            }
+        }
+#endif
 /*
         t1 = esp_timer_get_time();
         uint64_t draw_asm = t1 - t0;
