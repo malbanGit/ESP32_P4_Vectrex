@@ -989,6 +989,7 @@ IRAM_ATTR static void renderer_task(void *arg)
 
 
 IRAM_ATTR void e8910_callback(void *userdata, int16_t *stream, int length);// from e8910.c
+
 extern char * audio_buf;
 extern size_t audio_bufsize;
 
@@ -1481,15 +1482,17 @@ void audio_hdmi_enable(bool on)
 */
 
 #endif
+void callbackAY(void *userdata, int16_t *stream, int length);
 
-    audio_set_callback(e8910_callback, NULL);
+//    audio_set_callback(e8910_callback, NULL);
+    audio_set_callback(callbackAY, NULL);
 
     printf("Audio init done\n");
 
     xTaskCreatePinnedToCore(
         audio_music_task,        // Task-Funktion
         "audio_music_task",      // Name
-        4096,                    // Stackgröße (Wort, nicht Byte)
+        8192,                    // Stackgröße (Wort, nicht Byte)
         NULL,                    // Parameter
         2,                       // Priorität
         &s_audio_task_handle,    // Handle

@@ -135,10 +135,6 @@ void ayemu_set_regs(ayemu_ay_t *ay, unsigned *regs);
 
 void callbackAY(void *userdata, uint8_t *stream, int length)
 {
-	int outn;
-    int lengthOrg = length;
-	uint8_t* buf1 = stream;
-
 	(void) userdata;
 
 	/* hack to prevent us from hanging when starting filtered outputs */
