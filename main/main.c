@@ -17,7 +17,7 @@ Pessimism to free DRAM
     - moved CART_ROM to PSRAM
     - moved STACK to PSRAM
     - moved all "line data" to PSRAM
-
+-> seems not to make a great difference (perhaps 1 FPS?) - but we have some dram to spare - whenever we might need it!
 
 2. Two-layer PPA compositing (eliminate overlay from CPU entirely)
 ESP32-P4 has a Pixel Processing Accelerator (PPA) hardware block that does alpha blending. The idea:
@@ -1345,7 +1345,7 @@ extern int SCREEN_HEIGHT;
 #endif
 
     ESP_ERROR_CHECK(audio_init());
-//    audio_set_callback(e8910_callback, NULL);
+    audio_set_callback(e8910_callback, NULL);
 
     printf("Audio init done\n");
 
