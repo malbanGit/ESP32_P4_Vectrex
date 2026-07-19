@@ -135,16 +135,16 @@ long cartSize = 0;
 // ASM H
 void draw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
-                            int brightness, int thickness);
+                            int brightness);
 void undraw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
-                            int brightness, int thickness);
+                            int brightness);
 void draw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
-                            int brightness, int thickness);
+                            int brightness);
 void undraw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
-                            int brightness, int thickness);
+                            int brightness);
 
 
 i2c_master_bus_handle_t i2c_bus = NULL;
@@ -323,42 +323,35 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
     return (xHigherPriorityTaskWoken == pdTRUE);
 }
 
+#include "draw_line_dist_yuv422_overlay.h"
 // a line draw - ONE
 // used to draw and undraw (undraw brightness = 0)
 // at the moment a few different line-draws are possible
 // if RGS stays stable I will drop the YUV
+
+void draw_line_yuv422_overlay_c(uint8_t *fb, int fb_w, int fb_h,
+                                 int x0, int y0, int x1, int y1,
+                                 int brightness,
+                                 const uint8_t *overlay);
+
+void undraw_line_yuv422_overlay_c(uint8_t *fb, int fb_w, int fb_h,
+                                   int x0, int y0, int x1, int y1,
+                                   int brightness,
+                                   const uint8_t *overlay);
+
+
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
 #if VIDEO_FB_YUV422 == 1
     if (brightness == 0) 
     {
-        undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
-        if (b>0)
-            draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-
-    }
-    #else
-    if (brightness == 0) 
-    {
         if (s_overlay == NULL)
         {
-            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+            undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
         }
         else        
         {
-            undraw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
-
+            undraw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
         }
     }
     else
@@ -370,7 +363,50 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
             {
                 if (s_overlay == NULL)
                 {
-                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                    draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+                }
+                else
+                {
+                    draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+                }
+            }
+            return;
+        }
+        int b = brightness*4/3+brightnessAdjust;
+        if (b>0)
+        {
+            if (s_overlay == NULL)
+            {
+                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+            }
+            else
+            {
+                draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+            }
+        }
+    }
+#else
+    if (brightness == 0) 
+    {
+        if (s_overlay == NULL)
+        {
+            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+        }
+        else        
+        {
+            undraw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
+        }
+    }
+    else
+    {
+        if (x0==x1 && y0==y1) 
+        {
+            int b = brightness*4+brightnessAdjust;
+            if (b>0)
+            {
+                if (s_overlay == NULL)
+                {
+                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
                 }
                 else
                 {
@@ -384,7 +420,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
         {
             if (s_overlay == NULL)
             {
-                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
             }
             else
             {
@@ -783,7 +819,14 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
 #if VIDEO_FB_YUV422 == 1
     if (brightness == 0) 
     {
-        undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+        if (s_overlay == NULL)
+        {
+            undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+        }
+        else        
+        {
+            undraw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
+        }
     }
     else
     {
@@ -791,20 +834,38 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
         {
             int b = brightness*4+brightnessAdjust;
             if (b>0)
-                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+            {
+                if (s_overlay == NULL)
+                {
+                    draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+                }
+                else
+                {
+                    draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+                }
+            }
             return;
         }
         int b = brightness*4/3+brightnessAdjust;
         if (b>0)
-            draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-
+        {
+            if (s_overlay == NULL)
+            {
+                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+            }
+            else
+            {
+                draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+            }
+        }
     }
-    #else
+
+#else
     if (brightness == 0) 
     {
         if (s_overlay == NULL)
         {
-            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
         }
         else        
         {
@@ -821,7 +882,7 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
             {
                 if (s_overlay == NULL)
                 {
-                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
                 }
                 else
                 {
@@ -835,7 +896,7 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
         {
             if (s_overlay == NULL)
             {
-                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
             }
             else
             {
