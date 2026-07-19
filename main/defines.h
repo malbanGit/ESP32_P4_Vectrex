@@ -5,11 +5,11 @@
 #define ENABLE_OVERLAYS 1
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2
-#define BRIGHTNESS_ADJUST 50
-#define GLOBAL_OVERLAY_ALPHA 100
+#define BRIGHTNESS_ADJUST 150
+#define GLOBAL_OVERLAY_ALPHA 50
 #define AUDIO_OUT_HDMI  1 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
 
-#define SIMPLE_UNDRAW 1 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames
+#define SIMPLE_UNDRAW 0 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames
 
 #define HUGE_DATA_LOCATION DRAM_ATTR // /*DRAM_ATTR*/EXT_RAM_BSS_ATTR  
 
@@ -32,11 +32,6 @@ typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
 #define MAX_ROM_NAME    128
 #define MAX_CART_SIZE   32768*2 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
 #define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
-
-
-// Following are defined in vecx.h
-// #define MAX_CART_SIZE   32768*2 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
-// #define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
 
 // following is defined in board.h
 // #define VIDEO_FB_YUV422          0 // YUV only supported when overlays are disabled

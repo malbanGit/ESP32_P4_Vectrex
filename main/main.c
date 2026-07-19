@@ -853,13 +853,15 @@ IRAM_ATTR static void renderer_task(void *arg)
 //        uint64_t t0 = esp_timer_get_time();
 
 #if SIMPLE_UNDRAW == 1
-
+/*
 
 int save = s_fb_line_count[fb_idx];
 uint64_t draw_asm=0;
 uint64_t draw_c=0;
 uint64_t t0 = esp_timer_get_time();
+*/
         undraw_previous_fb(fb_idx);             // undraw all from that framebuffer
+/*        
 uint64_t t1 = esp_timer_get_time();
 draw_asm += (t1-t0);
 
@@ -874,7 +876,7 @@ draw_c += (t1-t0);
 
 
 t0 = esp_timer_get_time();
-
+*/
 
     // Draw new frame lines into backbuffer and remember them
         // linecount from "frame" (collection of lines)
@@ -893,7 +895,7 @@ t0 = esp_timer_get_time();
                 printf("-----------------------\n");
             }
         }
-
+/*
 t1 = esp_timer_get_time();
 draw_asm += (t1-t0);
 t0 = esp_timer_get_time();
@@ -919,7 +921,7 @@ draw_c += (t1-t0);
 
 
 printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
-
+*/
 
 #else            
 
@@ -1243,6 +1245,10 @@ static int build_palette_freq(
  * Pass img_w=0 / img_h=0 to stretch to full screen.                      */
 esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 {
+    memset(s_fb_front, 0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
+    memset(s_fb_back,  0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
+
+
     /* clamp / default to full screen */
     if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
     if (img_h <= 0 || img_h > LCD_V_RES) img_h = LCD_V_RES;

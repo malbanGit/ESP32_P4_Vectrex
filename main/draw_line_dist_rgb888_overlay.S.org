@@ -104,15 +104,12 @@ undraw_line_rgb888_overlay:
     li    t0, 0
 1:                         /* t0 = glow */
 
-    /* beam_r = thickness >> 1;  R = beam_r + glow;  Rb = max(R-1,0) */
+    /* beam_r = thickness >> 1;  R = beam_r + glow */
     lw    t1, UF_THICK(sp)
     srai  t1, t1, 1        /* beam_r */
     add   t2, t1, t0       /* R */
-    blez  t2, 1f
-    addi  t2, t2, -1       /* Rb = R - 1  (matches C's bounding box) */
-1:
 
-    /* bx0 = iclamp(min(x0,x1)-Rb, 0, fw-1) */
+    /* bx0 = iclamp(min(x0,x1)-R, 0, fw-1) */
     lw    a3, UF_X0(sp)
     lw    a5, UF_X1(sp)
     blt   a3, a5, 1f; mv a3, a5
@@ -527,13 +524,10 @@ draw_line_rgb888_overlay:
     bgez  t0, 1f; li t0, 0
 1:                         /* t0 = glow */
 
-    /* beam_r = thickness>>1;  R = beam_r+glow;  Rb = max(R-1,0) */
+    /* beam_r = thickness>>1;  R = beam_r+glow */
     lw    t1, DF_THICK(sp)
     srai  t1, t1, 1        /* beam_r */
     add   t2, t1, t0       /* R */
-    blez  t2, 1f
-    addi  t2, t2, -1       /* Rb = R - 1  (matches C's bounding box) */
-1:
 
     /* Bounding box */
     lw    a3, DF_X0(sp);  lw a5, DF_X1(sp)
