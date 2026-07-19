@@ -830,6 +830,21 @@ IRAM_ATTR static inline void undraw_previous_fb_c(int fb_index)
 
     s_fb_line_count[fb_index] = 0;
 }
+IRAM_ATTR static inline uint32_t line_hash_key(const vectrex_line_t *l)
+{
+    uint32_t h = (uint32_t)l->x0 * 2654435761u;
+    h ^= (uint32_t)l->y0 * 40503u;
+    h ^= (uint32_t)l->x1 * 2246822519u;
+    h ^= (uint32_t)l->y1 * 3266489917u;
+    h ^= (uint32_t)l->brightness;
+    return h;
+}
+// Hash table for O(n) line matching (open addressing, linear probe)
+// Size must be power-of-2 and > MAX_LINE_BUFFER for good load factor
+#define MATCH_HT_BITS 11
+#define MATCH_HT_SIZE (1 << MATCH_HT_BITS)   // 2048
+#define MATCH_HT_MASK (MATCH_HT_SIZE - 1)
+DRAM_ATTR static int16_t s_match_ht[MATCH_HT_SIZE]; // -1 = empty, else new-line index
 
 // Renderer: VSYNC-driven, uses last finished emulated frame.
 IRAM_ATTR static void renderer_task(void *arg)
@@ -971,6 +986,7 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
         vectrex_line_t *old_lines = s_fb_lines[fb_idx];
 
         // Step 1: match old lines to new lines (exact match)
+        /*
         memset(s_diff_old_matched, 0, old_count);
         memset(s_diff_new_matched, 0, line_count);
         for (int i = 0; i < old_count; i++) {
@@ -985,6 +1001,33 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                     s_diff_new_matched[j] = 1;
                     break;
                 }
+            }
+        }
+        */
+        // Step 1: match old lines to new lines — O(n) hash table
+        memset(s_match_ht, 0xFF, sizeof(s_match_ht)); // -1 = empty
+        for (int j = 0; j < line_count; j++) {
+            uint32_t h = line_hash_key(&fs->lines[j]) & MATCH_HT_MASK;
+            while (s_match_ht[h] != -1) h = (h + 1) & MATCH_HT_MASK;
+            s_match_ht[h] = (int16_t)j;
+        }
+        memset(s_diff_old_matched, 0, old_count);
+        memset(s_diff_new_matched, 0, line_count);
+        for (int i = 0; i < old_count; i++) {
+            uint32_t h = line_hash_key(&old_lines[i]) & MATCH_HT_MASK;
+            while (s_match_ht[h] != -1) {
+                int j = s_match_ht[h];
+                if (!s_diff_new_matched[j] &&
+                    old_lines[i].x0 == fs->lines[j].x0 &&
+                    old_lines[i].y0 == fs->lines[j].y0 &&
+                    old_lines[i].x1 == fs->lines[j].x1 &&
+                    old_lines[i].y1 == fs->lines[j].y1 &&
+                    old_lines[i].brightness == fs->lines[j].brightness) {
+                    s_diff_old_matched[i] = 1;
+                    s_diff_new_matched[j] = 1;
+                    break;
+                }
+                h = (h + 1) & MATCH_HT_MASK;
             }
         }
 
@@ -1009,7 +1052,7 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 }
             }
         }
-        
+
         // Step 3b: propagate damage through stable-stable overlaps
         // (undrawing a damaged line erases contributions of overlapping stable lines)
         int propagated = 1;
@@ -1028,7 +1071,7 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 }
             }
         }
-
+/*
         // Step 4: undraw dirty old lines
         for (int i = 0; i < old_count; i++) {
             if (!s_diff_old_matched[i]) {
@@ -1044,6 +1087,15 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
             }
         }
+        */
+        // Steps 4+5a: undraw dirty old lines AND damaged stable lines in one pass
+        for (int i = 0; i < old_count; i++) {
+            if (!s_diff_old_matched[i] || s_diff_damaged[i]) {
+                vectrex_line_t *l = &old_lines[i];
+                drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+            }
+        }
+
 
         // Step 5b: redraw ALL damaged stable lines
         for (int i = 0; i < old_count; i++) {
