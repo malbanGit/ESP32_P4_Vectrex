@@ -37,8 +37,8 @@ static const char *TAG = "lvds";
 // 26.667e6/(896*496) = 60.0 Hz. The bridge is declared pclk 27 (nearest integer to
 // the 26.667 MHz it actually receives). Revert to 24/816 if this does not help.
 
-#define ST7262_DPI_CLK_MHZ      40
-#define ST7262_DECLARE_PCLK_MHZ 40
+#define ST7262_DPI_CLK_MHZ      24
+#define ST7262_DECLARE_PCLK_MHZ 24
 #define ST7262_HTOTAL           896
 #define ST7262_VTOTAL           496
 #define ST7262_VIDEO_TIMING() {                   \

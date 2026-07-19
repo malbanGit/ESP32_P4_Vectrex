@@ -3,6 +3,7 @@
 //#define PROFILING 1
 
 #include <stdio.h>
+#include <math.h>
 #include "e6809.h"
 #include "e8910.h"
 #include "vecx.h"
@@ -47,7 +48,17 @@ DRAM_ATTR static int pb6_out = 0x40; // out from vectrex
 DRAM_ATTR static int BANK_MAX = 1;
 //void timerAddItem(int value, void *destination, int t);
 
-#define EMU_TIMER 20 /* the emulators heart beats at 20 milliseconds */
+
+static int resistorOhm = 175;
+static double supplyVoltage=0;
+
+static double capacitorFarad = 0.000000006;
+static double currentVoltage=0;
+static double timeConstant = 0;
+
+static double VECTREX_CYCLE_TIME = (double)(1.0/1500000.0);
+static double percentageDifChangePerCycle = 0;
+
 int SCREEN_WIDTH=800;
 int SCREEN_HEIGHT=1280;
 
@@ -65,6 +76,7 @@ DRAM_ATTR static unsigned char ram[1024];
 
 DRAM_ATTR unsigned snd_regs[16];
 DRAM_ATTR static unsigned snd_select;
+DRAM_ATTR int intensityDrift = 0;
 
 /* the via 6522 registers */
 
@@ -145,6 +157,205 @@ DRAM_ATTR static unsigned char alg_vector_color;
 
 
 #include "e8910.c"
+
+
+// only rudimentary
+// don't think it needs to be saved
+#ifdef FLASH_SUPPORT
+int flashSupport = 0;
+extern int addressBUS;
+extern unsigned char dataBUS;
+int idSequenceAddress = 0;
+int idSequenceData = 0;
+
+int eraseAddress = 0;
+int eraseSequenceAddress = 0;
+int eraseSequenceData = 0;
+
+int writeSequenceAddress = 0;
+int writeSequenceData = 0;
+#endif
+int flashcartChanged=0;
+
+// capacitor emulation (one...)
+int getIntVoltageValue()
+{
+	return (int)currentVoltage;
+}
+double getVoltageValue()
+{
+	return currentVoltage;
+}
+double getDigitalValue()
+{
+	return currentVoltage/5.0*128.0;
+}
+int getDigitalIntValue()
+{
+	return (int) (currentVoltage/5.0*128.0);
+}
+static einline void doStep()
+{
+	double dif = supplyVoltage - currentVoltage;
+	currentVoltage += percentageDifChangePerCycle*dif;
+}
+// -128 - +127
+void setDigitalVoltage(unsigned char v)
+{
+	if (v<=127)
+	{
+		supplyVoltage = (((double)v)/127.0)*5.0;
+	}
+	else
+	{
+		supplyVoltage = (((((double)v)-256))/128.0)*5.0;
+	}
+}
+#ifdef FLASH_SUPPORT
+// dead ugly - well it works...
+void checkEraseSequence()
+{
+	if ((eraseSequenceAddress == 0) && (addressBUS == 0x5555)) eraseSequenceAddress = 1;
+	else if ((eraseSequenceAddress == 1) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
+	{
+		if (addressBUS == 0x2aaa) eraseSequenceAddress = 2;
+	}
+	else if ((eraseSequenceAddress == 2) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
+	{
+		if (addressBUS == 0x2aaa) eraseSequenceAddress = 3;
+	}
+	else if ((eraseSequenceAddress == 3) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
+	{
+		if (addressBUS == 0x5555) eraseSequenceAddress = 4;
+	}
+	else if ((eraseSequenceAddress == 4) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
+	{
+		if (addressBUS == 0x2aaa) eraseSequenceAddress = 5; 
+	}
+	else if ((eraseSequenceAddress == 5) && (addressBUS == 0x2aaa) )
+	{
+		;
+	}
+	else if ((eraseSequenceAddress == 5) && (addressBUS != 0x2aaa) )
+	{
+		eraseAddress = addressBUS;
+		eraseSequenceAddress = 6;
+	}
+	else if ((eraseSequenceAddress == 6) && (addressBUS != eraseAddress) )
+	{
+		eraseSequenceAddress = 0;
+	}
+	else eraseSequenceAddress = 0;
+
+	if ((eraseSequenceData == 0) && (dataBUS == 0xaa))
+	{
+		eraseSequenceData = 1;
+	}
+	else if ((eraseSequenceData == 1) && ( (dataBUS == 0xaa)||(dataBUS == 0x55) ))
+	{
+		if (dataBUS == 0x55) eraseSequenceData = 2;
+	}
+	else if ((eraseSequenceData == 2) && ( (dataBUS == 0x55)||(dataBUS == 0x80) ))
+	{
+		if (dataBUS == 0x80) eraseSequenceData = 3;
+	}
+	else if ((eraseSequenceData == 3) && ( (dataBUS == 0xaa)||(dataBUS == 0x80) ))
+	{
+		if (dataBUS == 0xaa) eraseSequenceData = 4;
+	}
+	else if ((eraseSequenceData == 4) && ( (dataBUS == 0xaa)||(dataBUS == 0x55) ))
+	{
+		if (dataBUS == 0x55) eraseSequenceData = 5;
+	}
+	else if ((eraseSequenceData == 5) && ( (dataBUS == 0x30)||(dataBUS == 0x55) ))
+	{
+		if (dataBUS == 0x30) 
+		{
+			eraseSequenceData = 6;
+		}
+	}
+	else if ((eraseSequenceData == 6) &&  (dataBUS == 0x30))
+	{
+		;
+	}
+	else eraseSequenceData = 0;
+
+	if ((eraseSequenceAddress == 6) && (eraseSequenceData == 6))
+	{
+		// log.addLog("Erase sequence ...", INFO);
+		eraseSequenceAddress = 0;
+		eraseSequenceData = 0;
+		int start = eraseAddress & 0xffff000;
+		for (int i= start; i<start+4096;i++)
+		{
+			cartData[i+(currentBank *65536)] = 0xff; // 
+		}
+	}
+}
+void checkWriteSequence()
+{
+
+	if ((writeSequenceAddress == 0) && (addressBUS == 0x5555)) writeSequenceAddress = 1;
+	else if ((writeSequenceAddress == 1) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
+	{
+		if (addressBUS == 0x2aaa) writeSequenceAddress = 2;
+	}
+	else if ((writeSequenceAddress == 2) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
+	{
+		if (addressBUS == 0x5555) writeSequenceAddress = 3;
+	}
+	else if ((writeSequenceAddress == 3) && (addressBUS == 0x5555) )
+	{
+		; 
+	}
+	else if ((writeSequenceData >= 3) && (writeSequenceAddress == 3)  )
+	{
+		writeSequenceAddress=4;
+	}
+	else if ((writeSequenceData >= 3) && (writeSequenceAddress == 4)  )
+	{
+	}
+	else writeSequenceAddress = 0;
+
+	if ((writeSequenceData == 0) && (dataBUS == 0xaa))
+	{
+		writeSequenceData = 1;
+	}
+	else if ((writeSequenceData == 1) && ( (dataBUS == 0xaa)||(dataBUS == 0x55) ))
+	{
+		if (dataBUS == 0x55) writeSequenceData = 2;
+	}
+	else if ((writeSequenceData == 2) && ( (dataBUS == 0x55)||(dataBUS == 0xA0) ))
+	{
+		if (dataBUS == 0xA0) writeSequenceData = 3;
+	}
+	else if ((writeSequenceData == 3) && (dataBUS == 0xA0) )
+	{
+		;
+	}
+	else if ((writeSequenceData == 3) && (writeSequenceAddress >= 3)  )
+	{
+		writeSequenceData = 4;
+	}
+	else if ((writeSequenceData == 4) && (writeSequenceAddress >= 3)  )
+	{
+	}
+	else writeSequenceData = 0;
+
+	
+}
+#endif
+
+
+
+
+
+
+
+
+
+
+
 
 
 // we must put following data into PSRAM, the internal RAM is not enough!
@@ -231,8 +442,8 @@ DRAM_ATTR static int DELAYS[]={
 #define TIMER_T2_VALUE_IS_NULL	1
 	0   // TIMER_T2 = 15,
 	}; // no need to be saved
-DRAM_ATTR int rampOnFractionValue = -10;
-DRAM_ATTR int rampOffFractionValue = -15;
+DRAM_ATTR int rampOnFractionValue = -8;
+DRAM_ATTR int rampOffFractionValue = -13;
 DRAM_ATTR int blankOnDelay = -2; // Karl -2
 DRAM_ATTR int blankOffDelay = -2;
 DRAM_ATTR bool rampOnFraction = false;
@@ -248,43 +459,9 @@ void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // For E
 void vecx_emu (long cycles);
 #include "usb/hid_usage_keyboard.h"
 
-
-//IRAM_ATTR 
-IRAM_ATTR static einline void readevents()
-{
-	// Public API:
-	extern IRAM_ATTR bool isKeyDown(uint8_t hid_code);
-	extern IRAM_ATTR bool isAsciiDown(char c);
-	extern IRAM_ATTR bool isShiftDown(void);
-	extern IRAM_ATTR bool isCtrlDown(void);
-	extern IRAM_ATTR bool isAltDown(void);
-
-	#ifndef HID_KEY_LEFT_ARROW
-	#define HID_KEY_LEFT_ARROW   0x50
-	#endif
-
-	#ifndef HID_KEY_RIGHT_ARROW
-	#define HID_KEY_RIGHT_ARROW  0x4F
-	#endif
-
-	#ifndef HID_KEY_UP_ARROW
-	#define HID_KEY_UP_ARROW     0x52
-	#endif
-
-	#ifndef HID_KEY_DOWN_ARROW
-	#define HID_KEY_DOWN_ARROW   0x51
-	#endif
-
-// center is default unless pressed!
-alg_jch0=127;
-alg_jch1=127;
-alg_jch2=127;
-alg_jch3=127;
-   /* Player 1 */
- 	if (isKeyDown(HID_KEY_LEFT_ARROW)) alg_jch0 = 0;
- 	if (isKeyDown(HID_KEY_RIGHT_ARROW)) alg_jch0 = 255;
- 	if (isKeyDown(HID_KEY_UP_ARROW)) alg_jch1 = 255;
- 	if (isKeyDown(HID_KEY_DOWN_ARROW)) alg_jch1 = 0;
+// actual resultion of output screen
+extern int LCD_H_RES;
+extern  int LCD_V_RES;
 
 extern  int  g_line_width;      
 extern  int  g_line_glow;
@@ -317,15 +494,58 @@ char  *ov[]={
 };
  esp_err_t loadOverlayRGB(char * n, int w, int h);
 
+//IRAM_ATTR 
+IRAM_ATTR static einline void readevents()
+{
+	// Public API:
+	extern IRAM_ATTR bool isKeyDown(uint8_t hid_code);
+	extern IRAM_ATTR bool isAsciiDown(char c);
+	extern IRAM_ATTR bool isShiftDown(void);
+	extern IRAM_ATTR bool isCtrlDown(void);
+	extern IRAM_ATTR bool isAltDown(void);
+
+	#ifndef HID_KEY_LEFT_ARROW
+	#define HID_KEY_LEFT_ARROW   0x50
+	#endif
+
+	#ifndef HID_KEY_RIGHT_ARROW
+	#define HID_KEY_RIGHT_ARROW  0x4F
+	#endif
+
+	#ifndef HID_KEY_UP_ARROW
+	#define HID_KEY_UP_ARROW     0x52
+	#endif
+
+	#ifndef HID_KEY_DOWN_ARROW
+	#define HID_KEY_DOWN_ARROW   0x51
+	#endif
+
+	// center is default unless pressed!
+	alg_jch0=127;
+	alg_jch1=127;
+	alg_jch2=127;
+	alg_jch3=127;
+   /* Player 1 */
+ 	if (isKeyDown(HID_KEY_LEFT_ARROW)) alg_jch0 = 0;
+ 	if (isKeyDown(HID_KEY_RIGHT_ARROW)) alg_jch0 = 255;
+ 	if (isKeyDown(HID_KEY_UP_ARROW)) alg_jch1 = 255;
+ 	if (isKeyDown(HID_KEY_DOWN_ARROW)) alg_jch1 = 0;
+
    	if (isAsciiDown('o'))
 	{
 		loadNum--;
 		if (loadNum<0) loadNum = 7;
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-#if ENABLE_OVERLAYS==1
-// todo size of overlay determined by hdmi/lcd
- loadOverlayRGB(ov[loadNum], 564, 720);
-#endif 
+		#if ENABLE_OVERLAYS==1
+				// todo size of overlay determined by hdmi/lcd
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
+		loadOverlayRGB(ov[loadNum], 564, 720);
+#else
+		loadOverlayRGB(ov[loadNum], 800, 480);
+#endif		
+
+
+		#endif 
 		vecx_init();
 		vTaskDelay(pdMS_TO_TICKS(500));
 	}
@@ -334,10 +554,13 @@ char  *ov[]={
 		loadNum++;
 		if (loadNum>7) loadNum = 0;
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-#if ENABLE_OVERLAYS==1
-// todo size of overlay determined by hdmi/lcd
- loadOverlayRGB(ov[loadNum], 564, 720);
-#endif 
+		#if ENABLE_OVERLAYS==1
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
+		loadOverlayRGB(ov[loadNum], 564, 720);
+#else
+		loadOverlayRGB(ov[loadNum], 800, 480);
+#endif		
+		#endif 
 		vecx_init();
 		vTaskDelay(pdMS_TO_TICKS(500));
 	}
@@ -488,9 +711,6 @@ void resize(int width, int height){
 	offx = (SCREEN_WIDTH-width)/2;
 	offy = (SCREEN_HEIGHT-height)/2;
 }
-// actual resultion of output screen
-extern int LCD_H_RES;
-extern  int LCD_V_RES;
 
 int vecx_init()
 {
@@ -499,19 +719,15 @@ int vecx_init()
 		//cartData
 		// a cartridge was loaded!
 	}
-#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
-	SCREEN_HEIGHT = LCD_V_RES;
-	SCREEN_WIDTH = LCD_H_RES;
-	resize( 500, 700);
-#else
-	SCREEN_HEIGHT = LCD_H_RES;
-	SCREEN_WIDTH = LCD_V_RES;
-	resize( LCD_V_RES, LCD_H_RES);
-#endif
-
-
-
-
+	#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
+		SCREEN_HEIGHT = LCD_V_RES;
+		SCREEN_WIDTH = LCD_H_RES;
+		resize( 500, 700);
+	#else
+		SCREEN_HEIGHT = LCD_H_RES;
+		SCREEN_WIDTH = LCD_V_RES;
+		resize( 430, 740);
+	#endif
 
 	vecx_reset();
 	e8910_init_sound();
@@ -521,6 +737,13 @@ int vecx_init()
 
 IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
 {
+	if (intensityDrift>100000)
+	{
+		double degradePercent = (180000000.0-((double)intensityDrift))/180000000.0; // two minutes
+		if (degradePercent<0) degradePercent = 0;
+		color = (int)(((double)color)*degradePercent);
+	}
+
 	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
 	return;
 }
@@ -725,6 +948,7 @@ static inline __attribute__((always_inline, hot)) void doCheckMultiplexer()
 			/* demultiplexor is on */
 #ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
 			alg_rsh = makeSigned(alg_xsh);
+			setDigitalVoltage(alg_xsh);
 #else
 			timerAddItem(alg_DAC, 0, TIMER_MUX_R_CHANGE);
 #endif
@@ -737,9 +961,7 @@ static inline __attribute__((always_inline, hot)) void doCheckMultiplexer()
 #else
 			timerAddItem(alg_DAC , &alg_zsh, TIMER_MUX_Z_CHANGE);
 #endif
-
-// todo
-			//			intensityDrift = 0;
+			intensityDrift = 0;
 			break;
 		case 0x06:
 			/* sound output line */
@@ -856,8 +1078,8 @@ static IRAM_ATTR einline void timerDoStep()
 			if (item->type == TIMER_MUX_R_CHANGE)
 			{
 				//noiseCycles = cyclesRunning;
-				// setDigitalVoltage(timerItemArray[i].valueToSet); 
-				alg_rsh = alg_xsh;
+				setDigitalVoltage(item->valueToSet); 
+				alg_rsh = makeSigned(item->valueToSet);
 			}
 			else 
 #endif
@@ -937,6 +1159,10 @@ static IRAM_ATTR einline void timerDoStep()
 		}
 		node = node->next;
 	}
+//	if (doRamp>1) printf("DOUBLE RAMP!\n");
+//	if (doInt>1) printf("DOUBLE INT!\n");
+//	if (doMUL>1) printf("DOUBLE MULTI!\n");
+
 	if (doRamp>0) doCheckRamp(0);
 	if (doInt>0) int_update ();
 	if (doMUL>0) doCheckMultiplexer();
@@ -1132,6 +1358,21 @@ IRAM_ATTR unsigned char read8 (unsigned address)
 		   data = cartData[address+(currentBank *32768)] & 0xff; // 
 	   else 
 		   data = cartData[address+(currentBank *65536)] & 0xff; // 
+#ifdef FLASH_SUPPORT
+		if ((idSequenceData == 3) && (idSequenceAddress == 3)  )
+		{
+			if ((address%2) == 0)
+			{
+				flashSupport++;
+				return 0xbf;
+			}
+			else
+			{
+				flashSupport++;
+				return 0xb6; // SST39SF020A
+			}
+		}
+#endif
 	}
    else
       data = 0xff;
@@ -1175,8 +1416,6 @@ sig_blank = 0;
 #else
 timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
 #endif
-
-
 	
 				}
 				doCheckRamp(1);
@@ -1225,8 +1464,6 @@ timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
                break;
             case 0x5:
                /* T1 high order counter */
-
-
 #ifdef TIMER_T1_VALUE_IS_NULL	
 				via_t1on = 1; /* timer 1 starts running */
 				via_t1lh = data;
@@ -1384,7 +1621,106 @@ timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
          }
       }
    }
+   else 
+   if (address < 0xC000) 
+   { 
+#ifdef MOVIE_SUPPORT	
+		//printf ("Rom write access at: %4X %2X\n", address, data);
+		//void writeExtreme(int addr, byte data)
+		if ((address&0xff)==0xff) 
+		{
+			if (data==2) 
+			{	
+				static int pos = 0;
+				static int readLen = 0;
+				if (movieBuffer==NULL) 
+				{
+					FILE *moveFile = NULL;
+					// bad apple looks BAD with drift! :-)
+					config_drift_x = 0;
+					config_drift_y = 0;
+					
+					char *path = getMoviePath(); // libretro.c
+					if (path == NULL)
+					{
+						//printf("no movie path!\n");
+						return;
+					}
+//printf ("Looking to open Movie: %s\n", path);
+					moveFile =fopen(path, "rb");
+					if (moveFile == NULL) return;
+//printf ("File opened!\n");
 
+					fseek(moveFile, 0L, SEEK_END);
+					int len = ftell(moveFile);
+//printf ("Size: %i\n", len);
+					rewind(moveFile);
+					fseek(moveFile, 0, SEEK_SET);
+
+
+
+					movieBuffer = malloc(len);
+					if (movieBuffer == NULL)
+					{
+						fclose(moveFile);
+						moveFile = NULL;
+						return;
+					}
+//printf ("Buffer allocated!\n");
+
+  readLen = fread(movieBuffer, 1, len, moveFile);
+					
+//printf ("File read size: %i\n", readLen);
+//if (feof(moveFile)) printf ("END OF FILE\n");
+//if (ferror(moveFile)) printf ("READ ERROR \n");
+  				    fclose(moveFile);
+					moveFile = NULL;
+
+					if (readLen != len) 
+					{
+//printf ("Size Mismatch!\n");
+						free(movieBuffer);
+						movieBuffer = NULL;
+// exit(1);
+						return;
+					}
+				}
+				if (readLen<pos+1024+512) pos = 0;
+				for (int ii=0; ii< 1024+512;ii++)
+				{
+//					cart[currentBank][0x4000+ii] = movieBuffer[pos];
+					// allways no bankswitch!
+					cart[0x4000+ii] = movieBuffer[pos];
+					pos++;
+				}
+//				if (doExtremeOutput)
+//					System.out.println("Read 1536 bytes "+String.format("%02X", cart[currentBank][0x4000])+".");
+			}
+		}
+#endif
+
+#ifdef FLASH_SUPPORT
+		if ((writeSequenceAddress >= 3) && (writeSequenceData >= 3))
+		{
+			if ((address!=0x5555) && (address!=0x2aaa))
+			{
+				writeSequenceAddress = 0;
+				writeSequenceData = 0;
+				if (address>0xffff) return;
+				unsigned char oldData = (unsigned char) (cart[address+(currentBank *65536)] & 0xff);
+
+				// only erase of bit is allowed!
+				unsigned char newData = (unsigned char) (data & oldData);
+				cart[address+(currentBank *65536)] = newData;
+//				printf("FLASH write (%i, %4X->%2x)\n", currentBank, address, newData);
+				flashcartChanged=1;
+			}
+		}
+#endif		
+		
+		
+
+	} /* cartridge */
    
 }
 
@@ -1460,7 +1796,15 @@ void vecx_reset (void)
 	alg_vectoring = 0;
 
 
+	currentVoltage=0;
+	timeConstant = resistorOhm*capacitorFarad;
+
+	VECTREX_CYCLE_TIME = (double) 1.0/1500000.0;
+	percentageDifChangePerCycle = exp(-VECTREX_CYCLE_TIME/timeConstant);
+	
 	alternate = 0; // 
+	setDigitalVoltage(0x80); // 
+
 	syncImpulse = 0;
 	fcycles = FCYCLES_INIT;
 	e6809_read8 = read8;
@@ -1581,8 +1925,9 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 
 	/* --- Shift-Teil von via_sstep0 --- */
 
-	if (via_srb >= 8u)
-		return;    /* oder zum Ende von via_sstep0 springen */
+// might be correct TODO CHECK!	
+//	if (via_srb >= 8u)
+//		return;    /* oder zum Ende von via_sstep0 springen */
 
 	/* Shift-Counter: exakt wie vorher, nur enger geschrieben */
 	via_src--;
@@ -1718,16 +2063,22 @@ IRAM_ATTR
 static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 {
 	long sig_dx=0, sig_dy=0;
+/*	
+	if (((via_orb & 0x01) == 0) && ((alg_sel & 0x06) == 0x02))
+		doStep(); // capacitor
+*/
+
+	intensityDrift++;
 
 
 	if (sig_zero == 0)
-   {
-      /* need to force the current point to the 'orgin' so just
-       * calculate distance to origin and use that as dx,dy.
-       */
-      sig_dx = ALG_MAX_X/2  - alg_curr_x;
-      sig_dy = ALG_MAX_Y/2  - alg_curr_y;
-   }
+    {
+		/* need to force the current point to the 'orgin' so just
+		* calculate distance to origin and use that as dx,dy.
+		*/
+		sig_dx = ALG_MAX_X/2  - alg_curr_x;
+		sig_dy = ALG_MAX_Y/2  - alg_curr_y;
+    }
    	
 	
 	
@@ -1738,8 +2089,8 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 		if (rampOnFraction)
 		{
 			rampOnFraction = false;
-			alg_curr_x -= (makeSigned(alg_xsh)*(rampOnFractionValue))/10;
-			alg_curr_y -= - (makeSigned(alg_ysh)*(rampOnFractionValue))/10;
+			alg_curr_x -= (makeSigned(alg_xsh)*(rampOnFractionValue))/8;
+			alg_curr_y -= - (makeSigned(alg_ysh)*(rampOnFractionValue))/8;
 
 		}
 	} 
@@ -1748,8 +2099,8 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 		if (rampOffFraction)
 		{
 			rampOffFraction = false;
-			alg_curr_x += (makeSigned(alg_xsh)*(rampOffFractionValue))/10;
-			alg_curr_y += - (makeSigned(alg_ysh)*(rampOffFractionValue))/10;
+			alg_curr_x += (makeSigned(alg_xsh)*(rampOffFractionValue))/8;
+			alg_curr_y += - (makeSigned(alg_ysh)*(rampOffFractionValue))/8;
                 if (alg_vectoring == 1 && alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y) 
                 {
                     /* we're vectoring ... current point is still within limits so
@@ -1780,12 +2131,17 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 
          alg_vectoring = 1;
 
-		long adderX = (long)((blankOffDelay*makeSigned(alg_xsh))/10);
-		long adderY = (long)((blankOffDelay*makeSigned(alg_ysh))/10);
+		long adderX = (long)((blankOffDelay*makeSigned(alg_xsh))/8);
+		long adderY = (long)((blankOffDelay*makeSigned(alg_ysh))/8);
 
 
+#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
 		 alg_vector_x0 = alg_curr_x + adderX;
          alg_vector_y0 = alg_curr_y + adderY;
+#else
+		 alg_vector_x0 = alg_curr_x + adderX+ DELAYS[TIMER_BLANK_OFF_CHANGE]*makeSigned(alg_xsh);
+         alg_vector_y0 = alg_curr_y + adderY+ DELAYS[TIMER_BLANK_OFF_CHANGE]*makeSigned(alg_ysh);
+#endif
 
 		 alg_vector_x1 = alg_curr_x;
          alg_vector_y1 = alg_curr_y;
@@ -1794,11 +2150,9 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 		 alg_ramping = (sig_ramp== 0);
          alg_vector_color = makeUnsigned((signed int)alg_zsh);
       }
-   }
-	
-	
+   	}
 	else 
-   {
+   	{
       /* already drawing a vector ... check if we need to turn it off */
 
       if ((sig_blank == 0) || ((alg_zsh&0x80) !=0) || ((alg_zsh &0x7f) ==0))
@@ -1811,16 +2165,21 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 
 		if (sig_blank == 0)
 		{
+			// Jul 26
+			long adderX = (long)((blankOnDelay*makeSigned(alg_xsh))/8);
+			long adderY = (long)((blankOnDelay*makeSigned(alg_ysh))/8);
 
 
-		// Jul 26
-			long adderX = (long)((blankOnDelay*makeSigned(alg_xsh))/10);
-			long adderY = (long)((blankOnDelay*makeSigned(alg_ysh))/10);
 
 			alg_addline (alg_vector_x0, 
 						 alg_vector_y0, 
-						 alg_vector_x1 + adderX, 
-						 alg_vector_y1 + adderY, 
+#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+		 alg_vector_x1 + adderX,
+         alg_vector_y1 + adderY,
+#else
+		 alg_vector_x1 + adderX+ DELAYS[TIMER_BLANK_ON_CHANGE]*makeSigned(alg_xsh);
+         alg_vector_y1 + adderY+ DELAYS[TIMER_BLANK_ON_CHANGE]*makeSigned(alg_ysh);
+#endif
 						 alg_vector_color);
 		}
 		else
@@ -1837,11 +2196,12 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 //was muss ich nehmen für KQ???
 
 
-
+//todo?
       else if (((alg_xsh != alg_vector_dx) && (sig_ramp== 0) ) || 
 	           ((-alg_ysh != alg_vector_dy)&& (sig_ramp== 0)) || 
 			   (makeUnsigned((signed int)alg_zsh) != alg_vector_color)  
-// removed Dec 2025		||	   ((sig_ramp == 0) != alg_ramping)
+// removed Dec 2025, nice - but WHY?			   
+// || ((sig_ramp == 0) != alg_ramping)
 			   )
 			   
       {
@@ -1849,6 +2209,7 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 // for splines and curved vectors the following is relevant
 // as it is - for now in this emulator it is not working correctly :-()
 
+/* removed JUL 26 - with this "enabled" smartdraw function display only "half"???
 		if ((cyclesRunning - rChange) == 0)
 		{
             alg_vector_x0 = alg_curr_x;
@@ -1867,7 +2228,7 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 			}
 			goto contx;
 		}
-
+*/
          /* the parameters of the vectoring processing has changed.
           * so end the current line.
           */
@@ -1876,16 +2237,6 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 							 alg_vector_x1, 
 							 alg_vector_y1, 
 							 alg_vector_color);
-/*
-							 printf("-changed-");
-
-		if (alg_xsh!=alg_vector_dx) printf("(alg_xsh(%d)!=alg_vector_dx(%d)- (%ld), xChange=%ld, rChange=%ld\n",alg_xsh,(int)alg_vector_dx, cyclesRunning, (cyclesRunning - xChange), (cyclesRunning - rChange));
-		if (-alg_ysh!=alg_vector_dy) printf("(alg_ysh(%d)!=alg_vector_dy(%d)\n", (-alg_ysh), (int)alg_vector_dy);
-		if (makeUnsigned((signed int)alg_zsh) != alg_vector_color) 
-			printf("(makeUnsigned((signed int)alg_zsh)(%d) != alg_vector_color(%d))\n", makeUnsigned((signed int)alg_zsh), alg_vector_color );
-//		if ((sig_ramp == 0) != alg_ramping) printf("((sig_ramp == 0) != alg_ramping)\n");
-
-*/
 
          /* we continue vectoring with a new set of parameters if the
           * current point is not out of limits.
@@ -1909,7 +2260,6 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 				alg_vector_dy = 0;
 			}
             alg_vector_color = makeUnsigned((signed int)alg_zsh);
-contx:			
          }
          else
             alg_vectoring = 0;
@@ -1919,6 +2269,13 @@ contx:
 
 	alg_curr_x += sig_dx;
 	alg_curr_y += sig_dy;
+	if (sig_ramp== 0) 
+	{
+// THIS DISTORTS EVERYTING!		
+// for this to work alg_curr_x/alg_curr_y should be double!
+//		alg_curr_x -= getDigitalValue();
+//		alg_curr_y += getDigitalValue();
+	}        
 
 	if (alg_vectoring == 1 &&
 		alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X &&
@@ -2005,6 +2362,67 @@ uint64_t m5 = esp_timer_get_time();
 #ifdef PROFILING
 		 m1 = esp_timer_get_time();
 #endif
+
+
+#ifdef FLASH_SUPPORT
+
+			if ((idSequenceAddress == 0) && (addressBUS == 0x5555)) idSequenceAddress = 1;
+			else if ((idSequenceAddress == 1) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
+			{
+				if (addressBUS == 0x2aaa) idSequenceAddress = 2;
+			}
+			else if ((idSequenceAddress == 2) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
+			{
+				if (addressBUS == 0x5555) idSequenceAddress = 3;
+			}
+			else if ((idSequenceAddress == 3) && (addressBUS == 0x5555) )
+			{
+				; 
+			}
+			else if ((idSequenceData == 3) && (idSequenceAddress == 3)  )
+			{
+				;
+			}
+			else idSequenceAddress = 0;
+
+			if ((idSequenceData == 0) && (dataBUS == 0xaa))
+			{
+				idSequenceData = 1;
+			}
+			else if ((idSequenceData == 1) && ( (dataBUS == 0xaa)||(dataBUS == 0x55) ))
+			{
+				if (dataBUS == 0x55) idSequenceData = 2;
+			}
+			else if ((idSequenceData == 2) && ( (dataBUS == 0x55)||(dataBUS == 0x90) ))
+			{
+				if (dataBUS == 0x90) idSequenceData = 3;
+			}
+			else if ((idSequenceData == 3) && (dataBUS == 0x90) )
+			{
+				;
+			}
+			else if ((idSequenceData == 3) && (idSequenceAddress == 3)  )
+			{
+				// log.addLog("Id Sequence on", INFO);
+			}
+			else idSequenceData = 0;
+
+			if ((idSequenceAddress == 3) && (idSequenceData == 3))
+			{
+				if (dataBUS==0xf0)
+				{
+					idSequenceAddress = 0;
+					idSequenceData = 0;
+					// log.addLog("Id Sequence off", INFO);
+				}
+			}
+
+			if (flashSupport>1) // watch lines!
+			{
+				checkEraseSequence();
+				checkWriteSequence();
+			}
+#endif		
 		}
 
 #ifdef PROFILING

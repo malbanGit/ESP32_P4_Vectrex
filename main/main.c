@@ -1,3 +1,4 @@
+// karl on LCD demo 1 46 !!!!
 // spike is now very VERY slow???? -> Spike IS so slow!!!
 #include "defines.h"
 
@@ -5,7 +6,7 @@
 
 /*
 Current:
-Karl Quappe reached 48 emu speed -> to slow! -> without overlay ok!
+Vectorblade demo last level reached 46 emu speed -> to slow! -> without overlay
 
 
 
@@ -548,7 +549,26 @@ static void lcd_init(void)
 
     // 3) MIPI-DSI bus (2 lanes, 1000 Mbps/lane).
     esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
-    esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG();
+
+#define LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD()               \
+    {                                                    \
+        .bus_id = 0,                                     \
+        .num_data_lanes = 2,                             \
+        .phy_clk_src = 0,                                \
+        .lane_bit_rate_mbps = 720,                      \
+    }
+#define LT8912B_PANEL_BUS_DSI_2CH_CONFIG_HDMI()               \
+    {                                                    \
+        .bus_id = 0,                                     \
+        .num_data_lanes = 2,                             \
+        .phy_clk_src = 0,                                \
+        .lane_bit_rate_mbps = 1200,                      \
+    }
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_LVDS
+    esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD();
+#else
+    esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_HDMI();
+#endif
     ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&dsi_bus_cfg, &dsi_bus));
 
     const bool yuv422 = VIDEO_FB_YUV422; // 
@@ -1362,6 +1382,10 @@ static int build_palette_freq(
  * Pass img_w=0 / img_h=0 to stretch to full screen.                      */
 esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 {
+    memset(s_fb_front, 0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
+    memset(s_fb_back,  0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
+
+
     /* clamp / default to full screen */
     if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
     if (img_h <= 0 || img_h > LCD_V_RES) img_h = LCD_V_RES;
@@ -1601,9 +1625,13 @@ void app_main(void)
         }
         else
         {
-            printf("ROM Name: %s\n", cartName);
+            printf("ROM Name in ini: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
-            cartSize = load_rom_file("pole.BIN", cartData, sizeof(cartData));
+
+cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
+//cartSize = load_rom_file("VBLADE.NIB", cartData, sizeof(cartData));
+//cartSize = load_rom_file("AKLABETH.BIN", cartData, sizeof(cartData));
+//cartSize = load_rom_file("BERZERKU.BIN", cartData, sizeof(cartData));
             if (cartSize < 0) {
                 printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
                 cartSize = 0;
@@ -1654,10 +1682,10 @@ extern int SCREEN_HEIGHT;
 
 #if ENABLE_OVERLAYS==1
 #if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
- loadOverlayRGB("/sdcard/pole.png", 564, 720);
+ loadOverlayRGB("/sdcard/Karl.png", 564, 720);
  #else
 // loadOverlayRGB("/sdcard/berzerk.png", 480, 800);
- loadOverlayRGB("/sdcard/pole.png", 800, 480);
+ loadOverlayRGB("/sdcard/Karl.png", 800, 480);
  #endif
 #endif
 
@@ -1685,8 +1713,9 @@ extern int SCREEN_HEIGHT;
 #endif
 
     void callbackAY(void *userdata, int16_t *stream, int length);
+#ifndef NO_AUDIO
     audio_set_callback(callbackAY, NULL);
-
+#endif
     printf("Audio init done\n");
 
     xTaskCreatePinnedToCore(
