@@ -66,7 +66,7 @@ static inline uint32_t cap_d2_q16(int apx, int apy)
 /* ════════════════════════════════════════════════════════════════════════
  * draw_line_rgb888_overlay
  * ════════════════════════════════════════════════════════════════════════ */
-IRAM_ATTR void draw_line_rgb888_overlay(
+IRAM_ATTR void draw_line_rgb888_overlay_c(
         uint8_t *fb, int fb_w, int fb_h,
         int x0, int y0, int x1, int y1,
         int brightness, int thickness,
@@ -197,7 +197,7 @@ if (px < wx0 || px > wx1 || py < wy0 || py > wy1) goto px_next;
 /* ════════════════════════════════════════════════════════════════════════
  * undraw_line_rgb888_overlay
  * ════════════════════════════════════════════════════════════════════════ */
-IRAM_ATTR void undraw_line_rgb888_overlay(
+IRAM_ATTR void undraw_line_rgb888_overlay_c(
         uint8_t *fb, int fb_w, int fb_h,
         int x0, int y0, int x1, int y1,
         int brightness, int thickness,

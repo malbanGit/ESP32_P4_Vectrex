@@ -6,7 +6,7 @@
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2
 #define BRIGHTNESS_ADJUST 50
-#define GLOBAL_OVERLAY_ALPHA 40
+#define GLOBAL_OVERLAY_ALPHA 100
 #define AUDIO_OUT_HDMI  1 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
 
 #define SIMPLE_UNDRAW 0 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames

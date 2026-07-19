@@ -276,7 +276,6 @@ esp_err_t audio_init(void)
     void initAY(int freq, int chans, int bits); // libayemu
     initAY(freq, chans, bits); 
 
-
     return ESP_OK;
 }
 

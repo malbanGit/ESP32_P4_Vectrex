@@ -34,6 +34,7 @@ extern "C" {
  *          Pass NULL to behave identically to the plain rgb888 variants.
  */
 
+/* Assembly versions (active) */
 void draw_line_rgb888_overlay(uint8_t *fb, int fb_w, int fb_h,
                                int x0, int y0, int x1, int y1,
                                int brightness, int thickness,
@@ -43,6 +44,17 @@ void undraw_line_rgb888_overlay(uint8_t *fb, int fb_w, int fb_h,
                                  int x0, int y0, int x1, int y1,
                                  int brightness, int thickness,
                                  const uint8_t *overlay);
+
+/* C reference versions (for comparison / fallback) */
+void draw_line_rgb888_overlay_c(uint8_t *fb, int fb_w, int fb_h,
+                                 int x0, int y0, int x1, int y1,
+                                 int brightness, int thickness,
+                                 const uint8_t *overlay);
+
+void undraw_line_rgb888_overlay_c(uint8_t *fb, int fb_w, int fb_h,
+                                   int x0, int y0, int x1, int y1,
+                                   int brightness, int thickness,
+                                   const uint8_t *overlay);
 
 #ifdef __cplusplus
 }

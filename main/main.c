@@ -8,6 +8,8 @@ Sound canibalizes output to screen
 
 SOUND + Screen both!p
 
+try 2 channel 
+try 8 bit
 
 
 Vectorblade
@@ -1328,7 +1330,7 @@ void app_main(void)
         {
             printf("ROM Name: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
-            cartSize = load_rom_file("SPIKE.BIN", cartData, sizeof(cartData));
+            cartSize = load_rom_file("berzerk.BIN", cartData, sizeof(cartData));
             if (cartSize < 0) {
                 printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
                 cartSize = 0;
@@ -1378,7 +1380,7 @@ extern int SCREEN_HEIGHT;
     frames_init();
 
 #if ENABLE_OVERLAYS==1
- loadOverlayRGB("/sdcard/spike.png", 564, 720);
+ loadOverlayRGB("/sdcard/berzerk.png", 564, 720);
 #endif
 
 

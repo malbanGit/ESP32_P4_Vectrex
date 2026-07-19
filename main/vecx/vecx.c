@@ -296,27 +296,44 @@ int vecx_init();
 char  *name[]={
 	"SWEEP.BIN", 
 	"KARL.BIN",
-	"TGARD.BIN",
-	"VBLADE.NIB",
 	"ARMOR.BIN",
 	"BERZERK.BIN",
 	"RELEASE.BIN",
-	"SPIKE.BIN"
+	"SPIKE.BIN",
+	"BEDLAM.BIN",
+	"CASTLE.BIN",
+	"COSMIC.BIN"
 };
+char  *ov[]={
+	"/sdcard/SWEEP.PNG", 
+	"/sdcard/KARL.PNG",
+	"/sdcard/ARMOR.PNG",
+	"/sdcard/BERZERK.PNG",
+	"/sdcard/RELEASE.PNG",
+	"/sdcard/SPIKE.PNG",
+	"/sdcard/BEDLAM.PNG",
+	"/sdcard/CASTLE.PNG",
+	"/sdcard/COSMIC.PNG"
+};
+ esp_err_t loadOverlayRGB(char * n, int w, int h);
 
    	if (isAsciiDown('o'))
 	{
 		loadNum--;
 		if (loadNum<0) loadNum = 7;
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+ loadOverlayRGB(ov[loadNum], 564, 720);
 		vecx_init();
+		vTaskDelay(pdMS_TO_TICKS(500));
 	}
    	if (isAsciiDown('p'))
 	{
 		loadNum++;
 		if (loadNum>7) loadNum = 0;
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+ loadOverlayRGB(ov[loadNum], 564, 720);
 		vecx_init();
+		vTaskDelay(pdMS_TO_TICKS(500));
 	}
 	if (isKeyDown(HID_KEY_F11))
 	{
