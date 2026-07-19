@@ -91,7 +91,10 @@ void initAY(int freq, int chans, int bits)
 //	ayemu_set_chip_type(&ay, AYEMU_YM, NULL);
 	ayemu_set_sound_format(&ay, freq, chans, bits);
 	ayemu_set_chip_freq(&ay, 1500000);  // Vectrex PSG clock
-	if (chans==2) ayemu_set_stereo(&ay, AYEMU_ABC, NULL);
+	if (chans==2) 
+		ayemu_set_stereo(&ay, AYEMU_ABC, NULL);
+	else
+		ayemu_set_stereo(&ay, AYEMU_MONO, NULL);
 //	ayemu_set_stereo(&ay, AYEMU_MONO, NULL);
 }
 
@@ -164,7 +167,7 @@ void callbackAY(void *userdata, uint8_t *stream, int length)
 		// the set reg as a batch - is buggy
 		// some noises do not fade if  regs are set with the batch!
 		//	ayemu_set_regs(&ay, snd_regs);
-		ayemu_gen_sound(&ay, stream, length / (AY_CHANNEL +(AY_BITS>>3)));
+		ayemu_gen_sound(&ay, stream, length / (AY_CHANNEL *(AY_BITS>>3)));
 	}
 	digitByteCounter = -1;
 

@@ -2,7 +2,7 @@
 
 #define VECX_DEBUG 1
 #define MAX_EMU_FPS 50
-#define ENABLE_OVERLAYS 0
+#define ENABLE_OVERLAYS 1
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2
 #define BRIGHTNESS_ADJUST 150
@@ -12,9 +12,10 @@
 
 #define HUGE_DATA_LOCATION DRAM_ATTR // /*DRAM_ATTR*/EXT_RAM_BSS_ATTR  
 
+// audio quality!
 #define AY_FREQUENCY 44100 //
-#define AY_CHANNEL 2 // not wokring atm with other then 2
-#define AY_BITS 16 // not working atm with other then 16
+#define AY_CHANNEL 1 
+#define AY_BITS 8 // not working atm with other then 16
 
 //typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
 
