@@ -34,6 +34,18 @@ extern "C" {
  * main.c — the same externs as the RGB888 overlay variant.
  */
 
+/* Assembly versions (active) */
+void draw_line_yuv422_overlay(uint8_t *fb, int fb_w, int fb_h,
+                               int x0, int y0, int x1, int y1,
+                               int brightness,
+                               const uint8_t *overlay);
+
+void undraw_line_yuv422_overlay(uint8_t *fb, int fb_w, int fb_h,
+                                 int x0, int y0, int x1, int y1,
+                                 int brightness,
+                                 const uint8_t *overlay);
+
+/* C reference versions (for comparison / fallback) */
 void draw_line_yuv422_overlay_c(uint8_t *fb, int fb_w, int fb_h,
                                  int x0, int y0, int x1, int y1,
                                  int brightness,

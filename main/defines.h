@@ -5,6 +5,7 @@
 #define VECX_DEBUG 1
 #define MAX_EMU_FPS 50
 #define ENABLE_OVERLAYS 1
+
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2
 #define BRIGHTNESS_ADJUST 150
@@ -44,6 +45,17 @@
 #define MAX_ROM_NAME    128
 #define MAX_CART_SIZE   32768*2*4 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
 #define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
+
+#define HDMI_VECX_WIDTH 500		
+#define HDMI_VECX_HEIGHT 700		
+#define LCD_VECX_WIDTH 430		
+#define LCD_VECX_HEIGHT 740		
+
+#define HDMI_OVERLAY_WIDTH 564		
+#define HDMI_OVERLAY_HEIGHT 720		
+#define LCD_OVERLAY_WIDTH 800		
+#define LCD_OVERLAY_HEIGHT 480		
+
 
 // #define FLASH_SUPPORT - not tested
 // #define MOVIE_SUPPORT - not tested

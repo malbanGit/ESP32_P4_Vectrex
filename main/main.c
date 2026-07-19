@@ -8,7 +8,7 @@
 Current:
 Vectorblade demo last level reached 46 emu speed -> to slow! -> without overlay
 
-
+Karl Quappe on LCD is still about 5 FPS slower then on HDMI out... FUCK WHY???
 
 
 B) Renderer side
@@ -21,7 +21,11 @@ The exact-match pass at ~main.c:961 does old_count × line_count struct comparis
 6. O(n² × passes) damage propagation — worst-case pathological, but fixing #5 (cached bboxes) is the prerequisite anyway.
 
 
-
+the line that controls the brightness of the lcd screen : 
+ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, x);
+x = 0 => full brightness, x = 1023 => off.
+my code sets it at 50% currently.
+the power consumption goes to 3W when full on. 2W when at 50%
 
 SOUND + Screen both!p
 
@@ -340,7 +344,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
         }
         else        
         {
-            undraw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
+            undraw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
         }
     }
     else
@@ -356,7 +360,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
                 }
                 else
                 {
-                    draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+                    draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
                 }
             }
             return;
@@ -370,7 +374,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
             }
             else
             {
-                draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+                draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
             }
         }
     }
@@ -1474,6 +1478,17 @@ static int build_palette_freq(
     }
     return n;
 }
+void clearFramebuffers()
+{
+    #if VIDEO_FB_YUV422
+        init_yuv422_framebuffer(s_fb_front, LCD_H_RES, LCD_V_RES);
+        init_yuv422_framebuffer(s_fb_back, LCD_H_RES, LCD_V_RES);
+    #else
+        memset(s_fb_front, 0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
+        memset(s_fb_back,  0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
+    #endif
+
+}
 
 // returns pointer
 /* Load a PNG (with alpha), scale it to (img_w x img_h), and centre it on a
@@ -1482,9 +1497,7 @@ static int build_palette_freq(
  * Pass img_w=0 / img_h=0 to stretch to full screen.                      */
 esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 {
-    memset(s_fb_front, 0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
-    memset(s_fb_back,  0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
-
+    clearFramebuffers();
 
     /* clamp / default to full screen */
     if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
@@ -1782,13 +1795,11 @@ extern int SCREEN_HEIGHT;
 
 #if ENABLE_OVERLAYS==1
 #if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
- loadOverlayRGB("/sdcard/Karl.png", 564, 720);
+ loadOverlayRGB("/sdcard/Karl.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
  #else
-// loadOverlayRGB("/sdcard/berzerk.png", 480, 800);
- loadOverlayRGB("/sdcard/Karl.png", 800, 480);
+ loadOverlayRGB("/sdcard/Karl.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
  #endif
 #endif
-
 
     ESP_LOGI(TAG, "Start vectrex tasks");
 

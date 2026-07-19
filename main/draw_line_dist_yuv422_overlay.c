@@ -196,25 +196,24 @@ IRAM_ATTR void draw_line_yuv422_overlay_c(
 
                 if (px < wx0 || px > wx1 || py < wy0 || py > wy1) goto px_next;
 
-                /* Mirror the RGB additive blend: RGB adds c[i]*contrib/256 to
-                 * the alpha-reduced base, driving the effective color toward full
-                 * saturation at the beam core (blend = ea + contrib → 256).
-                 * In YUV we do the same via a combined blend factor:
-                 *   Y: additive (handles overlapping lines correctly)
-                 *   U/V: recomputed from blend-scaled BGR at even columns so
-                 *        chroma tracks the same saturation curve as RGB. */
-                int blend = (int)s_overlay_alpha_val + contrib;
-                if (blend > 256) blend = 256;
-                int b_sc = (b_col * blend) >> 8;
-                int g_sc = (g_col * blend) >> 8;
-                int r_sc = (r_col * blend) >> 8;
-
+                /* Mirror RGB additive accumulation exactly:
+                 *   RGB: dst[i] += c[i] * contrib / 256
+                 *   YUV: Y    +=  Y_full * contrib / 256
+                 *        U-128 += (U_full-128) * contrib / 256   (additive delta)
+                 *        V-128 += (V_full-128) * contrib / 256
+                 * This keeps chroma consistent with luma at overlapping vectors
+                 * (two crossing green lines stay green, not white). */
                 uint8_t *dst = row_fb + px * 2;
-                int yv = bgr_to_y(b_sc, g_sc, r_sc);
+                int y_contrib = (bgr_to_y(b_col, g_col, r_col) * contrib) >> 8;
+                int yv = dst[0] + y_contrib;
                 dst[0] = (uint8_t)(yv > 255 ? 255 : yv);
                 if (!(px & 1)) {
-                    dst[1] = (uint8_t)bgr_to_u(b_sc, g_sc, r_sc);
-                    dst[3] = (uint8_t)bgr_to_v(b_sc, g_sc, r_sc);
+                    int u_delta = ((bgr_to_u(b_col, g_col, r_col) - 128) * contrib) >> 8;
+                    int v_delta = ((bgr_to_v(b_col, g_col, r_col) - 128) * contrib) >> 8;
+                    int uv = (int)dst[1] + u_delta;
+                    int vv = (int)dst[3] + v_delta;
+                    dst[1] = (uint8_t)(uv < 0 ? 0 : uv > 255 ? 255 : uv);
+                    dst[3] = (uint8_t)(vv < 0 ? 0 : vv > 255 ? 255 : vv);
                 }
             }
 

@@ -539,9 +539,9 @@ IRAM_ATTR static einline void readevents()
 		#if ENABLE_OVERLAYS==1
 				// todo size of overlay determined by hdmi/lcd
 #if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
-		loadOverlayRGB(ov[loadNum], 564, 720);
+		loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
 #else
-		loadOverlayRGB(ov[loadNum], 800, 480);
+		loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
 #endif		
 
 
@@ -556,9 +556,9 @@ IRAM_ATTR static einline void readevents()
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
 		#if ENABLE_OVERLAYS==1
 #if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
-		loadOverlayRGB(ov[loadNum], 564, 720);
+		loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
 #else
-		loadOverlayRGB(ov[loadNum], 800, 480);
+		loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
 #endif		
 		#endif 
 		vecx_init();
@@ -722,11 +722,11 @@ int vecx_init()
 	#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
 		SCREEN_HEIGHT = LCD_V_RES;
 		SCREEN_WIDTH = LCD_H_RES;
-		resize( 500, 700);
+		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
 	#else
 		SCREEN_HEIGHT = LCD_H_RES;
 		SCREEN_WIDTH = LCD_V_RES;
-		resize( 430, 740);
+		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
 	#endif
 
 	vecx_reset();
