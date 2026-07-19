@@ -21,7 +21,6 @@ The exact-match pass at ~main.c:961 does old_count × line_count struct comparis
 
 
 
-Sound canibalizes output to screen
 
 SOUND + Screen both!p
 
@@ -218,7 +217,6 @@ DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
 DRAM_ATTR  static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
-DRAM_ATTR  static line_bbox_t s_old_bboxes[MAX_LINE_BUFFER];
 
 // ----------------------------------------------------
 // Emulator frame storage (independent of framebuffers)
@@ -989,28 +987,29 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 }
             }
         }
-        // Pre-compute bboxes for all old lines once
-        for (int i = 0; i < old_count; i++)
-            s_old_bboxes[i] = line_compute_bbox(&old_lines[i]);
 
-        // Step 2: collect dirty (unmatched) old-line bboxes
+
+        // Step 2: compute bboxes for dirty (unmatched) old lines
         int dirty_bbox_count = 0;
         for (int i = 0; i < old_count; i++) {
             if (!s_diff_old_matched[i])
-                s_diff_dirty_bboxes[dirty_bbox_count++] = s_old_bboxes[i];
+                s_diff_dirty_bboxes[dirty_bbox_count++] = line_compute_bbox(&old_lines[i]);
         }
+
 
         // Step 3: detect stable lines damaged by dirty bbox overlap
         memset(s_diff_damaged, 0, old_count);
         for (int i = 0; i < old_count; i++) {
             if (!s_diff_old_matched[i]) continue;
+            line_bbox_t sb = line_compute_bbox(&old_lines[i]);
             for (int d = 0; d < dirty_bbox_count; d++) {
-                if (bboxes_overlap(&s_old_bboxes[i], &s_diff_dirty_bboxes[d])) {
+                if (bboxes_overlap(&sb, &s_diff_dirty_bboxes[d])) {
                     s_diff_damaged[i] = 1;
                     break;
                 }
             }
         }
+        
         // Step 3b: propagate damage through stable-stable overlaps
         // (undrawing a damaged line erases contributions of overlapping stable lines)
         int propagated = 1;
@@ -1018,9 +1017,11 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
             propagated = 0;
             for (int i = 0; i < old_count; i++) {
                 if (!s_diff_old_matched[i] || !s_diff_damaged[i]) continue;
+                line_bbox_t ab = line_compute_bbox(&old_lines[i]);
                 for (int k = 0; k < old_count; k++) {
                     if (!s_diff_old_matched[k] || s_diff_damaged[k]) continue;
-                    if (bboxes_overlap(&s_old_bboxes[i], &s_old_bboxes[k])) {
+                    line_bbox_t kb = line_compute_bbox(&old_lines[k]);
+                    if (bboxes_overlap(&ab, &kb)) {
                         s_diff_damaged[k] = 1;
                         propagated = 1;
                     }
