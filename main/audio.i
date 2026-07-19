@@ -32,7 +32,7 @@
 //#define EXAMPLE_MCLK_MULTIPLE   (384) // If not using 24-bit data width, 256 should be enough
 #define EXAMPLE_MCLK_MULTIPLE   (256) 
 #define EXAMPLE_MCLK_FREQ_HZ    (EXAMPLE_SAMPLE_RATE * EXAMPLE_MCLK_MULTIPLE)
-#define EXAMPLE_VOICE_VOLUME    (100)
+#define EXAMPLE_VOICE_VOLUME    (20)
 
 /* I2C port and GPIOs (wie bisher) */
 #define I2C_NUM         (0)
@@ -347,3 +347,34 @@ void audio_set_callback(audio_sample_callback_t cb, void *userdata)
 }
 static TaskHandle_t s_audio_task_handle = NULL;
 /* FreeRTOS-Task: spielt das eingebettete Musikstück in einer Endlosschleife ab */
+
+
+/*
+ * HDMI audio: the board's I2S pins (9-13) reach the LT8912B via the SN74AVC4T245
+ * translator (BOARD_PIN_VCV_NOE). No second I2S channel is needed — we bypass
+ * esp_codec_dev and write directly to the already-open s_i2s_tx_chan.
+ *
+ * The LT8912B audio input must be enabled via I2C register 0xB2 on the CEC bank.
+ * Call audio_hdmi_enable_lt8912b() AFTER hdmi_start() has configured the bridge.
+ */
+
+/* Enable audio embedding in LT8912B (CEC I2C bank, reg 0xB2 bit0 = audio enable) */
+static esp_err_t audio_hdmi_enable_lt8912b(const esp_lcd_panel_lt8912b_io_t *lt_io)
+{
+    /* LT8912B CEC bank reg 0xB2: bit0 enables I2S audio input */
+    uint8_t val = 0x01;
+    return esp_lcd_panel_io_tx_param(lt_io->cec_dsi, 0xB2, &val, 1);
+}
+
+/* Write mono PCM directly to the I2S TX channel, bypassing esp_codec_dev.
+ * The same I2S frame reaches both ES8311 and LT8912B — in HDMI mode the
+ * ES8311 PA pin (GPIO_OUTPUT_PA) should be low so the speaker stays silent. */
+static esp_err_t audio_hdmi_write(const int16_t *mono, int samples)
+{
+    size_t written = 0;
+    return i2s_channel_write(s_i2s_tx_chan,
+                             mono,
+                             (size_t)samples * sizeof(int16_t),
+                             &written,
+                             portMAX_DELAY);
+}

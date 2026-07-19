@@ -322,7 +322,10 @@ char  *ov[]={
 		loadNum--;
 		if (loadNum<0) loadNum = 7;
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+#if ENABLE_OVERLAYS==1
+// todo size of overlay determined by hdmi/lcd
  loadOverlayRGB(ov[loadNum], 564, 720);
+#endif 
 		vecx_init();
 		vTaskDelay(pdMS_TO_TICKS(500));
 	}
@@ -331,7 +334,10 @@ char  *ov[]={
 		loadNum++;
 		if (loadNum>7) loadNum = 0;
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+#if ENABLE_OVERLAYS==1
+// todo size of overlay determined by hdmi/lcd
  loadOverlayRGB(ov[loadNum], 564, 720);
+#endif 
 		vecx_init();
 		vTaskDelay(pdMS_TO_TICKS(500));
 	}
@@ -482,6 +488,9 @@ void resize(int width, int height){
 	offx = (SCREEN_WIDTH-width)/2;
 	offy = (SCREEN_HEIGHT-height)/2;
 }
+// actual resultion of output screen
+extern int LCD_H_RES;
+extern  int LCD_V_RES;
 
 int vecx_init()
 {
@@ -490,9 +499,19 @@ int vecx_init()
 		//cartData
 		// a cartridge was loaded!
 	}
-	
-//	resize(SCREEN_HEIGHT*3/4, SCREEN_HEIGHT); // this is easily to much for high resolutions
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
+	SCREEN_HEIGHT = LCD_V_RES;
+	SCREEN_WIDTH = LCD_H_RES;
 	resize( 500, 700);
+#else
+	SCREEN_HEIGHT = LCD_H_RES;
+	SCREEN_WIDTH = LCD_V_RES;
+	resize( LCD_V_RES, LCD_H_RES);
+#endif
+
+
+
+
 
 	vecx_reset();
 	e8910_init_sound();

@@ -2,12 +2,11 @@
 
 #define VECX_DEBUG 1
 #define MAX_EMU_FPS 50
-#define ENABLE_OVERLAYS 1
+#define ENABLE_OVERLAYS 0
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2
 #define BRIGHTNESS_ADJUST 150
 #define GLOBAL_OVERLAY_ALPHA 50
-#define AUDIO_OUT_HDMI  1 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
 
 #define SIMPLE_UNDRAW 0 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames
 
@@ -17,8 +16,18 @@
 #define AY_CHANNEL 2 // not wokring atm with other then 2
 #define AY_BITS 16 // not working atm with other then 16
 
-typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
+//typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
+
+#define VIDEO_OUT_HDMI 0
+#define VIDEO_OUT_LVDS 1
+
 #define VIDEO_OUT_SELECTED VIDEO_OUT_HDMI
+
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
+#define AUDIO_OUT_HDMI  1 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
+#else
+#define AUDIO_OUT_HDMI  0 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
+#endif
 
 
 
