@@ -329,17 +329,6 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 // at the moment a few different line-draws are possible
 // if RGS stays stable I will drop the YUV
 
-void draw_line_yuv422_overlay_c(uint8_t *fb, int fb_w, int fb_h,
-                                 int x0, int y0, int x1, int y1,
-                                 int brightness,
-                                 const uint8_t *overlay);
-
-void undraw_line_yuv422_overlay_c(uint8_t *fb, int fb_w, int fb_h,
-                                   int x0, int y0, int x1, int y1,
-                                   int brightness,
-                                   const uint8_t *overlay);
-
-
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
 #if VIDEO_FB_YUV422 == 1

@@ -153,8 +153,8 @@ IRAM_ATTR void draw_line_yuv422_overlay_c(
 
         for (int px = bx0; px <= bx1; px++) {
 
-            /* ── Pixel luma colour + skip logic ────────────────────────── */
-            int y_col;
+            /* ── Pixel colour + skip logic ──────────────────────────────── */
+            int b_col, g_col, r_col;
 
             if (row_pal) {
                 unsigned rx = (unsigned)(px - s_ov_off_x);
@@ -162,11 +162,11 @@ IRAM_ATTR void draw_line_yuv422_overlay_c(
                 uint8_t pidx = row_pal[px];
                 if (!(pidx & 0x80)) goto px_next; /* transparent — skip */
                 const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-                y_col = bgr_to_y(c[0], c[1], c[2]);
+                b_col = c[0]; g_col = c[1]; r_col = c[2];
             } else {
                 const uint8_t *ov = row_ov + (px - bx0) * 4;
                 if (s_overlay_alpha_val >= 255) goto px_next; /* opaque — skip */
-                y_col = bgr_to_y(ov[0], ov[1], ov[2]);
+                b_col = ov[0]; g_col = ov[1]; r_col = ov[2];
             }
 
             /* ── Distance-field contribution ───────────────────────────── */
@@ -196,10 +196,26 @@ IRAM_ATTR void draw_line_yuv422_overlay_c(
 
                 if (px < wx0 || px > wx1 || py < wy0 || py > wy1) goto px_next;
 
-                /* Add Y contribution; U/V untouched (set by drawOverlayPal). */
+                /* Mirror the RGB additive blend: RGB adds c[i]*contrib/256 to
+                 * the alpha-reduced base, driving the effective color toward full
+                 * saturation at the beam core (blend = ea + contrib → 256).
+                 * In YUV we do the same via a combined blend factor:
+                 *   Y: additive (handles overlapping lines correctly)
+                 *   U/V: recomputed from blend-scaled BGR at even columns so
+                 *        chroma tracks the same saturation curve as RGB. */
+                int blend = (int)s_overlay_alpha_val + contrib;
+                if (blend > 256) blend = 256;
+                int b_sc = (b_col * blend) >> 8;
+                int g_sc = (g_col * blend) >> 8;
+                int r_sc = (r_col * blend) >> 8;
+
                 uint8_t *dst = row_fb + px * 2;
-                int v = dst[0] + ((y_col * contrib) >> 8);
-                dst[0] = (uint8_t)(v > 255 ? 255 : v);
+                int yv = bgr_to_y(b_sc, g_sc, r_sc);
+                dst[0] = (uint8_t)(yv > 255 ? 255 : yv);
+                if (!(px & 1)) {
+                    dst[1] = (uint8_t)bgr_to_u(b_sc, g_sc, r_sc);
+                    dst[3] = (uint8_t)bgr_to_v(b_sc, g_sc, r_sc);
+                }
             }
 
         px_next:
@@ -252,17 +268,21 @@ IRAM_ATTR void undraw_line_yuv422_overlay_c(
                 if (px < wx0 || px > wx1 || py < wy0 || py > wy1) continue;
 
                 const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-                int b = c[0], g = c[1], r = c[2];
 
-                /* Restore Y */
-                int yv = (bgr_to_y(b, g, r) * ea) >> 8;
+                /* Scale by ea exactly as drawOverlayPal does for bit-7-set pixels,
+                 * then derive Y/U/V from the same scaled values so the restored
+                 * pixel matches what drawOverlayPal originally wrote. */
+                int b_sc = (c[0] * ea) >> 8;
+                int g_sc = (c[1] * ea) >> 8;
+                int r_sc = (c[2] * ea) >> 8;
+
                 uint8_t *dst = row_fb + px * 2;
-                dst[0] = (uint8_t)(yv > 255 ? 255 : yv);
+                dst[0] = (uint8_t)bgr_to_y(b_sc, g_sc, r_sc);
 
                 /* Restore U/V only at even columns (one pair covers two pixels) */
                 if (!(px & 1)) {
-                    dst[1] = (uint8_t)bgr_to_u(b, g, r);
-                    dst[3] = (uint8_t)bgr_to_v(b, g, r);
+                    dst[1] = (uint8_t)bgr_to_u(b_sc, g_sc, r_sc);
+                    dst[3] = (uint8_t)bgr_to_v(b_sc, g_sc, r_sc);
                 }
             }
         }
@@ -303,11 +323,13 @@ IRAM_ATTR void undraw_line_yuv422_overlay_c(
                         if (!(px & 1)) { dst[1] = 128; dst[3] = 128; }
                     } else {
                         if (ea > 255) ea = 255;
-                        int yv = (bgr_to_y(b, g, r) * ea) >> 8;
-                        dst[0] = (uint8_t)(yv > 255 ? 255 : yv);
+                        int b_sc = (b * ea) >> 8;
+                        int g_sc = (g * ea) >> 8;
+                        int r_sc = (r * ea) >> 8;
+                        dst[0] = (uint8_t)bgr_to_y(b_sc, g_sc, r_sc);
                         if (!(px & 1)) {
-                            dst[1] = (uint8_t)bgr_to_u(b, g, r);
-                            dst[3] = (uint8_t)bgr_to_v(b, g, r);
+                            dst[1] = (uint8_t)bgr_to_u(b_sc, g_sc, r_sc);
+                            dst[3] = (uint8_t)bgr_to_v(b_sc, g_sc, r_sc);
                         }
                     }
                 }
