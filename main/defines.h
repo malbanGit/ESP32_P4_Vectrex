@@ -13,9 +13,9 @@
 #define HUGE_DATA_LOCATION DRAM_ATTR // /*DRAM_ATTR*/EXT_RAM_BSS_ATTR  
 
 // audio quality!
-#define AY_FREQUENCY 44100 //
-#define AY_CHANNEL 1 
-#define AY_BITS 8 // not working atm with other then 16
+#define AY_FREQUENCY 44100 // samples per second
+#define AY_CHANNEL 2 // 1 = mono, 2 = stereo
+#define AY_BITS 16 // not working atm with other then 16, ES8311 only support 16 bit or higher... dont set it any other then 16!
 
 //typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
 

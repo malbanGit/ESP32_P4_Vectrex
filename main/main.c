@@ -941,6 +941,7 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
 */
 
 #else            
+    // printf("linecount: %i\n", line_count);
     // non simple version
     // check which lines are IDENTICAL to last draw
     // check if any undelete lines interesect
