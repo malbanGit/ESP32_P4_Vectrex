@@ -1261,36 +1261,86 @@ void drawOverlay(uint8_t *dest)
         }
     }
 }
-/* Write s_overlay (palette based overlay, 1 byte/pixel) into s_fb_back (BGR, 3 bytes/pixel).
- * Destination is assumed to be black, so partial-alpha pixels scale the source
- * the palette is 127 bytes of color information
- * if palette bit 7 is set, then the pixel is transparent and a "global" transparency is applied to it
+/* Write s_overlay_pal (palette, 1 byte/pixel) into dest.
+ *
+ * Palette index byte:
+ *   bit 7 clear → fully opaque pixel, use palette colour directly
+ *   bit 7 set   → semi-transparent, scale by s_overlay_alpha_val
+ *
+ * Two pixel-format paths selected at compile time via VIDEO_FB_YUV422:
+ *
+ *   RGB888 (VIDEO_FB_YUV422 == 0):
+ *     dest is 3 bytes/pixel (B, G, R order).
+ *     Palette stores BGR so values are written straight through.
+ *
+ *   YUV422 / YUYV (VIDEO_FB_YUV422 == 1):
+ *     dest is 2 bytes/pixel — memory layout per pixel pair:
+ *       [Y0][U][Y1][V]  (YUYV, little-endian)
+ *     Y  is computed per pixel  (BT.601 full-range: Y = (77R+150G+29B)>>8)
+ *     U/V are written once per even-column pixel and shared with the
+ *     following odd-column pixel.  An overlay starting at an odd column
+ *     gets correct luma on the first pixel but inherits the initialised
+ *     U=V=128 (neutral gray) chroma for that one pixel — acceptable.
  */
 void drawOverlayPal(uint8_t *dest)
 {
     if (s_overlay_pal == NULL) return;
 
-    for (int y = 0; y < s_ov_h; y++) 
+    for (int y = 0; y < s_ov_h; y++)
     {
         const uint8_t *row_pal = s_overlay_pal + (size_t)y * s_ov_w;
-        uint8_t       *row_dst = dest + ((size_t)(s_ov_off_y + y) * LCD_H_RES + s_ov_off_x) * 3;
-        for (int x = 0; x < s_ov_w; x++, row_dst += 3) 
+        int dst_y = s_ov_off_y + y;
+
+#if VIDEO_FB_YUV422
+        uint8_t *row_dst = dest + (size_t)dst_y * LCD_H_RES * 2;
+
+        for (int x = 0; x < s_ov_w; x++)
+        {
+            int px = s_ov_off_x + x;
+            uint8_t pidx = row_pal[x];
+            const uint8_t *c = s_overlay_palette[pidx & 0x7F];
+            int b, g, r;
+            if (!(pidx & 0x80)) {
+                b = c[0]; g = c[1]; r = c[2];
+            } else {
+                b = (c[0] * s_overlay_alpha_val) >> 8;
+                g = (c[1] * s_overlay_alpha_val) >> 8;
+                r = (c[2] * s_overlay_alpha_val) >> 8;
+            }
+
+            /* Y (BT.601 full-range: 77+150+29 = 256) */
+            int yv = (77 * r + 150 * g + 29 * b) >> 8;
+            if (yv > 255) yv = 255;
+            row_dst[px * 2] = (uint8_t)yv;
+
+            /* U and V written only at even columns; covers this pixel pair */
+            if (!(px & 1)) {
+                int uv = 128 + ((-43 * r -  85 * g + 128 * b) >> 8);
+                int vv = 128 + ((128 * r - 107 * g -  21 * b) >> 8);
+                if (uv < 0) uv = 0; else if (uv > 255) uv = 255;
+                if (vv < 0) vv = 0; else if (vv > 255) vv = 255;
+                row_dst[px * 2 + 1] = (uint8_t)uv;
+                row_dst[px * 2 + 3] = (uint8_t)vv;
+            }
+        }
+#else
+        uint8_t *row_dst = dest + ((size_t)dst_y * LCD_H_RES + s_ov_off_x) * 3;
+
+        for (int x = 0; x < s_ov_w; x++, row_dst += 3)
         {
             uint8_t pidx = row_pal[x];
             const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-            if (!(pidx & 0x80))
-            {
+            if (!(pidx & 0x80)) {
                 row_dst[0] = c[0];
                 row_dst[1] = c[1];
                 row_dst[2] = c[2];
-            }
-            else
-            {
+            } else {
                 row_dst[0] = (uint8_t)((c[0] * s_overlay_alpha_val) >> 8);
                 row_dst[1] = (uint8_t)((c[1] * s_overlay_alpha_val) >> 8);
                 row_dst[2] = (uint8_t)((c[2] * s_overlay_alpha_val) >> 8);
             }
         }
+#endif
     }
 }
 
