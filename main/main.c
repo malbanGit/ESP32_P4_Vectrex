@@ -192,7 +192,7 @@ typedef enum {
     FRAME_READY,         // fertig und wartet auf Renderer
     FRAME_RENDERING      // Renderer liest/zeichnet
 } frame_state_t;
-
+/*
 typedef struct {
     int x0;
     int y0;
@@ -200,6 +200,18 @@ typedef struct {
     int y1;
     uint8_t brightness;
 } vectrex_line_t;
+*/
+typedef struct {
+    uint16_t x0;
+    uint16_t y0;
+    uint16_t x1;
+    uint16_t y1;
+    uint8_t brightness;
+    uint16_t dummy1;
+    uint16_t dummy2;
+    uint16_t dummy3;
+    uint8_t dummy4;
+} vectrex_line_t; // power of 2 length
 
 typedef struct {
     vectrex_line_t      lines[MAX_LINE_BUFFER]; // these are the "new" lines - that will be drawn by the renderer
@@ -1014,15 +1026,17 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
         memset(s_diff_old_matched, 0, old_count);
         memset(s_diff_new_matched, 0, line_count);
         for (int i = 0; i < old_count; i++) {
-            uint32_t h = line_hash_key(&old_lines[i]) & MATCH_HT_MASK;
+            const vectrex_line_t *ol = &old_lines[i];      /* i*20 computed once */
+            uint32_t h = line_hash_key(ol) & MATCH_HT_MASK;
             while (s_match_ht[h] != -1) {
                 int j = s_match_ht[h];
+                const vectrex_line_t *nw = &fs->lines[j];  /* j*20 computed once per probe */
                 if (!s_diff_new_matched[j] &&
-                    old_lines[i].x0 == fs->lines[j].x0 &&
-                    old_lines[i].y0 == fs->lines[j].y0 &&
-                    old_lines[i].x1 == fs->lines[j].x1 &&
-                    old_lines[i].y1 == fs->lines[j].y1 &&
-                    old_lines[i].brightness == fs->lines[j].brightness) {
+                    ol->x0 == nw->x0 &&
+                    ol->y0 == nw->y0 &&
+                    ol->x1 == nw->x1 &&
+                    ol->y1 == nw->y1 &&
+                    ol->brightness == nw->brightness) {
                     s_diff_old_matched[i] = 1;
                     s_diff_new_matched[j] = 1;
                     break;
