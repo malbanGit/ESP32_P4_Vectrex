@@ -20,6 +20,8 @@
 
 /* ── Shared globals from draw_line_dist_rgb888.c ────────────────────────── */
 extern int           g_line_glow;
+extern int           g_line_width;
+extern int           g_line_Rb;
 extern const uint8_t gauss_lut[];
 
 /* ── Shared globals from main.c ─────────────────────────────────────────── */
@@ -69,17 +71,15 @@ static inline uint32_t cap_d2_q16(int apx, int apy)
 IRAM_ATTR void draw_line_rgb888_overlay_c(
         uint8_t *fb, int fb_w, int fb_h,
         int x0, int y0, int x1, int y1,
-        int brightness, int thickness,
+        int brightness,
         const uint8_t *overlay)
 {
     if (!fb || fb_w <= 0 || fb_h <= 0 || brightness <= 0) return;
     if (!overlay && !s_overlay_pal) return;
 
     int glow   = (g_line_glow < 0) ? 0 : g_line_glow;
-    int beam_r = thickness >> 1;
-
-    int R      = beam_r + glow;
-    int Rb     = R > 0 ? R - 1 : 0;
+    int beam_r = g_line_width >> 1;
+    int Rb     = g_line_Rb;
 
     int bx0 = iclamp((x0 < x1 ? x0 : x1) - Rb, 0, fb_w - 1);
     int bx1 = iclamp((x0 > x1 ? x0 : x1) + Rb, 0, fb_w - 1);
@@ -200,16 +200,12 @@ if (px < wx0 || px > wx1 || py < wy0 || py > wy1) goto px_next;
 IRAM_ATTR void undraw_line_rgb888_overlay_c(
         uint8_t *fb, int fb_w, int fb_h,
         int x0, int y0, int x1, int y1,
-        int brightness, int thickness,
+        int brightness,
         const uint8_t *overlay)
 {
     if (!fb || fb_w <= 0 || fb_h <= 0) return;
 
-    int glow   = (g_line_glow < 0) ? 0 : g_line_glow;
-    int beam_r = thickness >> 1;
-    int R      = beam_r + glow;
-
-    int Rb     = R > 0 ? R - 1 : 0;
+    int Rb = g_line_Rb;
 
     int bx0 = iclamp((x0 < x1 ? x0 : x1) - Rb, 0, fb_w - 1);
     int bx1 = iclamp((x0 > x1 ? x0 : x1) + Rb, 0, fb_w - 1);

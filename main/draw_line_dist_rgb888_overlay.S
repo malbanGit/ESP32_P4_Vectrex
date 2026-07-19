@@ -16,6 +16,10 @@
  *   · px*3 via slli+add.
  */
 
+    .extern g_line_glow
+    .extern g_line_width
+    .extern g_line_Rb
+
     .section .iram0.text,"ax",@progbits
     .align 2
 
@@ -42,8 +46,8 @@
  *    sp+12  s2       sp+64  y1      sp+80  bx1_orig
  *    sp+16  s3                      sp+84  span3 (bg-path)
  *    sp+20  s4                      (8 bytes pad)
- *    sp+24  s5       sp+96  thickness (caller)
- *    sp+28  s6       sp+100 overlay   (caller)
+ *    sp+24  s5       sp+96  overlay   (caller)
+ *    sp+28  s6
  *    sp+32  s7
  *    sp+36  s8
  *    sp+40  s9
@@ -62,8 +66,7 @@
 #define UF_BX0    76
 #define UF_BX1    80
 #define UF_SPAN3  84
-#define UF_THICK  (UF+0)
-#define UF_OV     (UF+4)
+#define UF_OV     (UF+0)
 
     .globl undraw_line_rgb888_overlay
     .type  undraw_line_rgb888_overlay, @function
@@ -97,20 +100,9 @@ undraw_line_rgb888_overlay:
     mv    s0, a0           /* fb  */
     mv    s1, a1           /* fw  */
 
-    /* glow = max(g_line_glow, 0) */
-    la    t0, g_line_glow
-    lw    t0, 0(t0)
-    bgez  t0, 1f
-    li    t0, 0
-1:                         /* t0 = glow */
-
-    /* beam_r = thickness >> 1;  R = beam_r + glow;  Rb = max(R-1,0) */
-    lw    t1, UF_THICK(sp)
-    srai  t1, t1, 1        /* beam_r */
-    add   t2, t1, t0       /* R */
-    blez  t2, 1f
-    addi  t2, t2, -1       /* Rb = R - 1  (matches C's bounding box) */
-1:
+    /* Rb = g_line_Rb — no glow/thickness computation for undraw */
+    la    t2, g_line_Rb
+    lw    t2, 0(t2)        /* t2 = Rb */
 
     /* bx0 = iclamp(min(x0,x1)-Rb, 0, fw-1) */
     lw    a3, UF_X0(sp)
@@ -434,8 +426,8 @@ undraw_line_rgb888_overlay:
  *    sp+ 28  s6                      sp+108  bx0_orig
  *    sp+ 32  s7                      sp+112  bx1_orig
  *    sp+ 36  s8                      (12 bytes pad)
- *    sp+ 40  s9      sp+128  thickness (caller)
- *    sp+ 44  s10     sp+132  overlay   (caller)
+ *    sp+ 40  s9      sp+128  overlay   (caller)
+ *    sp+ 44  s10
  *    sp+ 48  s11
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -457,8 +449,7 @@ undraw_line_rgb888_overlay:
 #define DF_OVH    104
 #define DF_BX0    108
 #define DF_BX1    112
-#define DF_THICK  (DF+0)
-#define DF_OVLAY  (DF+4)
+#define DF_OVLAY  (DF+0)
 
     .globl draw_line_rgb888_overlay
     .type  draw_line_rgb888_overlay, @function
@@ -521,19 +512,18 @@ draw_line_rgb888_overlay:
     li    t1, 255
     bge   t0, t1, .Ldov_ret
 
-    /* glow = max(g_line_glow, 0) */
+    /* glow = max(g_line_glow, 0) — still needed for gauss scale */
     la    t0, g_line_glow
     lw    t0, 0(t0)
     bgez  t0, 1f; li t0, 0
 1:                         /* t0 = glow */
 
-    /* beam_r = thickness>>1;  R = beam_r+glow;  Rb = max(R-1,0) */
-    lw    t1, DF_THICK(sp)
+    /* beam_r = g_line_width >> 1 (for beam_r2_q16);  Rb = g_line_Rb (bbox) */
+    la    t1, g_line_width
+    lw    t1, 0(t1)
     srai  t1, t1, 1        /* beam_r */
-    add   t2, t1, t0       /* R */
-    blez  t2, 1f
-    addi  t2, t2, -1       /* Rb = R - 1  (matches C's bounding box) */
-1:
+    la    t2, g_line_Rb
+    lw    t2, 0(t2)        /* Rb */
 
     /* Bounding box */
     lw    a3, DF_X0(sp);  lw a5, DF_X1(sp)
@@ -584,8 +574,8 @@ draw_line_rgb888_overlay:
     mul   a3, t0, t0;  mul a4, t1, t1;  add a3, a3, a4
     sw    a3, DF_LEN2(sp)
 
-    /* beam_r2_q16 = (beam_r << 8)^2 */
-    lw    t1, DF_THICK(sp);  srai t1, t1, 1   /* beam_r */
+    /* beam_r2_q16 = (beam_r << 8)^2;  beam_r = g_line_width >> 1 */
+    la    t1, g_line_width;  lw t1, 0(t1);  srai t1, t1, 1
     slli  t1, t1, 8;  mul t1, t1, t1
     sw    t1, DF_BR2(sp)
 

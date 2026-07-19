@@ -34,7 +34,6 @@
  *   sp+68  : cross_row
  *   sp+72  : dot_row
  *   sp+76  : inv_len2
- *   sp+80  : thickness  (9th arg from caller)
  */
 
     /* ── Local Gaussian LUT ─────────────────────────────────────────── */
@@ -55,6 +54,8 @@ gauss_lut_yuv422:
     .byte   1,   1
 
     .extern g_line_glow
+    .extern g_line_width
+    .extern g_line_Rb
 
     .section .iram0.text,"ax",@progbits
     .global draw_line_asm_yuv422
@@ -91,17 +92,19 @@ draw_line_asm_yuv422:
     sw      a5, 60(sp)      /* x1 */
     sw      a6, 64(sp)      /* y1 */
 
-    /* glow = max(g_line_glow, 0) */
+    /* glow = max(g_line_glow, 0) — still needed for gauss scale */
     la      t0, g_line_glow
     lw      t0, 0(t0)
     bgez    t0, .LYglow_ok
     li      t0, 0
 .LYglow_ok:
 
-    /* beam_r = thickness>>1,  R = beam_r+glow */
-    lw      t1, 80(sp)
+    /* beam_r = g_line_width >> 1 (for beam_r2_q16);  Rb = g_line_Rb (bbox) */
+    la      t1, g_line_width
+    lw      t1, 0(t1)
     srai    t1, t1, 1               /* t1 = beam_r */
-    add     t2, t1, t0              /* t2 = R      */
+    la      t2, g_line_Rb
+    lw      t2, 0(t2)               /* t2 = Rb     */
 
     /* ── Bounding box ── */
     /* bx0 = iclamp(min(x0,x1)-R, 0, fb_w-1) */
@@ -439,7 +442,6 @@ draw_line_asm_yuv422:
  *   sp+36  : x1
  *   sp+40  : y1
  *   sp+44  : (pad)
- *   sp+48  : thickness  (9th arg from caller)
  * ════════════════════════════════════════════════════════════════════ */
 
     .global undraw_line_asm_yuv422
@@ -469,15 +471,9 @@ undraw_line_asm_yuv422:
     blez    s1, .LYundraw_ret
     blez    a2, .LYundraw_ret
 
-    la      t0, g_line_glow
-    lw      t0, 0(t0)
-    bgez    t0, 1f
-    li      t0, 0
-1:
-
-    lw      t1, 48(sp)
-    srai    t1, t1, 1               /* beam_r */
-    add     t2, t1, t0              /* R */
+    /* Rb = g_line_Rb — no glow/thickness needed for undraw bbox */
+    la      t2, g_line_Rb
+    lw      t2, 0(t2)               /* t2 = Rb */
 
     /* ── Bounding box ── */
     lw      a3, 28(sp)

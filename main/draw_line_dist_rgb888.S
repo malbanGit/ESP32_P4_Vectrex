@@ -33,11 +33,14 @@
  *   sp+68  : cross_row  — cross at (bx0, py), updated each outer iteration
  *   sp+72  : dot_row    — dot   at (bx0, py), updated each outer iteration
  *   sp+76  : inv_len2   — (2^32-1)/len2, or undefined when len2==0
- *   sp+80  : thickness  (9th arg from caller)
  *
  * Constraint: |cross| < 65536 required for cross^2 to fit in uint32.
  * Satisfied when R*sqrt(len2) < 65536, i.e. for R<=16 on 1920-wide screens.
  */
+
+    .extern g_line_glow
+    .extern g_line_width
+    .extern g_line_Rb
 
     .section .iram0.text,"ax",@progbits
     .global draw_line_asm_rgb888
@@ -77,17 +80,19 @@ draw_line_asm_rgb888:
     sw      a5, 60(sp)      /* x1 */
     sw      a6, 64(sp)      /* y1 */
 
-    /* glow = max(g_line_glow, 0) */
+    /* glow = max(g_line_glow, 0) — still needed for gauss scale */
     la      t0, g_line_glow
     lw      t0, 0(t0)
     bgez    t0, .Lglow_ok
     li      t0, 0
 .Lglow_ok:
 
-    /* beam_r = thickness>>1,  R = beam_r+glow */
-    lw      t1, 80(sp)
+    /* beam_r = g_line_width >> 1 (for beam_r2_q16);  Rb = g_line_Rb (bbox) */
+    la      t1, g_line_width
+    lw      t1, 0(t1)
     srai    t1, t1, 1               /* t1 = beam_r */
-    add     t2, t1, t0              /* t2 = R      */
+    la      t2, g_line_Rb
+    lw      t2, 0(t2)               /* t2 = Rb     */
 
     /* ── Bounding box ── */
     /* bx0 = iclamp(min(x0,x1)-R, 0, fb_w-1) */
@@ -444,7 +449,7 @@ draw_line_asm_rgb888:
  *   sp+36  : y0 local
  *   sp+40  : x1 local
  *   sp+44  : y1 local
- *   sp+48  : thickness  (9th arg from caller)
+ *   sp+48  : (unused — thickness removed)
  * ════════════════════════════════════════════════════════════════════ */
 
     .global undraw_line_asm_rgb888
@@ -476,22 +481,12 @@ undraw_line_asm_rgb888:
     sw      a5, 40(sp)
     sw      a6, 44(sp)
 
-    /* glow = max(g_line_glow, 0) */
-    la      t0, g_line_glow
-    lw      t0, 0(t0)
-    bgez    t0, 1f
-    li      t0, 0
-1:                              /* t0 = glow */
-
-    /* beam_r = thickness >> 1 */
-    lw      t1, 48(sp)
-    srai    t1, t1, 1           /* t1 = beam_r */
-
-    /* R = beam_r + glow */
-    add     t2, t1, t0          /* t2 = R */
+    /* Rb = g_line_Rb — no glow/thickness needed for undraw bbox */
+    la      t2, g_line_Rb
+    lw      t2, 0(t2)           /* t2 = Rb */
 
     /* ── Bounding box ── */
-    /* bx0 = iclamp(min(x0,x1) - R, 0, fb_w-1) */
+    /* bx0 = iclamp(min(x0,x1) - Rb, 0, fb_w-1) */
     lw      a3, 32(sp)
     lw      a5, 40(sp)
     blt     a3, a5, 1f

@@ -8,6 +8,19 @@ Current:
 Karl Quappe reached 48 emu speed -> to slow! -> without overlay ok!
 
 
+
+
+B) Renderer side
+
+4. O(n²) line-match in frame-diff mode — biggest renderer gain.
+The exact-match pass at ~main.c:961 does old_count × line_count struct comparisons. At ~100 lines × 50fps = ~500,000 comparisons/sec. Replace with a hash-map: pack (x0,y0,x1,y1) into a uint64_t key, build a small hash set of new-frame lines, then match old lines in O(n).
+
+5. Redundant bbox recomputation inside the diff loops — also in the frame-diff path. The same bounding boxes are computed multiple times across steps 2, 3, 3b. Pre-compute them once into a local array before the matching starts.
+
+6. O(n² × passes) damage propagation — worst-case pathological, but fixing #5 (cached bboxes) is the prerequisite anyway.
+
+
+
 Sound canibalizes output to screen
 
 SOUND + Screen both!p
@@ -153,6 +166,11 @@ DRAM_ATTR int  g_line_width = LINE_WIDTH;      // >= 1
 DRAM_ATTR int  g_line_glow  = LINE_GLOW_WIDTH;
 DRAM_ATTR int  brightnessAdjust = BRIGHTNESS_ADJUST;
 
+/* Precomputed bounding-box radius shared by all draw/undraw functions and ASM.
+ * Must be updated if g_line_width or g_line_glow ever change at runtime.     */
+DRAM_ATTR int g_line_Rb = (((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH) > 0)
+                           ? ((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH - 1) : 0;
+
 
 static const char *TAG = "main";
 
@@ -200,6 +218,7 @@ DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
 DRAM_ATTR  static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
+DRAM_ATTR  static line_bbox_t s_old_bboxes[MAX_LINE_BUFFER];
 
 // ----------------------------------------------------
 // Emulator frame storage (independent of framebuffers)
@@ -269,9 +288,7 @@ DRAM_ATTR int mode = VIDEO_OUT_SELECTED;          // default at boot
 // these are used to check whether lines intersect
 static inline line_bbox_t line_compute_bbox(const vectrex_line_t *l)
 {
-    int glow = g_line_glow < 0 ? 0 : g_line_glow;
-    int R    = (g_line_width >> 1) + glow;
-    int Rb   = R > 0 ? R - 1 : 0;
+    int Rb = g_line_Rb;
     line_bbox_t b;
     b.bx0 = (l->x0 < l->x1 ? l->x0 : l->x1) - Rb;
     b.bx1 = (l->x0 > l->x1 ? l->x0 : l->x1) + Rb;
@@ -332,7 +349,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
         }
         else        
         {
-            undraw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width, s_overlay);
+            undraw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
 
         }
     }
@@ -349,7 +366,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
                 }
                 else
                 {
-                    draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                    draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
                 }
             }
             return;
@@ -363,7 +380,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
             }
             else
             {
-                draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
             }
         }
     }
@@ -764,7 +781,7 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
         }
         else        
         {
-            undraw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width, s_overlay);
+            undraw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
 
         }
     }
@@ -781,7 +798,7 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
                 }
                 else
                 {
-                    draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                    draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
                 }
             }
             return;
@@ -795,7 +812,7 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
             }
             else
             {
-                draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
             }
         }
     }
@@ -972,21 +989,23 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 }
             }
         }
+        // Pre-compute bboxes for all old lines once
+        for (int i = 0; i < old_count; i++)
+            s_old_bboxes[i] = line_compute_bbox(&old_lines[i]);
 
-        // Step 2: compute bboxes for dirty (unmatched) old lines
+        // Step 2: collect dirty (unmatched) old-line bboxes
         int dirty_bbox_count = 0;
         for (int i = 0; i < old_count; i++) {
             if (!s_diff_old_matched[i])
-                s_diff_dirty_bboxes[dirty_bbox_count++] = line_compute_bbox(&old_lines[i]);
+                s_diff_dirty_bboxes[dirty_bbox_count++] = s_old_bboxes[i];
         }
 
         // Step 3: detect stable lines damaged by dirty bbox overlap
         memset(s_diff_damaged, 0, old_count);
         for (int i = 0; i < old_count; i++) {
             if (!s_diff_old_matched[i]) continue;
-            line_bbox_t sb = line_compute_bbox(&old_lines[i]);
             for (int d = 0; d < dirty_bbox_count; d++) {
-                if (bboxes_overlap(&sb, &s_diff_dirty_bboxes[d])) {
+                if (bboxes_overlap(&s_old_bboxes[i], &s_diff_dirty_bboxes[d])) {
                     s_diff_damaged[i] = 1;
                     break;
                 }
@@ -999,11 +1018,9 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
             propagated = 0;
             for (int i = 0; i < old_count; i++) {
                 if (!s_diff_old_matched[i] || !s_diff_damaged[i]) continue;
-                line_bbox_t ab = line_compute_bbox(&old_lines[i]);
                 for (int k = 0; k < old_count; k++) {
                     if (!s_diff_old_matched[k] || s_diff_damaged[k]) continue;
-                    line_bbox_t kb = line_compute_bbox(&old_lines[k]);
-                    if (bboxes_overlap(&ab, &kb)) {
+                    if (bboxes_overlap(&s_old_bboxes[i], &s_old_bboxes[k])) {
                         s_diff_damaged[k] = 1;
                         propagated = 1;
                     }
