@@ -101,7 +101,7 @@ void initAY(int freq, int chans, int bits)
 void ayemu_set_regs(ayemu_ay_t *ay, unsigned *regs);
 
 // length in byte!
-void callbackAY(void *userdata, uint8_t *stream, int length)
+IRAM_ATTR void callbackAY(void *userdata, uint8_t *stream, int length)
 {
 	(void) userdata;
 

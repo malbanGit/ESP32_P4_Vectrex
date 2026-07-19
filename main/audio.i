@@ -326,7 +326,6 @@ void audio_deinit(void)
 		free(audio_buf);
 		audio_buf = NULL;
 	}
-
 }
 
 //DRAM_ATTR int16_t audioBuffer[AUDIO_FRAME_SAMPLES];
@@ -347,7 +346,6 @@ void audio_set_callback(audio_sample_callback_t cb, void *userdata)
 }
 static TaskHandle_t s_audio_task_handle = NULL;
 /* FreeRTOS-Task: spielt das eingebettete Musikstück in einer Endlosschleife ab */
-
 
 /*
  * HDMI audio: the board's I2S pins (9-13) reach the LT8912B via the SN74AVC4T245

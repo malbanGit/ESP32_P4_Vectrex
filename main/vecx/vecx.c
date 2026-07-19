@@ -250,7 +250,7 @@ void vecx_emu (long cycles);
 
 
 //IRAM_ATTR 
-static einline void readevents()
+IRAM_ATTR static einline void readevents()
 {
 	// Public API:
 	extern IRAM_ATTR bool isKeyDown(uint8_t hid_code);
