@@ -93,9 +93,9 @@ undraw_line_rgb888_overlay:
     sw    a5, UF_X1(sp)
     sw    a6, UF_Y1(sp)
 
-    beqz  a0, .Lud_ret
-    blez  a1, .Lud_ret
-    blez  a2, .Lud_ret
+//    beqz  a0, .Lud_ret
+//    blez  a1, .Lud_ret
+//    blez  a2, .Lud_ret
 
     mv    s0, a0           /* fb  */
     mv    s1, a1           /* fw  */
@@ -476,10 +476,10 @@ draw_line_rgb888_overlay:
     sw    a5, DF_X1(sp)
     sw    a6, DF_Y1(sp)
 
-    beqz  a0, .Ldov_ret
-    blez  a1, .Ldov_ret
-    blez  a2, .Ldov_ret
-    blez  a7, .Ldov_ret
+//    beqz  a0, .Ldov_ret
+//    blez  a1, .Ldov_ret
+//    blez  a2, .Ldov_ret
+//    blez  a7, .Ldov_ret
 
     mv    s0, a0
     mv    s1, a1
@@ -492,7 +492,7 @@ draw_line_rgb888_overlay:
     /* Need at least one source */
     bnez  s7, .Ldov_have_src
     lw    t1, DF_OVLAY(sp)
-    beqz  t1, .Ldov_ret
+//    beqz  t1, .Ldov_ret
 .Ldov_have_src:
 
     la    s8, s_overlay_palette

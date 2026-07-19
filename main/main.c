@@ -207,10 +207,7 @@ typedef struct {
     uint16_t x1;
     uint16_t y1;
     uint8_t brightness;
-    uint16_t dummy1;
-    uint16_t dummy2;
-    uint16_t dummy3;
-    uint8_t dummy4;
+    uint8_t  _pad[7];
 } vectrex_line_t; // power of 2 length
 
 typedef struct {
@@ -1606,7 +1603,7 @@ void app_main(void)
         {
             printf("ROM Name: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
-            cartSize = load_rom_file("berzerk.BIN", cartData, sizeof(cartData));
+            cartSize = load_rom_file("pole.BIN", cartData, sizeof(cartData));
             if (cartSize < 0) {
                 printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
                 cartSize = 0;
@@ -1657,10 +1654,10 @@ extern int SCREEN_HEIGHT;
 
 #if ENABLE_OVERLAYS==1
 #if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
- loadOverlayRGB("/sdcard/berzerk.png", 564, 720);
+ loadOverlayRGB("/sdcard/pole.png", 564, 720);
  #else
 // loadOverlayRGB("/sdcard/berzerk.png", 480, 800);
- loadOverlayRGB("/sdcard/berzerk.png", 800, 480);
+ loadOverlayRGB("/sdcard/pole.png", 800, 480);
  #endif
 #endif
 
