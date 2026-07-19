@@ -375,6 +375,73 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
     #endif
 }
 
+IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint8_t brightness)
+{
+#if VIDEO_FB_YUV422 == 1
+    if (brightness == 0) 
+    {
+        undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+    }
+    else
+    {
+        if (x0==x1 && y0==y1) 
+        {
+            int b = brightness*4+brightnessAdjust;
+            if (b>0)
+                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+            return;
+        }
+        int b = brightness*4/3+brightnessAdjust;
+        if (b>0)
+            draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+
+    }
+    #else
+    if (brightness == 0) 
+    {
+        if (s_overlay == NULL)
+        {
+            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+        }
+        else        
+        {
+            undraw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width, s_overlay);
+
+        }
+    }
+    else
+    {
+        if (x0==x1 && y0==y1) 
+        {
+            int b = brightness*4+brightnessAdjust;
+            if (b>0)
+            {
+                if (s_overlay == NULL)
+                {
+                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                }
+                else
+                {
+                    draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                }
+            }
+            return;
+        }
+        int b = brightness*4/3+brightnessAdjust;
+        if (b>0)
+        {
+            if (s_overlay == NULL)
+            {
+                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+            }
+            else
+            {
+                draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+            }
+        }
+    }
+    #endif
+}
 
 // ----------------------------------------------------
 // LCD init
@@ -695,6 +762,19 @@ IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 
     s_fb_line_count[fb_index] = 0;
 }
+IRAM_ATTR static inline void undraw_previous_fb_c(int fb_index)
+{
+    int count = s_fb_line_count[fb_index];
+//    ESP_LOGI(TAG, "LINES TO ERASE: %i", count);
+
+    for (int i = 0; i < count; ++i) {
+        vectrex_line_t *l = &s_fb_lines[fb_index][i];
+        // Erase the line (brightness 0)
+        drawLine_raw_c(l->x0, l->y0, l->x1, l->y1, 0);
+    }
+
+    s_fb_line_count[fb_index] = 0;
+}
 
 // ----------------------------------------------------
 // Tasks
@@ -718,87 +798,7 @@ IRAM_ATTR static void emulator_task(void *arg)
         }
     }
 }
-IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint8_t brightness)
-{
-#if VIDEO_FB_YUV422 == 1
-    if (brightness == 0) 
-    {
-        undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
-        if (b>0)
-            draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
 
-    }
-    #else
-    if (brightness == 0) 
-    {
-        if (s_overlay == NULL)
-        {
-            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
-        }
-        else        
-        {
-            undraw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width, s_overlay);
-
-        }
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-            {
-                if (s_overlay == NULL)
-                {
-                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-                }
-                else
-                {
-                    draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
-                }
-            }
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
-        if (b>0)
-        {
-            if (s_overlay == NULL)
-            {
-                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-            }
-            else
-            {
-                draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
-            }
-        }
-    }
-    #endif
-}
-
-IRAM_ATTR static inline void undraw_previous_fb_c(int fb_index)
-{
-    int count = s_fb_line_count[fb_index];
-//    ESP_LOGI(TAG, "LINES TO ERASE: %i", count);
-
-    for (int i = 0; i < count; ++i) {
-        vectrex_line_t *l = &s_fb_lines[fb_index][i];
-        // Erase the line (brightness 0)
-        drawLine_raw_c(l->x0, l->y0, l->x1, l->y1, 0);
-    }
-
-    s_fb_line_count[fb_index] = 0;
-}
 
 // Renderer: VSYNC-driven, uses last finished emulated frame.
 // If frame hash unchanged: could skip (auskommentiert).
@@ -862,15 +862,13 @@ uint64_t t0 = esp_timer_get_time();
         undraw_previous_fb(fb_idx);             // undraw all from that framebuffer
 uint64_t t1 = esp_timer_get_time();
 draw_asm += (t1-t0);
-
-s_fb_line_count[fb_idx]=save;
-
 t0 = esp_timer_get_time();
 undraw_previous_fb_c(fb_idx);             // undraw all from that framebuffer
 t1 = esp_timer_get_time();
 draw_c += (t1-t0);
 
 
+s_fb_line_count[fb_idx]=save;
 
 
 t0 = esp_timer_get_time();
@@ -1190,53 +1188,7 @@ esp_err_t overlay_load_png_bgra(const char *path, uint8_t *fb, int fb_w, int fb_
     return ESP_OK;
 }
 
-/* ── Palette builder: frequency-ranked 4-bit histogram ──────────────────────
- * idx = (R>>4)<<8 | (G>>4)<<4 | (B>>4)  →  4096 buckets, 16 KB DRAM.
- * Fills palette with the ≤127 most-frequent colour buckets, most common first.
- * Bucket centre = (nibble << 4) | 8  (midpoint of the 16-unit range).
- * Transparent (alpha==0) pixels are excluded.
- */
-static int build_palette_freq(
-        const uint8_t *overlay_bgra,
-        int off_x, int off_y,
-        int img_w, int img_h,
-        int lcd_w,
-        uint8_t palette[128][3])
-{
-    static uint32_t hist[4096];   /* 4-bit per channel: 16×16×16 buckets, DRAM */
-    memset(hist, 0, sizeof(hist));
-
-    for (int y = 0; y < img_h; y++) {
-        const uint8_t *row = overlay_bgra + ((size_t)(off_y + y) * lcd_w + off_x) * 4;
-        for (int x = 0; x < img_w; x++, row += 4) {
-            if (row[3] == 0) continue;
-            uint32_t idx = ((uint32_t)(row[2] >> 4) << 8)   /* R → bits[11:8] */
-                         | ((uint32_t)(row[1] >> 4) << 4)   /* G → bits[7:4]  */
-                         |  (uint32_t)(row[0] >> 4);        /* B → bits[3:0]  */
-            hist[idx]++;
-        }
-    }
-
-    /* Pick top-127 buckets by pixel count (partial selection, O(127×4096)). */
-    int n = 0;
-    while (n < 127) {
-        uint32_t best_cnt = 0;
-        int      best_idx = -1;
-        for (int i = 0; i < 4096; i++) {
-            if (hist[i] > best_cnt) { best_cnt = hist[i]; best_idx = i; }
-        }
-        if (best_idx < 0) break;
-        hist[best_idx] = 0;   /* remove from future rounds */
-
-        palette[n][0] = (uint8_t)(((best_idx      ) & 0xF) << 4 | 8);  /* B */
-        palette[n][1] = (uint8_t)(((best_idx >>  4) & 0xF) << 4 | 8);  /* G */
-        palette[n][2] = (uint8_t)(((best_idx >>  8) & 0xF) << 4 | 8);  /* R */
-        n++;
-    }
-    return n;
-}
-
-// returns pointer
+// returns pointer 
 /* Load a PNG (with alpha), scale it to (img_w x img_h), and centre it on a
  * full-screen BGRA overlay buffer (LCD_H_RES x LCD_V_RES, 4 bytes/pixel).
  * Surrounding area is filled with transparent black (alpha=0).
@@ -1343,10 +1295,37 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         s_overlay_pal_n = 0;
         memset(s_overlay_palette, 0, sizeof(s_overlay_palette));
 
-        /* Pass 1: median-cut quantisation → 127-entry BGR palette. */
-        s_overlay_pal_n = build_palette_freq(
-                s_overlay, off_x, off_y, img_w, img_h, LCD_H_RES,
-                s_overlay_palette);
+        /* Pass 1: build palette from drawable pixels. */
+        for (int y = 0; y < img_h; y++) 
+        {
+            const uint8_t *src = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
+            for (int x = 0; x < img_w; x++, src += 4) 
+            {
+                uint8_t b = src[0], g = src[1], r = src[2];//, a = src[3];
+
+                /* find nearest existing palette entry */
+                int best;
+                int best_d = 0x7FFFFFFF;
+                for (int i = 0; i < s_overlay_pal_n; i++) 
+                {
+                    int db = (int)b - s_overlay_palette[i][0];
+                    int dg = (int)g - s_overlay_palette[i][1];
+                    int dr = (int)r - s_overlay_palette[i][2];
+                    int d  = db*db + dg*dg + dr*dr;
+                    if (d < best_d) { best = i; best_d = d; }
+                    if (d == 0) break;
+                }
+
+                if (best_d != 0 && s_overlay_pal_n < 127) 
+                {
+                    best = s_overlay_pal_n;
+                    s_overlay_palette[s_overlay_pal_n][0] = b;
+                    s_overlay_palette[s_overlay_pal_n][1] = g;
+                    s_overlay_palette[s_overlay_pal_n][2] = r;
+                    s_overlay_pal_n++;
+                }
+            }
+        }
 
         /* Pass 2: assign index bytes. */
         for (int y = 0; y < img_h; y++) 
@@ -1388,7 +1367,6 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
              name, img_w, img_h, LCD_H_RES, LCD_V_RES);
     return ESP_OK;
 }
-
 
 /*
  * HDMI audio: the board's I2S pins (9-13) reach the LT8912B via the SN74AVC4T245

@@ -9,7 +9,7 @@
 #define GLOBAL_OVERLAY_ALPHA 100
 #define AUDIO_OUT_HDMI  1 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
 
-#define SIMPLE_UNDRAW 0 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames
+#define SIMPLE_UNDRAW 1 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames
 
 #define HUGE_DATA_LOCATION DRAM_ATTR // /*DRAM_ATTR*/EXT_RAM_BSS_ATTR  
 
