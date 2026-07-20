@@ -17,7 +17,7 @@
  * The esp_lcd_lt8912b driver always enables HDMI / disables LVDS at init and
  * exposes no public selector, so after init we replicate its internal LVDS-on +
  * HDMI-off register writes over the main I2C bank.
- */ 
+ */
 #include "lvds.h"
 #include "board.h"
 #include "esp_check.h"
@@ -42,8 +42,8 @@ static const char *TAG = "lvds";
 // and 26.667 (240/9) exist. We request 26 -> 240/9 = 26.667 MHz actual, with
 // htotal 896 (panel 808-896) and vtotal 496 (panel 488-504):
 // 26.667e6 / (896 x 496) = 60.00 Hz.
-#define ST7262_DPI_CLK_MHZ      24    // requested; 240/9 = 26.667 MHz actual
-#define ST7262_DECLARE_PCLK_MHZ 24    // bridge-declared integer pclk (nearest)
+#define ST7262_DPI_CLK_MHZ      26    // requested; 240/9 = 26.667 MHz actual
+#define ST7262_DECLARE_PCLK_MHZ 27    // bridge-declared integer pclk (nearest)
 #define ST7262_HTOTAL           896
 #define ST7262_VTOTAL           496
 #define ST7262_VIDEO_TIMING() {                   \
@@ -61,7 +61,7 @@ static const char *TAG = "lvds";
         .dpi_clock_freq_mhz = ST7262_DPI_CLK_MHZ, \
         .virtual_channel = 0,                     \
         .in_color_format = LCD_COLOR_PIXEL_FORMAT_RGB888, \
-        .num_fbs = 2,                             \
+        .num_fbs = 1,                             \
         .video_timing = {                         \
             .h_size = 800, .v_size = 480,         \
             .hsync_back_porch = 44, .hsync_pulse_width = 8, .hsync_front_porch = 44, \
@@ -378,7 +378,6 @@ esp_err_t lvds_start(const esp_lcd_panel_lt8912b_io_t *io, esp_lcd_dsi_bus_handl
     // both FB formats display identical colors.
     {
         uint8_t swap = yuv422 ? 0x00 : 0x10;   // 001 = alternate RGB mapping for the RGB888 FB path
-        swap = 0x00;
         ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io->cec_dsi, 0x40, &swap, 1), TAG, "rgb swap");
         ESP_LOGI(TAG, "MIPI RX RGB_SWAP (0x49:0x40) = 0x%02x for %s FB", swap, yuv422 ? "YUV422" : "RGB888");
     }

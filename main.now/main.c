@@ -1,10 +1,86 @@
+// karl on LCD demo 1 46 !!!!
 // spike is now very VERY slow???? -> Spike IS so slow!!!
 #include "defines.h"
 
 
 
 /*
-Sound canibalizes output to screen
+Current:
+SLOW1: Vectorblade demo last level reached 46 emu speed -> to slow! -> without overlay
+SLOW1: Karl Quappe on LCD is still about 5 FPS slower then on HDMI out... FUCK WHY???
+
+YUV is about 2 FPS faster (emulator)
+YUV
+
+Optimizing steps:
+a) 
+        via_sstep0(); 
+        removed, gain 3 FPS! - this would be needed for imager and lightpen emulation!
+
+b) 
+        in via_sstep1 ();
+            if (via_srb >= 8u) ,return
+        inserted - minimalistic gain
+
+c) 
+        Following was not done, since for some reason or another, long uncalled for lines appeared in output
+        Even only setting scl_factorx to uint32_t does this, despite the fact that the scale factor is NEVER negative
+        Don't know why this does what it does.
+        Theoretically a unsigned division is faster then a signed division!
+
+        If you're doing division, unsigned variants are cheaper than signed on RISC-V 
+        (signed division needs extra sign-handling instructions) — 
+        if these are always non-negative in practice, uint32_t instead of long/int could
+        be a real, measurable win, unlike the long-vs-int question itself.
+        int32_t/uint32_t
+        scl_factorx
+        offy
+        long x0, long y0, long x1, long y1
+
+        IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
+        {
+            if (intensityDrift>100000)
+            {
+                double degradePercent = (180000000.0-((double)intensityDrift))/180000000.0; // two minutes
+                if (degradePercent<0) degradePercent = 0;
+                color = (int)(((double)color)*degradePercent);
+            }
+
+            emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
+            return;
+        }
+
+
+
+
+
+
+
+
+
+
+
+Implement the new LCD code from laurent
+
+Try out ESP IDF 6 with 400 Mhz
+
+
+
+B) Renderer side
+
+4. O(n²) line-match in frame-diff mode — biggest renderer gain.
+The exact-match pass at ~main.c:961 does old_count × line_count struct comparisons. At ~100 lines × 50fps = ~500,000 comparisons/sec. Replace with a hash-map: pack (x0,y0,x1,y1) into a uint64_t key, build a small hash set of new-frame lines, then match old lines in O(n).
+
+5. Redundant bbox recomputation inside the diff loops — also in the frame-diff path. The same bounding boxes are computed multiple times across steps 2, 3, 3b. Pre-compute them once into a local array before the matching starts.
+
+6. O(n² × passes) damage propagation — worst-case pathological, but fixing #5 (cached bboxes) is the prerequisite anyway.
+
+
+the line that controls the brightness of the lcd screen : 
+ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, x);
+x = 0 => full brightness, x = 1023 => off.
+my code sets it at 50% currently.
+the power consumption goes to 3W when full on. 2W when at 50%
 
 SOUND + Screen both!p
 
@@ -25,8 +101,6 @@ TODO: Calibration Ala Tuts
 done PNG file loading
 
 why? overlays in YUV?
-
-Overlays in assembler
 
 
 Pessimism to free DRAM
@@ -63,17 +137,11 @@ Start
 Should connect to COM 4, flash and play.
 
 
-/C:\Users\salom\ESP_Projects\ESP32_P4_Vectrex\main\vecx\e6809.c
 Sound
-
-
-  BUG
+  BUG - no
   FCYCLES_INIT = 50000
-  should be 30000 for one round
+  should be 30000 for one round -> Nope the 50000 is fallback for "not" autosyncable... watch it "flicker" when spike speaks!
 
-
-  however 50000 displays seemingly only in one frame -> flickering
-  that is also a bug and I keep it at 50000 till I find THAT bug
 */
 
 #include "freertos/FreeRTOS.h"
@@ -126,16 +194,16 @@ long cartSize = 0;
 // ASM H
 void draw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
-                            int brightness, int thickness);
+                            int brightness);
 void undraw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
-                            int brightness, int thickness);
+                            int brightness);
 void draw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
-                            int brightness, int thickness);
+                            int brightness);
 void undraw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
-                            int brightness, int thickness);
+                            int brightness);
 
 
 i2c_master_bus_handle_t i2c_bus = NULL;
@@ -157,14 +225,19 @@ DRAM_ATTR int  g_line_width = LINE_WIDTH;      // >= 1
 DRAM_ATTR int  g_line_glow  = LINE_GLOW_WIDTH;
 DRAM_ATTR int  brightnessAdjust = BRIGHTNESS_ADJUST;
 
+/* Precomputed bounding-box radius shared by all draw/undraw functions and ASM.
+ * Must be updated if g_line_width or g_line_glow ever change at runtime.     */
+DRAM_ATTR int g_line_Rb = (((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH) > 0)
+                           ? ((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH - 1) : 0;
+
 
 static const char *TAG = "main";
 
-DRAM_ATTR static int LCD_H_RES = 1280;
-DRAM_ATTR static int LCD_V_RES = 720;
+DRAM_ATTR int LCD_H_RES = 1280; // overwritten when screen is initialized
+DRAM_ATTR int LCD_V_RES = 720;
 //hdmi 1280x720
 //vdsl 480x800
-static uint8_t *s_overlay    = NULL;
+static uint8_t *s_overlay    = NULL;    // this is a palette based overlay. 127 palette entries. if bit 7 is set, then alpha is present
 uint8_t        *s_overlay_bg = NULL;   /* precomputed RGB888 overlay-over-black */
 
 
@@ -179,8 +252,7 @@ typedef enum {
     FRAME_READY,         // fertig und wartet auf Renderer
     FRAME_RENDERING      // Renderer liest/zeichnet
 } frame_state_t;
-
-
+/*
 typedef struct {
     int x0;
     int y0;
@@ -188,6 +260,15 @@ typedef struct {
     int y1;
     uint8_t brightness;
 } vectrex_line_t;
+*/
+typedef struct {
+    uint16_t x0;
+    uint16_t y0;
+    uint16_t x1;
+    uint16_t y1;
+    uint8_t brightness;
+    uint8_t  _pad[7];
+} vectrex_line_t; // power of 2 length
 
 typedef struct {
     vectrex_line_t      lines[MAX_LINE_BUFFER]; // these are the "new" lines - that will be drawn by the renderer
@@ -242,8 +323,6 @@ static DRAM_ATTR StaticTask_t s_emu_tcb;
 static /*DRAM_ATTR*/ StackType_t  s_rend_stack[REND_STACK_SIZE];
 static DRAM_ATTR StaticTask_t s_rend_tcb;
 
-
-
 // ----------------------------------------------------
 // Framebuffer / display (2 Hardware-FBs)
 // ----------------------------------------------------
@@ -257,31 +336,26 @@ DRAM_ATTR static esp_lcd_panel_handle_t panel_handle = NULL;
 DRAM_ATTR static esp_lcd_panel_lt8912b_io_t lt_io = {0};
 
 
-
-
 // Diagnostic: 1 = output the P4 DPI's built-in vertical color bars instead of our
 // frame buffer. Rules out a black/buggy frame buffer and tests the exact
 // P4 DPI -> DSI -> bridge -> LVDS data path with known-good pixels. 0 = normal.
 // #define VIDEO_DPI_TEST_PATTERN  1
 
-
 DRAM_ATTR static esp_lcd_panel_handle_t s_dpi_panel = NULL;
 DRAM_ATTR static SemaphoreHandle_t      s_vsync_sem = NULL;
-DRAM_ATTR video_out_t mode = VIDEO_OUT_SELECTED;          // default at boot
+DRAM_ATTR int mode = VIDEO_OUT_SELECTED;          // default at boot
 
-
+// helper "c" files - that are included, instead of own objects
 #include "audio.i"
 #include "sdcard.i"
 #include "usb.i"
 #include "file.i"
 
-
-
+// helper functions for optimizing line draws
+// these are used to check whether lines intersect
 static inline line_bbox_t line_compute_bbox(const vectrex_line_t *l)
 {
-    int glow = g_line_glow < 0 ? 0 : g_line_glow;
-    int R    = (g_line_width >> 1) + glow;
-    int Rb   = R > 0 ? R - 1 : 0;
+    int Rb = g_line_Rb;
     line_bbox_t b;
     b.bx0 = (l->x0 < l->x1 ? l->x0 : l->x1) - Rb;
     b.bx1 = (l->x0 > l->x1 ? l->x0 : l->x1) + Rb;
@@ -297,6 +371,7 @@ static inline int bboxes_overlap(const line_bbox_t *a, const line_bbox_t *b)
 
 // ----------------------------------------------------
 // VSYNC callback
+// renderer task is synchronized with VSYNC
 // ----------------------------------------------------
 IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
                                              esp_lcd_dpi_panel_event_data_t *edata,
@@ -307,38 +382,24 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
     return (xHigherPriorityTaskWoken == pdTRUE);
 }
 
+#include "draw_line_dist_yuv422_overlay.h"
+// a line draw - ONE
+// used to draw and undraw (undraw brightness = 0)
+// at the moment a few different line-draws are possible
+// if RGS stays stable I will drop the YUV
+
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
 #if VIDEO_FB_YUV422 == 1
     if (brightness == 0) 
     {
-        undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
-        if (b>0)
-            draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-
-    }
-    #else
-    if (brightness == 0) 
-    {
         if (s_overlay == NULL)
         {
-            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+            undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
         }
         else        
         {
-            undraw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width, s_overlay);
-
+            undraw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
         }
     }
     else
@@ -350,11 +411,11 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
             {
                 if (s_overlay == NULL)
                 {
-                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                    draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
                 }
                 else
                 {
-                    draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                    draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
                 }
             }
             return;
@@ -364,49 +425,24 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
         {
             if (s_overlay == NULL)
             {
-                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
             }
             else
             {
-                draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
             }
         }
     }
-    #endif
-}
-
-IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint8_t brightness)
-{
-#if VIDEO_FB_YUV422 == 1
-    if (brightness == 0) 
-    {
-        undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
-        if (b>0)
-            draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
-
-    }
-    #else
+#else
     if (brightness == 0) 
     {
         if (s_overlay == NULL)
         {
-            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width);
+            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
         }
         else        
         {
-            undraw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, g_line_width, s_overlay);
-
+            undraw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
         }
     }
     else
@@ -418,11 +454,11 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
             {
                 if (s_overlay == NULL)
                 {
-                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
                 }
                 else
                 {
-                    draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                    draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
                 }
             }
             return;
@@ -432,11 +468,11 @@ IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint
         {
             if (s_overlay == NULL)
             {
-                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width);
+                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
             }
             else
             {
-                draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, g_line_width, s_overlay);
+                draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
             }
         }
     }
@@ -474,7 +510,7 @@ static void board_enable_dsi_phy_power(void)
     ESP_LOGI(TAG, "MIPI DSI D-PHY power on (2.5 V)");
 }
 
-static const char *mode_name(video_out_t m) { return m == VIDEO_OUT_LVDS ? "LVDS" : "HDMI"; }
+static const char *mode_name(int m) { return m == VIDEO_OUT_LVDS ? "LVDS" : "HDMI"; }
 
 // HDMI Hot-Plug Detect: LT8912B main bank reg 0xC1 bit7 = sink connected (5 V on HPD).
 // Same read the driver's internal get_hpd does; we poll it directly off the main io.
@@ -501,7 +537,7 @@ static void init_yuv422_framebuffer(uint8_t *fb, int width, int height)
     }
 }
 // Bring up the selected output, allocate the frame buffer, draw the test card.
-static esp_err_t video_start(video_out_t mode, bool yuv422,
+static esp_err_t video_start(int mode, bool yuv422,
                              const esp_lcd_panel_lt8912b_io_t *io, esp_lcd_dsi_bus_handle_t dsi,
                              esp_lcd_panel_handle_t *panel, int *w, int *h)
 {
@@ -511,9 +547,6 @@ static esp_err_t video_start(video_out_t mode, bool yuv422,
                     : hdmi_start(io, dsi, yuv422, panel, w, h);
     if (err != ESP_OK) return err;
     if (mode == VIDEO_OUT_HDMI) lvds_backlight(false);   // LVDS panel unused -> backlight off
-
-
-//    ESP_RETURN_ON_ERROR(esp_lcd_dpi_panel_get_frame_buffer(*panel,2,(void **)&s_framebuffers[0],(void **)&s_framebuffers[1]), TAG, "Get double framebuffer");
 
     esp_err_t err2 = esp_lcd_dpi_panel_get_frame_buffer(
         *panel,
@@ -565,17 +598,11 @@ static esp_err_t video_start(video_out_t mode, bool yuv422,
         ESP_LOGI(TAG, "ERROR Allocating double buffer!\n");
     }
 
-//    ESP_RETURN_ON_ERROR(mire_render(s_fb_front, *w, *h, yuv422, mode_name(mode)), TAG, "mire");
-//    ESP_RETURN_ON_ERROR(mire_render(s_fb_back, *w, *h, yuv422, mode_name(mode)), TAG, "mire");
-//    ESP_RETURN_ON_ERROR(esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, *w, *h, s_fb_front), TAG, "draw");
-//    ESP_RETURN_ON_ERROR(esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, *w, *h, s_fb_back), TAG, "draw");
     ESP_LOGI(TAG, "%s up: test card %dx%d (%s)", mode_name(mode), *w, *h, yuv422 ? "YUV422" : "RGB888");
 
 #if LVDS_SETTLE_SWEEP
     if (mode == VIDEO_OUT_LVDS) lvds_sweep_settle(io);   // diagnostic: find the right settle
 #endif
-
-
 
     return ESP_OK;
 }
@@ -590,14 +617,11 @@ static void video_stop(esp_lcd_panel_handle_t panel)
 
 }
 
-
 static void lcd_init(void)
 {
     ESP_LOGI(TAG, "Create VSYNC semaphore");
     s_vsync_sem = xSemaphoreCreateBinary();
     configASSERT(s_vsync_sem);
-
-//    ESP_LOGI(TAG, "Create LCD via BSP (Waveshare P4 NANO)");
 
     // 2) The three LT8912B I2C register banks (main / cec-dsi / avi).
     esp_lcd_panel_io_i2c_config_t io_main_cfg = LT8912B_IO_CFG(LT8912B_I2C_HZ, LT8912B_IO_I2C_MAIN_ADDRESS);
@@ -609,10 +633,27 @@ static void lcd_init(void)
 
     // 3) MIPI-DSI bus (2 lanes, 1000 Mbps/lane).
     esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
-    esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG();
+
+#define LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD()               \
+    {                                                    \
+        .bus_id = 0,                                     \
+        .num_data_lanes = 2,                             \
+        .phy_clk_src = 0,                                \
+        .lane_bit_rate_mbps = 720,                      \
+    }
+#define LT8912B_PANEL_BUS_DSI_2CH_CONFIG_HDMI()               \
+    {                                                    \
+        .bus_id = 0,                                     \
+        .num_data_lanes = 2,                             \
+        .phy_clk_src = 0,                                \
+        .lane_bit_rate_mbps = 1200,                      \
+    }
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_LVDS
+    esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD();
+#else
+    esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_HDMI();
+#endif
     ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&dsi_bus_cfg, &dsi_bus));
-
-
 
     const bool yuv422 = VIDEO_FB_YUV422; // 
     mode = VIDEO_OUT_SELECTED;          // default at boot
@@ -622,13 +663,8 @@ static void lcd_init(void)
 
     LCD_H_RES = w;
     LCD_V_RES = h;
-
-
     s_dpi_panel = panel_handle;
 //    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_dpi_panel, true));
-
-
-
 
     // Register VSYNC callback
     esp_lcd_dpi_panel_event_callbacks_t cbs = {
@@ -671,12 +707,20 @@ IRAM_ATTR void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
         return;
     }
 
-    if (fs->line_count < MAX_LINE_BUFFER) {
+    if (fs->line_count < MAX_LINE_BUFFER) 
+    {
         vectrex_line_t *l = &fs->lines[fs->line_count++];
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
         l->x0 = x0;
         l->y0 = y0;
         l->x1 = x1;
         l->y1 = y1;
+#else
+        /* 90° CW rotation for portrait LCD: (x,y) → (y, -x) */
+        l->x0 =  LCD_H_RES-y0;  l->y0 = x0;
+        l->x1 =  LCD_H_RES-y1;  l->y1 = x1;
+#endif
+
         l->brightness = brightness;
 
         // Hash für diesen Frame laufend aktualisieren
@@ -689,15 +733,43 @@ IRAM_ATTR void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
 }
 
 // Emulator calls this once when a frame is complete
+// the lines collected from the emulator
+// are kept in 3 buffers
+// the state of the buffer determines which is drawn on screen
+// and which is used to recieve "new" lines.
 IRAM_ATTR void emu_end_frame(void)
 {
     static uint64_t emu_last_time   = 0;
     static int      emu_frame_count = 0;
 
     // EMU FPS
+    // note!
+    // this FPS displays how many frame ends were recieved from the emulator in 1 second
+    // a frame end emulation wise is NOT a fixed time!
+    // a frame end is decided by the vectrex programmer, usually by a call to WaitRecal().
+    // Per standard a WaitRecal should be called every 30000 vectrex cycles
+    // if that is done - then the FPS shows 50 FPS
+    //
+    // if the vectrex itself uses more the 30000 cycles per frame - then the framerate drops
+    // but this does not mean the emulation is to slow.
+    // this only means the frame of the vectrex took longer then 1/50 of a second
+    //
+    // many games have rounds that are slower then 30000 cycles!
+    // -> a frame drop here does NOT mean the emulation is not running in full speed!
+    // it rather shows how "fast" or how "good" a vectrex game runs and keeps up with the desired 1/50 per round
+    //
+    // NOTE:
+    // If the emulator runs in "DEFAULT_AUTO_SYNC"
+    // then it tries to find a call to WaitRecal or for timer T2 to expire.
+    // If both of these options fail - the emulator "automatically" sends a frame end after 50000 cycles
+    // if that happends the screen (in the emulation) will flicker!
+    // This is mainly due to the fact, that then each displayed framebuffer does not get a full "load" of lines
+    // but rather the lines that have been finished since last call!
+    // and each of these 50000 cycle frames - have different lines, different count of lines -> flicker.
     uint64_t now = esp_timer_get_time();
     emu_frame_count++;
-    if (now - emu_last_time >= 1000000) {
+    if (now - emu_last_time >= 1000000) // has one second passed?
+    {
         printf("EMU FPS = %d\n", emu_frame_count);
         emu_frame_count = 0;
         emu_last_time   = now;
@@ -748,7 +820,8 @@ IRAM_ATTR void emu_end_frame(void)
 // ----------------------------------------------------
 // Undraw previous contents of a given framebuffer index
 // ----------------------------------------------------
-
+// only kept for future easier testing!
+// now we do not use the "SIMPLE_UNDRAW" per default anymore - it is much slower!
 IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 {
     int count = s_fb_line_count[fb_index];
@@ -762,6 +835,126 @@ IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 
     s_fb_line_count[fb_index] = 0;
 }
+
+// ----------------------------------------------------
+// Tasks
+// ----------------------------------------------------
+void osint_emuloop(int cycles);
+IRAM_ATTR static void emulator_task(void *arg)
+{
+    while (1) 
+    {
+        uint64_t start = esp_timer_get_time();
+
+        osint_emuloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
+
+        // slow down if we are too fast
+        // emulating 30000 vectrex cycles should take 1/50 of a second...
+        // if MAX_EMU_FPS is 50 and 50 is reached, we run with 100% original speed
+        uint64_t now = esp_timer_get_time();
+        if (now - start <= 1000000/MAX_EMU_FPS) 
+        {
+            int delay = (1000000/MAX_EMU_FPS) - (now - start);
+            esp_rom_delay_us(delay);  
+        }
+    }
+}
+
+// kept for testing only
+// asm versions are about 15% faster!
+IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint8_t brightness)
+{
+#if VIDEO_FB_YUV422 == 1
+    if (brightness == 0) 
+    {
+        if (s_overlay == NULL)
+        {
+            undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+        }
+        else        
+        {
+            undraw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
+        }
+    }
+    else
+    {
+        if (x0==x1 && y0==y1) 
+        {
+            int b = brightness*4+brightnessAdjust;
+            if (b>0)
+            {
+                if (s_overlay == NULL)
+                {
+                    draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+                }
+                else
+                {
+                    draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+                }
+            }
+            return;
+        }
+        int b = brightness*4/3+brightnessAdjust;
+        if (b>0)
+        {
+            if (s_overlay == NULL)
+            {
+                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+            }
+            else
+            {
+                draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+            }
+        }
+    }
+
+#else
+    if (brightness == 0) 
+    {
+        if (s_overlay == NULL)
+        {
+            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+        }
+        else        
+        {
+            undraw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
+
+        }
+    }
+    else
+    {
+        if (x0==x1 && y0==y1) 
+        {
+            int b = brightness*4+brightnessAdjust;
+            if (b>0)
+            {
+                if (s_overlay == NULL)
+                {
+                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+                }
+                else
+                {
+                    draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+                }
+            }
+            return;
+        }
+        int b = brightness*4/3+brightnessAdjust;
+        if (b>0)
+        {
+            if (s_overlay == NULL)
+            {
+                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+            }
+            else
+            {
+                draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+            }
+        }
+    }
+    #endif
+}
+
 IRAM_ATTR static inline void undraw_previous_fb_c(int fb_index)
 {
     int count = s_fb_line_count[fb_index];
@@ -775,33 +968,23 @@ IRAM_ATTR static inline void undraw_previous_fb_c(int fb_index)
 
     s_fb_line_count[fb_index] = 0;
 }
-
-// ----------------------------------------------------
-// Tasks
-// ----------------------------------------------------
-void osint_emuloop(int cycles);
-IRAM_ATTR static void emulator_task(void *arg)
+IRAM_ATTR static inline uint32_t line_hash_key(const vectrex_line_t *l)
 {
-    while (1) 
-    {
-
-        uint64_t start = esp_timer_get_time();
-
-
-        osint_emuloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
-        uint64_t now = esp_timer_get_time();
-        // 30000 cycles == 1/50 second
-        if (now - start <= 1000000/MAX_EMU_FPS) 
-        {
-            int delay = (1000000/MAX_EMU_FPS) - (now - start);
-            esp_rom_delay_us(delay);  
-        }
-    }
+    uint32_t h = (uint32_t)l->x0 * 2654435761u;
+    h ^= (uint32_t)l->y0 * 40503u;
+    h ^= (uint32_t)l->x1 * 2246822519u;
+    h ^= (uint32_t)l->y1 * 3266489917u;
+    h ^= (uint32_t)l->brightness;
+    return h;
 }
-
+// Hash table for O(n) line matching (open addressing, linear probe)
+// Size must be power-of-2 and > MAX_LINE_BUFFER for good load factor
+#define MATCH_HT_BITS 11
+#define MATCH_HT_SIZE (1 << MATCH_HT_BITS)   // 2048
+#define MATCH_HT_MASK (MATCH_HT_SIZE - 1)
+DRAM_ATTR static int16_t s_match_ht[MATCH_HT_SIZE]; // -1 = empty, else new-line index
 
 // Renderer: VSYNC-driven, uses last finished emulated frame.
-// If frame hash unchanged: could skip (auskommentiert).
 IRAM_ATTR static void renderer_task(void *arg)
 {
     // Wait once for first VSYNC
@@ -813,6 +996,8 @@ IRAM_ATTR static void renderer_task(void *arg)
     for (;;)
     {
         // DISPLAY FPS = number of actually changed frames drawn per second
+        // if the drawing keeps up,
+        // this is the frequency of the screen refresh - so if it shows 60 on a 60Hz display - everything is good!
         fps_frame_count++;
         uint64_t now = esp_timer_get_time();
         if (now - fps_last_time >= 1000000) {
@@ -843,7 +1028,6 @@ IRAM_ATTR static void renderer_task(void *arg)
             continue;
         }
 
-        //printf ("Front index: %i, delete Index: %i\n", s_front_fb_index, frame_idx);
 
         frame_slot_t *fs = &s_frames[frame_idx]; // frame_idx = 0-2
         fs->state = FRAME_RENDERING;
@@ -852,27 +1036,32 @@ IRAM_ATTR static void renderer_task(void *arg)
         int fb_idx = s_back_fb_index;           // the current backbuffer - we can write to - it is not displayed!
 //        uint64_t t0 = esp_timer_get_time();
 
+// simple version
+// undraw all known old lines
+// draw all known new lines
+// regardless whether they are the same or not
 #if SIMPLE_UNDRAW == 1
-
+/*
 
 int save = s_fb_line_count[fb_idx];
 uint64_t draw_asm=0;
 uint64_t draw_c=0;
 uint64_t t0 = esp_timer_get_time();
+*/
         undraw_previous_fb(fb_idx);             // undraw all from that framebuffer
+/*        
 uint64_t t1 = esp_timer_get_time();
 draw_asm += (t1-t0);
+
+s_fb_line_count[fb_idx]=save;
+
 t0 = esp_timer_get_time();
 undraw_previous_fb_c(fb_idx);             // undraw all from that framebuffer
 t1 = esp_timer_get_time();
 draw_c += (t1-t0);
 
-
-s_fb_line_count[fb_idx]=save;
-
-
 t0 = esp_timer_get_time();
-
+*/
 
     // Draw new frame lines into backbuffer and remember them
         // linecount from "frame" (collection of lines)
@@ -891,7 +1080,7 @@ t0 = esp_timer_get_time();
                 printf("-----------------------\n");
             }
         }
-
+/*
 t1 = esp_timer_get_time();
 draw_asm += (t1-t0);
 t0 = esp_timer_get_time();
@@ -917,15 +1106,25 @@ draw_c += (t1-t0);
 
 
 printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
-
+*/
 
 #else            
+    // printf("linecount: %i\n", line_count);
+    // non simple version
+    // check which lines are IDENTICAL to last draw
+    // check if any undelete lines interesect
+    // undraw all deleted and marked as "dirty lines"
+    // draw all lines that are not on the screen already
+
+    // most games have somewhere "steady" lines... this really saves a lot!
+    // for cleansweep - this is a party! - A maze full of "fixed" lines!
 
     // --- Stable/dirty/redraw frame-diff ---
         unsigned int old_count = s_fb_line_count[fb_idx];
         vectrex_line_t *old_lines = s_fb_lines[fb_idx];
 
         // Step 1: match old lines to new lines (exact match)
+        /*
         memset(s_diff_old_matched, 0, old_count);
         memset(s_diff_new_matched, 0, line_count);
         for (int i = 0; i < old_count; i++) {
@@ -942,6 +1141,36 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 }
             }
         }
+        */
+        // Step 1: match old lines to new lines — O(n) hash table
+        memset(s_match_ht, 0xFF, sizeof(s_match_ht)); // -1 = empty
+        for (int j = 0; j < line_count; j++) {
+            uint32_t h = line_hash_key(&fs->lines[j]) & MATCH_HT_MASK;
+            while (s_match_ht[h] != -1) h = (h + 1) & MATCH_HT_MASK;
+            s_match_ht[h] = (int16_t)j;
+        }
+        memset(s_diff_old_matched, 0, old_count);
+        memset(s_diff_new_matched, 0, line_count);
+        for (int i = 0; i < old_count; i++) {
+            const vectrex_line_t *ol = &old_lines[i];      /* i*20 computed once */
+            uint32_t h = line_hash_key(ol) & MATCH_HT_MASK;
+            while (s_match_ht[h] != -1) {
+                int j = s_match_ht[h];
+                const vectrex_line_t *nw = &fs->lines[j];  /* j*20 computed once per probe */
+                if (!s_diff_new_matched[j] &&
+                    ol->x0 == nw->x0 &&
+                    ol->y0 == nw->y0 &&
+                    ol->x1 == nw->x1 &&
+                    ol->y1 == nw->y1 &&
+                    ol->brightness == nw->brightness) {
+                    s_diff_old_matched[i] = 1;
+                    s_diff_new_matched[j] = 1;
+                    break;
+                }
+                h = (h + 1) & MATCH_HT_MASK;
+            }
+        }
+
 
         // Step 2: compute bboxes for dirty (unmatched) old lines
         int dirty_bbox_count = 0;
@@ -949,6 +1178,7 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
             if (!s_diff_old_matched[i])
                 s_diff_dirty_bboxes[dirty_bbox_count++] = line_compute_bbox(&old_lines[i]);
         }
+
 
         // Step 3: detect stable lines damaged by dirty bbox overlap
         memset(s_diff_damaged, 0, old_count);
@@ -962,6 +1192,7 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 }
             }
         }
+
         // Step 3b: propagate damage through stable-stable overlaps
         // (undrawing a damaged line erases contributions of overlapping stable lines)
         int propagated = 1;
@@ -981,21 +1212,14 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
             }
         }
 
-        // Step 4: undraw dirty old lines
+        // Steps 4+5a: undraw dirty old lines AND damaged stable lines in one pass
         for (int i = 0; i < old_count; i++) {
-            if (!s_diff_old_matched[i]) {
+            if (!s_diff_old_matched[i] || s_diff_damaged[i]) {
                 vectrex_line_t *l = &old_lines[i];
                 drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
             }
         }
 
-        // Step 5a: undraw ALL damaged stable lines
-        for (int i = 0; i < old_count; i++) {
-            if (s_diff_old_matched[i] && s_diff_damaged[i]) {
-                vectrex_line_t *l = &old_lines[i];
-                drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
-            }
-        }
 
         // Step 5b: redraw ALL damaged stable lines
         for (int i = 0; i < old_count; i++) {
@@ -1004,7 +1228,6 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 drawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
             }
         }
-
 
         // Step 6: draw dirty new lines + rebuild s_fb_lines for next frame
         s_fb_line_count[fb_idx] = 0;
@@ -1020,7 +1243,6 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
                 printf("-----------------------\n");
             }
         }
-
 #endif
 
 
@@ -1040,9 +1262,6 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
             s_fb_front
         ));
 
-
-
-
         // Frame-Slot wieder freigeben
         fs->state = FRAME_FREE;
     }
@@ -1051,6 +1270,17 @@ printf("draw_asm: %llu us, draw_c: %llu us\n", draw_asm, draw_c);
 
 IRAM_ATTR void e8910_callback(void *userdata, int16_t *stream, int length);// from e8910.c
 
+// audio task is now running in core 1 with the emulation
+// if it ran together with the renderer - interferences occured massively!
+// audio task is set to high prio - otherwise the sound can stutter 
+// when the emulator is running under full load!
+// The audio "write" set the buffer to the "player" logic
+// those functions wait till the complete buffer is played
+// thus they "wait" for about 1/50 of a second, and then
+// request via callback the next sound package from the emulation
+//
+// the audio callback fills the buffer for exactly 1/50 of a secons
+// see audio setup
 static void audio_music_task(void *arg)
 {
     while (1)
@@ -1067,7 +1297,6 @@ static void audio_music_task(void *arg)
             continue;
         }
 
-        // e8910_callback(NULL, uint16_t *stream, int length)
         s_audio_cb(NULL, (int16_t *) audio_buf, audio_bufsize);
 
         esp_err_t ret;
@@ -1125,31 +1354,86 @@ void drawOverlay(uint8_t *dest)
         }
     }
 }
+/* Write s_overlay_pal (palette, 1 byte/pixel) into dest.
+ *
+ * Palette index byte:
+ *   bit 7 clear → fully opaque pixel, use palette colour directly
+ *   bit 7 set   → semi-transparent, scale by s_overlay_alpha_val
+ *
+ * Two pixel-format paths selected at compile time via VIDEO_FB_YUV422:
+ *
+ *   RGB888 (VIDEO_FB_YUV422 == 0):
+ *     dest is 3 bytes/pixel (B, G, R order).
+ *     Palette stores BGR so values are written straight through.
+ *
+ *   YUV422 / YUYV (VIDEO_FB_YUV422 == 1):
+ *     dest is 2 bytes/pixel — memory layout per pixel pair:
+ *       [Y0][U][Y1][V]  (YUYV, little-endian)
+ *     Y  is computed per pixel  (BT.601 full-range: Y = (77R+150G+29B)>>8)
+ *     U/V are written once per even-column pixel and shared with the
+ *     following odd-column pixel.  An overlay starting at an odd column
+ *     gets correct luma on the first pixel but inherits the initialised
+ *     U=V=128 (neutral gray) chroma for that one pixel — acceptable.
+ */
 void drawOverlayPal(uint8_t *dest)
 {
     if (s_overlay_pal == NULL) return;
 
-    for (int y = 0; y < s_ov_h; y++) 
+    for (int y = 0; y < s_ov_h; y++)
     {
         const uint8_t *row_pal = s_overlay_pal + (size_t)y * s_ov_w;
-        uint8_t       *row_dst = dest + ((size_t)(s_ov_off_y + y) * LCD_H_RES + s_ov_off_x) * 3;
-        for (int x = 0; x < s_ov_w; x++, row_dst += 3) 
+        int dst_y = s_ov_off_y + y;
+
+#if VIDEO_FB_YUV422
+        uint8_t *row_dst = dest + (size_t)dst_y * LCD_H_RES * 2;
+
+        for (int x = 0; x < s_ov_w; x++)
+        {
+            int px = s_ov_off_x + x;
+            uint8_t pidx = row_pal[x];
+            const uint8_t *c = s_overlay_palette[pidx & 0x7F];
+            int b, g, r;
+            if (!(pidx & 0x80)) {
+                b = c[0]; g = c[1]; r = c[2];
+            } else {
+                b = (c[0] * s_overlay_alpha_val) >> 8;
+                g = (c[1] * s_overlay_alpha_val) >> 8;
+                r = (c[2] * s_overlay_alpha_val) >> 8;
+            }
+
+            /* Y (BT.601 full-range: 77+150+29 = 256) */
+            int yv = (77 * r + 150 * g + 29 * b) >> 8;
+            if (yv > 255) yv = 255;
+            row_dst[px * 2] = (uint8_t)yv;
+
+            /* U and V written only at even columns; covers this pixel pair */
+            if (!(px & 1)) {
+                int uv = 128 + ((-43 * r -  85 * g + 128 * b) >> 8);
+                int vv = 128 + ((128 * r - 107 * g -  21 * b) >> 8);
+                if (uv < 0) uv = 0; else if (uv > 255) uv = 255;
+                if (vv < 0) vv = 0; else if (vv > 255) vv = 255;
+                row_dst[px * 2 + 1] = (uint8_t)uv;
+                row_dst[px * 2 + 3] = (uint8_t)vv;
+            }
+        }
+#else
+        uint8_t *row_dst = dest + ((size_t)dst_y * LCD_H_RES + s_ov_off_x) * 3;
+
+        for (int x = 0; x < s_ov_w; x++, row_dst += 3)
         {
             uint8_t pidx = row_pal[x];
             const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-            if (!(pidx & 0x80))
-            {
+            if (!(pidx & 0x80)) {
                 row_dst[0] = c[0];
                 row_dst[1] = c[1];
                 row_dst[2] = c[2];
-            }
-            else
-            {
+            } else {
                 row_dst[0] = (uint8_t)((c[0] * s_overlay_alpha_val) >> 8);
                 row_dst[1] = (uint8_t)((c[1] * s_overlay_alpha_val) >> 8);
                 row_dst[2] = (uint8_t)((c[2] * s_overlay_alpha_val) >> 8);
             }
         }
+#endif
     }
 }
 
@@ -1187,14 +1471,102 @@ esp_err_t overlay_load_png_bgra(const char *path, uint8_t *fb, int fb_w, int fb_
     free(raw);
     return ESP_OK;
 }
+esp_err_t overlay_load_png_rgba(const char *path, uint8_t *fb, int fb_w, int fb_h)
+{
+    unsigned char *raw   = NULL;
+    unsigned       width = 0, height = 0;
 
-// returns pointer 
+    unsigned err = lodepng_decode32_file(&raw, &width, &height, path);
+    if (err) {
+        ESP_LOGE(TAG, "PNG decode failed (%u): %s", err, lodepng_error_text(err));
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "PNG %s  %u×%u → %d×%d (BGRA)", path, width, height, fb_w, fb_h);
+
+    for (int y = 0; y < fb_h; y++) {
+        unsigned src_y = (unsigned)((uint64_t)y * height / (unsigned)fb_h);
+        for (int x = 0; x < fb_w; x++) {
+            unsigned src_x = (unsigned)((uint64_t)x * width / (unsigned)fb_w);
+            const unsigned char *px = raw + (src_y * width + src_x) * 4;
+            uint8_t *dst = fb + ((size_t)y * fb_w + x) * 4;
+            dst[0] = px[0]; // B  
+            dst[1] = px[1]; // G
+            dst[2] = px[2]; // R
+            dst[3] = px[3]; // A  (preserved)
+        }
+    }
+
+    free(raw);
+    return ESP_OK;
+}
+
+/* ── Palette builder: frequency-ranked 4-bit histogram ──────────────────────
+ * idx = (R>>4)<<8 | (G>>4)<<4 | (B>>4)  →  4096 buckets, 16 KB DRAM.
+ * Fills palette with the ≤127 most-frequent colour buckets, most common first.
+ * Bucket centre = (nibble << 4) | 8  (midpoint of the 16-unit range).
+ * Transparent (alpha==0) pixels are excluded.
+ */
+static int build_palette_freq(
+        const uint8_t *overlay_bgra,
+        int off_x, int off_y,
+        int img_w, int img_h,
+        int lcd_w,
+        uint8_t palette[128][3])
+{
+    static uint32_t hist[4096];   /* 4-bit per channel: 16×16×16 buckets, DRAM */
+    memset(hist, 0, sizeof(hist));
+
+    for (int y = 0; y < img_h; y++) {
+        const uint8_t *row = overlay_bgra + ((size_t)(off_y + y) * lcd_w + off_x) * 4;
+        for (int x = 0; x < img_w; x++, row += 4) {
+            if (row[3] == 0) continue;
+            uint32_t idx = ((uint32_t)(row[2] >> 4) << 8)   /* R → bits[11:8] */
+                         | ((uint32_t)(row[1] >> 4) << 4)   /* G → bits[7:4]  */
+                         |  (uint32_t)(row[0] >> 4);        /* B → bits[3:0]  */
+            hist[idx]++;
+        }
+    }
+
+    /* Pick top-127 buckets by pixel count (partial selection, O(127×4096)). */
+    int n = 0;
+    while (n < 127) {
+        uint32_t best_cnt = 0;
+        int      best_idx = -1;
+        for (int i = 0; i < 4096; i++) {
+            if (hist[i] > best_cnt) { best_cnt = hist[i]; best_idx = i; }
+        }
+        if (best_idx < 0) break;
+        hist[best_idx] = 0;   /* remove from future rounds */
+
+        palette[n][0] = (uint8_t)(((best_idx      ) & 0xF) << 4 | 8);  /* B */
+        palette[n][1] = (uint8_t)(((best_idx >>  4) & 0xF) << 4 | 8);  /* G */
+        palette[n][2] = (uint8_t)(((best_idx >>  8) & 0xF) << 4 | 8);  /* R */
+        n++;
+    }
+    return n;
+}
+void clearFramebuffers()
+{
+    #if VIDEO_FB_YUV422
+        init_yuv422_framebuffer(s_fb_front, LCD_H_RES, LCD_V_RES);
+        init_yuv422_framebuffer(s_fb_back, LCD_H_RES, LCD_V_RES);
+    #else
+        memset(s_fb_front, 0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
+        memset(s_fb_back,  0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
+    #endif
+
+}
+
+// returns pointer
 /* Load a PNG (with alpha), scale it to (img_w x img_h), and centre it on a
  * full-screen BGRA overlay buffer (LCD_H_RES x LCD_V_RES, 4 bytes/pixel).
  * Surrounding area is filled with transparent black (alpha=0).
  * Pass img_w=0 / img_h=0 to stretch to full screen.                      */
 esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 {
+    clearFramebuffers();
+
     /* clamp / default to full screen */
     if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
     if (img_h <= 0 || img_h > LCD_V_RES) img_h = LCD_V_RES;
@@ -1218,7 +1590,8 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     /* fill entire buffer with transparent black */
     memset(s_overlay, 0, buf_sz);
 
-    /* decode + scale PNG into a temporary BGRA buffer (img_w x img_h) */
+    /* decode + scale PNG into a temporary BGRA buffer */
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
     uint8_t *scaled = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
     if (!scaled)
     {
@@ -1237,8 +1610,49 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         s_overlay = NULL;
         return ret;
     }
+#else
+    /* LCD portrait: load PNG in landscape orientation (swapped dims), then
+     * rotate 90° CW so it fills the portrait screen.                       */
+    int load_w = img_h, load_h = img_w;
+    uint8_t *scaled = heap_caps_malloc((size_t)load_w * load_h * 4, MALLOC_CAP_SPIRAM);
+    if (!scaled)
+    {
+        ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
+        heap_caps_free(s_overlay);
+        s_overlay = NULL;
+        return ESP_ERR_NO_MEM;
+    }
 
+    esp_err_t ret = overlay_load_png_bgra(name, scaled, load_w, load_h);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "PNG load failed");
+        heap_caps_free(scaled);
+        heap_caps_free(s_overlay);
+        s_overlay = NULL;
+        return ret;
+    }
 
+    /* rotate 90° CW: src pixel (sx=dy, sy=load_h-1-dx) → dst pixel (dx, dy) */
+    uint8_t *rotated = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
+    if (!rotated)
+    {
+        ESP_LOGE(TAG, "PSRAM alloc for rotated image failed");
+        heap_caps_free(scaled);
+        heap_caps_free(s_overlay);
+        s_overlay = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    for (int dy = 0; dy < img_h; dy++) {
+        for (int dx = 0; dx < img_w; dx++) {
+            const uint8_t *s = scaled  + ((size_t)(load_h - 1 - dx) * load_w + dy) * 4;
+            uint8_t       *d = rotated + ((size_t)dy * img_w + dx) * 4;
+            d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+        }
+    }
+    heap_caps_free(scaled);
+    scaled = rotated;
+#endif
 
     /* centre position */
     int off_x = (LCD_H_RES - img_w) / 2;
@@ -1295,37 +1709,10 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         s_overlay_pal_n = 0;
         memset(s_overlay_palette, 0, sizeof(s_overlay_palette));
 
-        /* Pass 1: build palette from drawable pixels. */
-        for (int y = 0; y < img_h; y++) 
-        {
-            const uint8_t *src = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
-            for (int x = 0; x < img_w; x++, src += 4) 
-            {
-                uint8_t b = src[0], g = src[1], r = src[2];//, a = src[3];
-
-                /* find nearest existing palette entry */
-                int best;
-                int best_d = 0x7FFFFFFF;
-                for (int i = 0; i < s_overlay_pal_n; i++) 
-                {
-                    int db = (int)b - s_overlay_palette[i][0];
-                    int dg = (int)g - s_overlay_palette[i][1];
-                    int dr = (int)r - s_overlay_palette[i][2];
-                    int d  = db*db + dg*dg + dr*dr;
-                    if (d < best_d) { best = i; best_d = d; }
-                    if (d == 0) break;
-                }
-
-                if (best_d != 0 && s_overlay_pal_n < 127) 
-                {
-                    best = s_overlay_pal_n;
-                    s_overlay_palette[s_overlay_pal_n][0] = b;
-                    s_overlay_palette[s_overlay_pal_n][1] = g;
-                    s_overlay_palette[s_overlay_pal_n][2] = r;
-                    s_overlay_pal_n++;
-                }
-            }
-        }
+        /* Pass 1: median-cut quantisation → 127-entry BGR palette. */
+        s_overlay_pal_n = build_palette_freq(
+                s_overlay, off_x, off_y, img_w, img_h, LCD_H_RES,
+                s_overlay_palette);
 
         /* Pass 2: assign index bytes. */
         for (int y = 0; y < img_h; y++) 
@@ -1366,36 +1753,6 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     ESP_LOGI(TAG, "overlay: %s scaled to %dx%d, centred on %dx%d screen (BGRA)",
              name, img_w, img_h, LCD_H_RES, LCD_V_RES);
     return ESP_OK;
-}
-
-/*
- * HDMI audio: the board's I2S pins (9-13) reach the LT8912B via the SN74AVC4T245
- * translator (BOARD_PIN_VCV_NOE). No second I2S channel is needed — we bypass
- * esp_codec_dev and write directly to the already-open s_i2s_tx_chan.
- *
- * The LT8912B audio input must be enabled via I2C register 0xB2 on the CEC bank.
- * Call audio_hdmi_enable_lt8912b() AFTER hdmi_start() has configured the bridge.
- */
-
-/* Enable audio embedding in LT8912B (CEC I2C bank, reg 0xB2 bit0 = audio enable) */
-static esp_err_t audio_hdmi_enable_lt8912b(const esp_lcd_panel_lt8912b_io_t *lt_io)
-{
-    /* LT8912B CEC bank reg 0xB2: bit0 enables I2S audio input */
-    uint8_t val = 0x01;
-    return esp_lcd_panel_io_tx_param(lt_io->cec_dsi, 0xB2, &val, 1);
-}
-
-/* Write mono PCM directly to the I2S TX channel, bypassing esp_codec_dev.
- * The same I2S frame reaches both ES8311 and LT8912B — in HDMI mode the
- * ES8311 PA pin (GPIO_OUTPUT_PA) should be low so the speaker stays silent. */
-static esp_err_t audio_hdmi_write(const int16_t *mono, int samples)
-{
-    size_t written = 0;
-    return i2s_channel_write(s_i2s_tx_chan,
-                             mono,
-                             (size_t)samples * sizeof(int16_t),
-                             &written,
-                             portMAX_DELAY);
 }
 
 
@@ -1449,9 +1806,13 @@ void app_main(void)
         }
         else
         {
-            printf("ROM Name: %s\n", cartName);
+            printf("ROM Name in ini: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
-            cartSize = load_rom_file("berzerk.BIN", cartData, sizeof(cartData));
+
+cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
+//cartSize = load_rom_file("VBLADE.NIB", cartData, sizeof(cartData));
+//cartSize = load_rom_file("AKLABETH.BIN", cartData, sizeof(cartData));
+//cartSize = load_rom_file("BERZERKU.BIN", cartData, sizeof(cartData));
             if (cartSize < 0) {
                 printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
                 cartSize = 0;
@@ -1501,9 +1862,12 @@ extern int SCREEN_HEIGHT;
     frames_init();
 
 #if ENABLE_OVERLAYS==1
- loadOverlayRGB("/sdcard/berzerk.png", 564, 720);
+#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
+ loadOverlayRGB("/sdcard/Karl.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+ #else
+ loadOverlayRGB("/sdcard/Karl.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+ #endif
 #endif
-
 
     ESP_LOGI(TAG, "Start vectrex tasks");
 
@@ -1528,8 +1892,9 @@ extern int SCREEN_HEIGHT;
 #endif
 
     void callbackAY(void *userdata, int16_t *stream, int length);
+#ifndef NO_AUDIO
     audio_set_callback(callbackAY, NULL);
-
+#endif
     printf("Audio init done\n");
 
     xTaskCreatePinnedToCore(

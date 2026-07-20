@@ -25,7 +25,7 @@
 // blamed on "RX margin" -- 1000 Mbps ~20% stable etc. -- were an artefact of the
 // IDF line-stretch bug; see LVDS_BRINGUP.md). Floor: HDMI 720p60 RGB888 needs
 // >=891 Mbps/lane; LVDS 800x480 only ~320. One rate serves both modes.
-#define BOARD_DSI_LANE_MBPS      720  // validated LVDS; HDMI validated at 1000
+#define BOARD_DSI_LANE_MBPS      1500  // validated LVDS; HDMI validated at 1000
                                        // (retest HDMI at 1500 when convenient)
 
 // --- Frame-buffer pixel format (build-time) ----------------------------------
@@ -34,5 +34,5 @@
 //   0 = native RGB888 (24 bpp): sharpest colors, full scanout (~166 MB/s @720p).
 //   1 = YUV422 (16 bpp): halves scanout, lossless for black & white content
 //       (full-res luma); the P4 DPI converts YUV422->RGB888 in hardware.
-#define VIDEO_FB_YUV422          1
+#define VIDEO_FB_YUV422          0
 #define VIDEO_FB_BPP             (VIDEO_FB_YUV422 ? 2 : 3)
