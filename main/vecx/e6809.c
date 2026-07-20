@@ -35,11 +35,11 @@ enum {
 	IRQ_SYNC	= 1,
 	IRQ_CWAI	= 2
 };
-int addressBUS = 0;
-unsigned char dataBUS = 0;
+DRAM_ATTR int addressBUS = 0;
+DRAM_ATTR unsigned char dataBUS = 0;
 
-static int PRE_CLR_STEPS = 4;
-static int POST_CLR_ADDSTEPS = -1;
+// static int PRE_CLR_STEPS = 4;
+// static int POST_CLR_ADDSTEPS = -1;
 
 /* index registers */
 
@@ -90,7 +90,7 @@ DRAM_ATTR void (*e6809_write8) (unsigned address, unsigned char data);
 
 /* obtain a particular condition code. returns 0 or 1. */
 
-static einline unsigned get_cc (unsigned flag)
+static IRAM_ATTR einline unsigned get_cc (unsigned flag)
 {
 	return (reg_cc / flag) & 1;
 }
@@ -99,14 +99,14 @@ static einline unsigned get_cc (unsigned flag)
  * value parameter must be either 0 or 1.
  */
 
-static einline void set_cc (unsigned flag, unsigned value)
+static IRAM_ATTR einline void set_cc (unsigned flag, unsigned value)
 {
 	reg_cc = value?(reg_cc | flag):(reg_cc & ~flag);
 }
 
 /* test carry */
 
-static einline unsigned test_c (unsigned i0, unsigned i1,
+static IRAM_ATTR einline unsigned test_c (unsigned i0, unsigned i1,
 								unsigned r, unsigned sub)
 {
 	return (((((i0 | i1) & ~r) | (i0 & i1)) & 0x80) == 0x80) ^ (sub);
@@ -114,21 +114,21 @@ static einline unsigned test_c (unsigned i0, unsigned i1,
 
 /* test negative */
 
-static einline unsigned test_n (unsigned r)
+static IRAM_ATTR einline unsigned test_n (unsigned r)
 {
 	return (r & 0x80) == 0x80;
 }
 
 /* test for zero in lower 8 bits */
 
-static einline unsigned test_z8 (unsigned r)
+static IRAM_ATTR einline unsigned test_z8 (unsigned r)
 {
 	return (r&0xff) == 0;
 }
 
 /* test for zero in lower 16 bits */
 
-static einline unsigned test_z16 (unsigned r)
+static IRAM_ATTR einline unsigned test_z16 (unsigned r)
 {
 	return (r&0xffff) == 0;
 }
@@ -138,17 +138,17 @@ static einline unsigned test_z16 (unsigned r)
  * inputs.
  */
 
-static einline unsigned test_v (unsigned i0, unsigned i1, unsigned r)
+static IRAM_ATTR einline unsigned test_v (unsigned i0, unsigned i1, unsigned r)
 {
 	return (((~(i0 ^ i1)) & (i0 ^ r)) & 0x80) == 0x80;
 }
 
-static einline unsigned get_reg_d (void)
+static IRAM_ATTR einline unsigned get_reg_d (void)
 {
 	return (((reg_a << 8)&0xff00) | (reg_b & 0xff));
 }
 
-static einline void set_reg_d (unsigned value)
+static IRAM_ATTR einline void set_reg_d (unsigned value)
 {
 	reg_a = (value >> 8) & 0xff;
 	reg_b = value & 0xff;
@@ -158,7 +158,7 @@ static einline void set_reg_d (unsigned value)
  * while the upper bits are all zero.
  */
 
-static einline unsigned read8 (unsigned address)
+static IRAM_ATTR einline unsigned read8 (unsigned address)
 {
 	return (*e6809_read8) (address & 0xffff)&0xff;
 }
@@ -167,18 +167,18 @@ static einline unsigned read8 (unsigned address)
  * is written. the upper bits are ignored.
  */
 
-static einline void write8 (unsigned address, unsigned data)
+static IRAM_ATTR einline void write8 (unsigned address, unsigned data)
 {
 	(*e6809_write8) (address & 0xffff, (unsigned char) data);
 }
 
-static einline unsigned read16 (unsigned address)
+static IRAM_ATTR einline unsigned read16 (unsigned address)
 {
 	unsigned datahi = read8 (address);
 	unsigned datalo = read8 (address + 1);
 	return (datahi << 8) | datalo;
 }
-static einline unsigned read16_cycloid (unsigned address)
+static IRAM_ATTR einline unsigned read16_cycloid (unsigned address)
 {
 	unsigned datahi = read8 (address);
 //    //vecx_intermediateStepsUC(1);
@@ -186,25 +186,25 @@ static einline unsigned read16_cycloid (unsigned address)
 	return (datahi << 8) | datalo;
 }
 
-static einline void write16 (unsigned address, unsigned data)
+static IRAM_ATTR einline void write16 (unsigned address, unsigned data)
 {
 	write8 (address, data >> 8);
 	write8 (address + 1, data);
 }
-static einline void write16_cycloid (unsigned address, unsigned data)
+static IRAM_ATTR einline void write16_cycloid (unsigned address, unsigned data)
 {
 	write8 (address, data >> 8);
 //    //vecx_intermediateStepsUC(1);
 	write8 (address + 1, data);
 }
 
-static einline void push8 (unsigned *sp, unsigned data)
+static IRAM_ATTR einline void push8 (unsigned *sp, unsigned data)
 {
 	(*sp)--;
 	write8 (*sp, data);
 }
 
-static einline unsigned pull8 (unsigned *sp)
+static IRAM_ATTR einline unsigned pull8 (unsigned *sp)
 {
 	unsigned	data = read8 (*sp);
 	(*sp)++;
@@ -212,13 +212,13 @@ static einline unsigned pull8 (unsigned *sp)
 	return data;
 }
 
-static einline void push16 (unsigned *sp, unsigned data)
+static IRAM_ATTR einline void push16 (unsigned *sp, unsigned data)
 {
 	push8 (sp, data);
 	push8 (sp, data >> 8);
 }
 
-static einline unsigned pull16 (unsigned *sp)
+static IRAM_ATTR einline unsigned pull16 (unsigned *sp)
 {
 	unsigned datahi = pull8 (sp);
 	unsigned datalo = pull8 (sp);
@@ -228,7 +228,7 @@ static einline unsigned pull16 (unsigned *sp)
 
 /* read a byte from the address pointed to by the pc */
 
-static einline unsigned pc_read8 (void)
+static IRAM_ATTR einline unsigned pc_read8 (void)
 {
 	unsigned data = read8 (reg_pc);
     reg_pc=(reg_pc+1)&0xffff;
@@ -238,7 +238,7 @@ static einline unsigned pc_read8 (void)
 
 /* read a word from the address pointed to by the pc */
 
-static einline unsigned pc_read16 (void)
+static IRAM_ATTR einline unsigned pc_read16 (void)
 {
 	unsigned data = read16 (reg_pc);
     reg_pc=(reg_pc+2)&0xffff;
@@ -248,7 +248,7 @@ static einline unsigned pc_read16 (void)
 
 /* sign extend an 8-bit quantity into a 16-bit quantity */
 
-static einline unsigned sign_extend (unsigned data)
+static IRAM_ATTR einline unsigned sign_extend (unsigned data)
 {
 	return (~(data & 0x80) + 1) | (data & 0xff);
 }
@@ -258,7 +258,7 @@ static einline unsigned sign_extend (unsigned data)
  * instruction itself.
  */
 
-static einline unsigned ea_direct (void)
+static IRAM_ATTR einline unsigned ea_direct (void)
 {
 	return (reg_dp << 8) | pc_read8 ();
 }
@@ -267,14 +267,14 @@ static einline unsigned ea_direct (void)
  * the instruction.
  */
 
-static einline unsigned ea_extended (void)
+static IRAM_ATTR einline unsigned ea_extended (void)
 {
 	return addressBUS = pc_read16 ();
 }
 
 /* indexed addressing */
 
-static einline unsigned ea_indexed (unsigned *cycles)
+static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 {
 	unsigned r, op, ea;
 
@@ -521,7 +521,7 @@ static einline unsigned ea_indexed (unsigned *cycles)
  * essentially (0 - data).
  */
 
-static einline unsigned inst_neg (unsigned data)
+static IRAM_ATTR einline unsigned inst_neg (unsigned data)
 {
 	unsigned i0 = 0;
 	unsigned i1 = ~data;
@@ -547,7 +547,7 @@ static einline unsigned inst_neg (unsigned data)
 
 /* instruction: com */
 
-static einline unsigned inst_com (unsigned data)
+static IRAM_ATTR einline unsigned inst_com (unsigned data)
 {
 	unsigned r = ~data;
 
@@ -564,7 +564,7 @@ static einline unsigned inst_com (unsigned data)
  * cannot be faked as an add or substract.
  */
 
-static einline unsigned inst_lsr (unsigned data)
+static IRAM_ATTR einline unsigned inst_lsr (unsigned data)
 {
 	unsigned r = (data >> 1) & 0x7f;
 
@@ -581,7 +581,7 @@ static einline unsigned inst_lsr (unsigned data)
  * cannot be faked as an add or substract.
  */
 
-static einline unsigned inst_ror (unsigned data)
+static IRAM_ATTR einline unsigned inst_ror (unsigned data)
 {
 	unsigned     r = ((data >> 1) & 0x7f) | ((((reg_cc & FLAG_C) == FLAG_C)?1:0) << 7);
 
@@ -596,7 +596,7 @@ static einline unsigned inst_ror (unsigned data)
  * cannot be faked as an add or substract.
  */
 
-static einline unsigned inst_asr (unsigned data)
+static IRAM_ATTR einline unsigned inst_asr (unsigned data)
 {
 	unsigned     r = ((data >> 1) & 0x7f) | (data & 0x80);
 
@@ -611,7 +611,7 @@ static einline unsigned inst_asr (unsigned data)
  * essentially (data + data). simple addition.
  */
 
-static einline unsigned inst_asl (unsigned data)
+static IRAM_ATTR einline unsigned inst_asl (unsigned data)
 {
 	unsigned i0 = data;
 	unsigned i1 = data;
@@ -630,7 +630,7 @@ static einline unsigned inst_asl (unsigned data)
  * essentially (data + data + carry). addition with carry.
  */
 
-static einline unsigned inst_rol (unsigned data)
+static IRAM_ATTR einline unsigned inst_rol (unsigned data)
 {
 	unsigned r = data + data + (((reg_cc & FLAG_C) == FLAG_C)?1:0);
 
@@ -647,7 +647,7 @@ static einline unsigned inst_rol (unsigned data)
  * essentially (data - 1).
  */
 
-static einline unsigned inst_dec (unsigned data)
+static IRAM_ATTR einline unsigned inst_dec (unsigned data)
 {
 	unsigned     r = (data + 0xff)&0xff;
 
@@ -663,7 +663,7 @@ static einline unsigned inst_dec (unsigned data)
  * essentially (data + 1).
  */
 
-static einline unsigned inst_inc (unsigned data)
+static IRAM_ATTR einline unsigned inst_inc (unsigned data)
 {
 	unsigned r = (data + 1)&0xff;
 
@@ -677,14 +677,14 @@ static einline unsigned inst_inc (unsigned data)
 
 /* instruction: tst */
 
-static einline void inst_tst8 (unsigned data)
+static IRAM_ATTR einline void inst_tst8 (unsigned data)
 {
     reg_cc = ((data & 0x80) == 0x80)?(reg_cc | FLAG_N):(reg_cc & ~FLAG_N);
     reg_cc = ((data&0xff) == 0)?(reg_cc | FLAG_Z):(reg_cc & ~FLAG_Z);
     reg_cc = (reg_cc & ~FLAG_V);
 }
 
-static einline void inst_tst16 (unsigned data)
+static IRAM_ATTR einline void inst_tst16 (unsigned data)
 {
     reg_cc =  (((data) & 0x8000) == 0x8000) ?(reg_cc | FLAG_N):(reg_cc & ~FLAG_N);
     reg_cc = ((data&0xffff) == 0)?(reg_cc | FLAG_Z):(reg_cc & ~FLAG_Z);
@@ -693,7 +693,7 @@ static einline void inst_tst16 (unsigned data)
 
 /* instruction: clr */
 
-static einline void inst_clr (void)
+static IRAM_ATTR einline void inst_clr (void)
 {
     reg_cc = (reg_cc & ~FLAG_N);
     reg_cc = (reg_cc | FLAG_Z);
@@ -703,7 +703,7 @@ static einline void inst_clr (void)
 
 /* instruction: suba/subb */
 
-static einline unsigned inst_sub8 (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_sub8 (unsigned data0, unsigned data1)
 {
 	unsigned i0 = data0;
 	unsigned i1 = ~data1;
@@ -722,7 +722,7 @@ static einline unsigned inst_sub8 (unsigned data0, unsigned data1)
  * only 8-bit version, 16-bit version not needed.
  */
 
-static einline unsigned inst_sbc (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_sbc (unsigned data0, unsigned data1)
 {
 	unsigned i0;
 	unsigned i1;
@@ -747,7 +747,7 @@ static einline unsigned inst_sbc (unsigned data0, unsigned data1)
  * only 8-bit version, 16-bit version not needed.
  */
 
-static einline unsigned inst_and (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_and (unsigned data0, unsigned data1)
 {
 	unsigned r ;
 
@@ -764,7 +764,7 @@ static einline unsigned inst_and (unsigned data0, unsigned data1)
  * only 8-bit version, 16-bit version not needed.
  */
 
-static einline unsigned inst_eor (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_eor (unsigned data0, unsigned data1)
 {
 	unsigned     r = data0 ^ data1;
     reg_cc = ((r & 0x80) == 0x80)?(reg_cc | FLAG_N):(reg_cc & ~FLAG_N);
@@ -779,7 +779,7 @@ static einline unsigned inst_eor (unsigned data0, unsigned data1)
  * only 8-bit version, 16-bit version not needed.
  */
 
-static einline unsigned inst_adc (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_adc (unsigned data0, unsigned data1)
 {
 	unsigned i0;
 	unsigned i1;
@@ -803,7 +803,7 @@ static einline unsigned inst_adc (unsigned data0, unsigned data1)
  * only 8-bit version, 16-bit version not needed.
  */
 
-static einline unsigned inst_or (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_or (unsigned data0, unsigned data1)
 {
 	unsigned     r = data0 | data1;
 
@@ -816,7 +816,7 @@ static einline unsigned inst_or (unsigned data0, unsigned data1)
 
 /* instruction: adda/addb */
 
-static einline unsigned inst_add8 (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_add8 (unsigned data0, unsigned data1)
 {
 	unsigned i0;
 	unsigned i1;
@@ -836,7 +836,7 @@ static einline unsigned inst_add8 (unsigned data0, unsigned data1)
 
 /* instruction: addd */
 
-static einline unsigned inst_add16 (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_add16 (unsigned data0, unsigned data1)
 {
 	unsigned i0;
 	unsigned i1;
@@ -857,7 +857,7 @@ static einline unsigned inst_add16 (unsigned data0, unsigned data1)
 
 /* instruction: subd */
 
-static einline unsigned inst_sub16 (unsigned data0, unsigned data1)
+static IRAM_ATTR einline unsigned inst_sub16 (unsigned data0, unsigned data1)
 {
 	unsigned i0;
 	unsigned i1;
@@ -878,7 +878,7 @@ static einline unsigned inst_sub16 (unsigned data0, unsigned data1)
 
 /* instruction: 8-bit offset branch */
 
-static einline void inst_bra8 (unsigned test, unsigned op, unsigned *cycles)
+static IRAM_ATTR einline void inst_bra8 (unsigned test, unsigned op, unsigned *cycles)
 {
     int offset;
     offset = pc_read8 ();
@@ -892,7 +892,7 @@ static einline void inst_bra8 (unsigned test, unsigned op, unsigned *cycles)
 
 /* instruction: 16-bit offset branch */
 
-static einline void inst_bra16 (unsigned test, unsigned op, unsigned *cycles)
+static IRAM_ATTR einline void inst_bra16 (unsigned test, unsigned op, unsigned *cycles)
 {
 	unsigned offset = pc_read16 ();
 
@@ -908,7 +908,7 @@ static einline void inst_bra16 (unsigned test, unsigned op, unsigned *cycles)
 
 /* instruction: pshs/pshu */
 
-static einline void inst_psh (unsigned op, unsigned *sp,
+static IRAM_ATTR einline void inst_psh (unsigned op, unsigned *sp,
 					   unsigned data, unsigned *cycles)
 {
 	if (op & 0x80) {
@@ -963,7 +963,7 @@ static einline void inst_psh (unsigned op, unsigned *sp,
 
 /* instruction: puls/pulu */
 
-static einline void inst_pul (unsigned op, unsigned *sp, unsigned *osp,
+static IRAM_ATTR einline void inst_pul (unsigned op, unsigned *sp, unsigned *osp,
 					   unsigned *cycles)
 {
 	if (op & 0x01) {
@@ -1016,7 +1016,7 @@ static einline void inst_pul (unsigned op, unsigned *sp, unsigned *osp,
 	}
 }
 
-static einline unsigned exgtfr_read (unsigned reg)
+static IRAM_ATTR einline unsigned exgtfr_read (unsigned reg)
 {
    unsigned data;
 
@@ -1060,7 +1060,7 @@ static einline unsigned exgtfr_read (unsigned reg)
    return data;
 }
 
-static einline void exgtfr_write (unsigned reg, unsigned data)
+static IRAM_ATTR einline void exgtfr_write (unsigned reg, unsigned data)
 {
    switch (reg)
    {
@@ -1101,7 +1101,7 @@ static einline void exgtfr_write (unsigned reg, unsigned data)
 
 /* instruction: exg */
 
-static einline void inst_exg (void)
+static IRAM_ATTR einline void inst_exg (void)
 {
 	unsigned op, tmp;
 
@@ -1115,7 +1115,7 @@ static einline void inst_exg (void)
 
 /* instruction: tfr */
 
-static einline void inst_tfr (void)
+static IRAM_ATTR einline void inst_tfr (void)
 {
 	unsigned op;
 

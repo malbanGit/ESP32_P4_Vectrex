@@ -1,3 +1,10 @@
+/*
+For performance reasons - I removed
+			via_sstep1 ();
+from emulation. wenn imager / lightpen is added
+this must be "restored"
+*/
+
 // NEW
 
 //#define PROFILING 1
@@ -62,8 +69,8 @@ static double percentageDifChangePerCycle = 0;
 int SCREEN_WIDTH=800;
 int SCREEN_HEIGHT=1280;
 
-DRAM_ATTR static long scl_factorx;
-DRAM_ATTR static long scl_factory;
+DRAM_ATTR static long scl_factorx; // for some unkown reason these cannot be uint32_t, if it is uint32_t then lines are sometimes out of bounds
+DRAM_ATTR static long scl_factory; // inspite the fact, that the scale factor is NEVER negative!!!
 DRAM_ATTR static long offx;
 DRAM_ATTR static long offy;
 
@@ -744,6 +751,7 @@ IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, 
 		color = (int)(((double)color)*degradePercent);
 	}
 
+//	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
 	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
 	return;
 }
@@ -1926,8 +1934,8 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 	/* --- Shift-Teil von via_sstep0 --- */
 
 // might be correct TODO CHECK!	
-//	if (via_srb >= 8u)
-//		return;    /* oder zum Ende von via_sstep0 springen */
+	if (via_srb >= 8u)
+		return;    /* oder zum Ende von via_sstep0 springen */
 
 	/* Shift-Counter: exakt wie vorher, nur enger geschrieben */
 	via_src--;
@@ -2021,11 +2029,13 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 IRAM_ATTR
 static inline __attribute__((always_inline, hot)) void via_sstep1(void)
 {
+	// the pulse modes are not really used!
 
     /* CA2 pulse mode: restore to '1' after pulse */
     if ((via_pcr & 0x0Eu) == 0x0Au)
     {
         via_ca2 = 1;
+		printf("Fire Zero: %ld\n", cyclesRunning);
         timerAddItem(via_ca2, &sig_zero, TIMER_ZERO);
     }
 
@@ -2041,6 +2051,7 @@ static inline __attribute__((always_inline, hot)) void via_sstep1(void)
     }
 
     /* CA1 edge detection / interrupt */
+	// CA 1 is only used for imager and lightpen
     if (via_ca1 != old_via_ca1)
     {
         // via_pcr bit0: 1 = low->high triggers, 0 = high->low triggers
@@ -2353,7 +2364,7 @@ uint64_t m3 = esp_timer_get_time();
 uint64_t m4 = esp_timer_get_time();
 			d3 += (m4-m3);
 #endif
-			via_sstep1 ();
+//			via_sstep1 (); // not needed without lightpen / imager support
 #ifdef PROFILING
 uint64_t m5 = esp_timer_get_time();
 			d4 += (m5-m4);

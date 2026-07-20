@@ -6,9 +6,64 @@
 
 /*
 Current:
-Vectorblade demo last level reached 46 emu speed -> to slow! -> without overlay
+SLOW1: Vectorblade demo last level reached 46 emu speed -> to slow! -> without overlay
+SLOW1: Karl Quappe on LCD is still about 5 FPS slower then on HDMI out... FUCK WHY???
 
-Karl Quappe on LCD is still about 5 FPS slower then on HDMI out... FUCK WHY???
+YUV is about 2 FPS faster (emulator)
+YUV
+
+Optimizing steps:
+a) 
+        via_sstep0(); 
+        removed, gain 3 FPS! - this would be needed for imager and lightpen emulation!
+
+b) 
+        in via_sstep1 ();
+            if (via_srb >= 8u) ,return
+        inserted - minimalistic gain
+
+c) 
+        Following was not done, since for some reason or another, long uncalled for lines appeared in output
+        Even only setting scl_factorx to uint32_t does this, despite the fact that the scale factor is NEVER negative
+        Don't know why this does what it does.
+        Theoretically a unsigned division is faster then a signed division!
+
+        If you're doing division, unsigned variants are cheaper than signed on RISC-V 
+        (signed division needs extra sign-handling instructions) — 
+        if these are always non-negative in practice, uint32_t instead of long/int could
+        be a real, measurable win, unlike the long-vs-int question itself.
+        int32_t/uint32_t
+        scl_factorx
+        offy
+        long x0, long y0, long x1, long y1
+
+        IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
+        {
+            if (intensityDrift>100000)
+            {
+                double degradePercent = (180000000.0-((double)intensityDrift))/180000000.0; // two minutes
+                if (degradePercent<0) degradePercent = 0;
+                color = (int)(((double)color)*degradePercent);
+            }
+
+            emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
+            return;
+        }
+
+
+
+
+
+
+
+
+
+
+
+Implement the new LCD code from laurent
+
+Try out ESP IDF 6 with 400 Mhz
+
 
 
 B) Renderer side
