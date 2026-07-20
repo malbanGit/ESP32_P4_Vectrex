@@ -649,7 +649,7 @@ static void lcd_deinit(void)
         panel_handle = NULL;
         s_dpi_panel  = NULL;
     }
-
+    s_fb_front = NULL; s_fb_back = NULL;
     // 4. Delete the DSI bus (releases MIPI PHY + lane config).
     if (dsi_bus) {
         esp_lcd_del_dsi_bus(dsi_bus);
@@ -672,9 +672,6 @@ static void lcd_deinit(void)
 
 static void lcd_init(void)
 {
-    mode = VIDEO_OUT_SELECTED;          // default at boot
-
-
     ESP_LOGI(TAG, "Create VSYNC semaphore");
     s_vsync_sem = xSemaphoreCreateBinary();
     configASSERT(s_vsync_sem);
@@ -1817,6 +1814,7 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 void initGlobals()
 {
     overlayEnabled =  ENABLE_OVERLAYS;
+    mode = VIDEO_OUT_SELECTED;          // default at boot
 }
 
 // ----------------------------------------------------
@@ -1906,10 +1904,6 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
     ESP_LOGI(TAG, "VIDEO_FB_BPP: %i", VIDEO_FB_BPP);
 
     ESP_LOGI(TAG, "LCD_H_RES: %i, LCD_V_RES: %i", LCD_H_RES, LCD_V_RES);
-    // Vecx
-    SCREEN_WIDTH = LCD_H_RES;
-    SCREEN_HEIGHT = LCD_V_RES;
-
 
     // Logische Frame-Slots initialisieren
     frames_init();
@@ -2003,25 +1997,16 @@ void toggleVideoModeRequest()
 void toggleVideoMode()
 {
     // shut Down
-
-    // UN Register VSYNC callback
-    esp_lcd_dpi_panel_event_callbacks_t cbs = {
-        .on_refresh_done     = NULL,
-        .on_color_trans_done = NULL,
-    };
-    ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(s_dpi_panel, &cbs, NULL));
-    video_stop(s_dpi_panel);
     lcd_deinit();
 
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(20)); // I never needed this - but doc says after bus reinit - one should wait a bit?
 
     if (mode == VIDEO_OUT_HDMI)  mode = VIDEO_OUT_LVDS;
     else   mode = VIDEO_OUT_HDMI;
 
     lcd_init();
     // Vecx
-    SCREEN_WIDTH = LCD_H_RES;
-    SCREEN_HEIGHT = LCD_V_RES;
+    void resize(int width, int height);//
 
     // audio is simply a switch 
     if (mode == VIDEO_OUT_HDMI)
@@ -2030,6 +2015,13 @@ void toggleVideoMode()
         /* enable LT8912B I2S audio input — CEC bank reg 0xB2 */
         uint8_t val = 0x01;
         esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
+
+        // Vecx
+        SCREEN_HEIGHT = LCD_V_RES;
+		SCREEN_WIDTH = LCD_H_RES;
+		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
+        if (overlayEnabled)
+            loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
     }
     else
     {
@@ -2037,13 +2029,12 @@ void toggleVideoMode()
         gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
         uint8_t val = 0x00;
         esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-    }
 
-    if (overlayEnabled)
-    {
-        if (mode == VIDEO_OUT_HDMI)
-            loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-        else
+        // Vecx
+		SCREEN_HEIGHT = LCD_H_RES;
+		SCREEN_WIDTH = LCD_V_RES;
+		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
+        if (overlayEnabled)
             loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
     }
 
