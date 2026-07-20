@@ -28,7 +28,7 @@ void lvds_sweep_settle(const esp_lcd_panel_lt8912b_io_t *io);
 // Backlight control. NOTE: BL_PWM is ACTIVE-LOW (a HIGH level cuts the backlight),
 // so the PWM duty is inverted vs brightness (50% duty -> ~50% brightness). BL_EN
 // (active-high) gates the backlight driver. on=true -> BL_EN high + 50% PWM.
-void lvds_backlight(bool on);
+void lvds_backlight(bool on, int level);
 
 // Diagnostic: log the bridge's input V-detect (0x9E/0x9F) then 20 samples of the
 // live stream-DDS word (-> MHz), STB flag and input-line measurements. Callable

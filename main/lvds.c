@@ -42,8 +42,8 @@ static const char *TAG = "lvds";
 // and 26.667 (240/9) exist. We request 26 -> 240/9 = 26.667 MHz actual, with
 // htotal 896 (panel 808-896) and vtotal 496 (panel 488-504):
 // 26.667e6 / (896 x 496) = 60.00 Hz.
-#define ST7262_DPI_CLK_MHZ      24    // requested; 240/9 = 26.667 MHz actual
-#define ST7262_DECLARE_PCLK_MHZ 24    // bridge-declared integer pclk (nearest)
+#define ST7262_DPI_CLK_MHZ      20    // requested; 240/9 = 26.667 MHz actual
+#define ST7262_DECLARE_PCLK_MHZ 20    // bridge-declared integer pclk (nearest)
 #define ST7262_HTOTAL           896
 #define ST7262_VTOTAL           496
 #define ST7262_VIDEO_TIMING() {                   \
@@ -193,7 +193,7 @@ void lvds_sweep_settle(const esp_lcd_panel_lt8912b_io_t *io)
 // Backlight on/off. BL_PWM is ACTIVE-LOW (HIGH cuts the light) so the duty is
 // inverted vs brightness: 512/1024 = 50% duty -> ~50% brightness, 1023 ~ off.
 // BL_EN (active-high) gates the backlight driver. LEDC is configured once.
-void lvds_backlight(bool on)
+void lvds_backlight(bool on, int level)
 {
     static bool inited = false;
     if (!inited) {
@@ -219,7 +219,7 @@ void lvds_backlight(bool on)
         ESP_ERROR_CHECK(ledc_channel_config(&ccfg));
         inited = true;
     }
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, on ? 512 : 1023));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, on ? level : 1023));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
     gpio_set_level(BOARD_PIN_BL_EN, on ? 1 : 0);
     ESP_LOGI(TAG, "Backlight %s", on ? "ON (50%% PWM duty -> ~50%% brightness)" : "OFF");
@@ -385,7 +385,10 @@ esp_err_t lvds_start(const esp_lcd_panel_lt8912b_io_t *io, esp_lcd_dsi_bus_handl
 
     ESP_RETURN_ON_ERROR(lvds_dds_config(io), TAG, "dds config");            // 0x1E + fixed DDS word
     ESP_RETURN_ON_ERROR(lt8912b_select_lvds(io->main), TAG, "select lvds"); // LVDS resets + output on
-    lvds_backlight(true);   // LCD out of reset + LVDS up -> turn the light on
+
+extern int  brightnessLCD; // defined in main.c
+
+    lvds_backlight(true, brightnessLCD);   // LCD out of reset + LVDS up -> turn the light on
 //    lvds_read_dds(io, true);     // health check (see LVDS_BRINGUP.md)
 
     *out_panel = panel;

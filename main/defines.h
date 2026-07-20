@@ -3,12 +3,13 @@
 //#define NO_AUDIO 1 just be quiet!
 
 #define VECX_DEBUG 1
-#define MAX_EMU_FPS 150
+#define MAX_EMU_FPS 50
 #define ENABLE_OVERLAYS 1
 
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2
-#define BRIGHTNESS_ADJUST 150
+#define BRIGHTNESS_ADJUST 50 // software
+#define DEFAULT_LCD_BRIGHTNESS 0 // hardware, does nothing to HDMI, 0 FULL brightnes, 1023 OFF
 #define GLOBAL_OVERLAY_ALPHA 50
 
 #define SIMPLE_UNDRAW 0 // if "non" simple, then "stable" vectors are not drawn again - but stay over frames
@@ -20,19 +21,9 @@
 #define AY_CHANNEL 2 // 1 = mono, 2 = stereo
 #define AY_BITS 16 // not working atm with other then 16, ES8311 only support 16 bit or higher... dont set it any other then 16!
 
-//typedef enum { VIDEO_OUT_HDMI, VIDEO_OUT_LVDS } video_out_t;
-
 #define VIDEO_OUT_HDMI 0
 #define VIDEO_OUT_LVDS 1
-
-#define VIDEO_OUT_SELECTED VIDEO_OUT_HDMI
-
-#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
-#define AUDIO_OUT_HDMI  1 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
-#else
-#define AUDIO_OUT_HDMI  0 /* 0 = onboard speaker (I2S0 + ES8311), 1 = HDMI audio (I2S1 + LT8912B) */
-#endif
-
+#define VIDEO_OUT_SELECTED VIDEO_OUT_LVDS   // this is the startup configuration
 
 
 #define MAX_LINE_BUFFER   1000
@@ -65,3 +56,14 @@
 // #define VIDEO_FB_YUV422          0 // YUV only supported when overlays are disabled
 
 
+
+// globals
+extern int mode;          // defined in main.c
+extern int overlayEnabled;
+extern int LCD_H_RES;
+extern int LCD_V_RES;
+
+extern int  g_line_width;
+extern int  g_line_glow;
+extern int  brightnessAdjust;
+extern int  brightnessLCD;

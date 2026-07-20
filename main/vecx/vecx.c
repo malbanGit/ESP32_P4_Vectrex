@@ -510,6 +510,10 @@ IRAM_ATTR static einline void readevents()
 	extern IRAM_ATTR bool isShiftDown(void);
 	extern IRAM_ATTR bool isCtrlDown(void);
 	extern IRAM_ATTR bool isAltDown(void);
+extern int  brightnessLCD; // defined in main.c
+
+int modeSwitchActive=0;
+void lvds_backlight(bool on, int level);
 
 	#ifndef HID_KEY_LEFT_ARROW
 	#define HID_KEY_LEFT_ARROW   0x50
@@ -538,36 +542,70 @@ IRAM_ATTR static einline void readevents()
  	if (isKeyDown(HID_KEY_UP_ARROW)) alg_jch1 = 255;
  	if (isKeyDown(HID_KEY_DOWN_ARROW)) alg_jch1 = 0;
 
+   	if (isAsciiDown('y'))
+	{
+		if (modeSwitchActive==0)
+		{
+			modeSwitchActive = 1;
+			void toggleVideoModeRequest();
+			toggleVideoModeRequest();
+		}
+
+	}
+	else
+	{
+		modeSwitchActive = 0;
+	}
+
+
+
+   	if (isAsciiDown('b'))
+	{
+		brightnessLCD = brightnessLCD + 1;
+		if (brightnessLCD>1022) brightnessLCD=1022;
+		printf("brightnessLCD: %d\n", brightnessLCD);
+	    lvds_backlight(true, brightnessLCD);
+	}
+   	if (isAsciiDown('v'))
+	{
+		
+		brightnessLCD = brightnessLCD - 1;
+		if (brightnessLCD<0) brightnessLCD=0;
+		printf("brightnessLCD: %d\n", brightnessLCD);
+	    lvds_backlight(true, brightnessLCD);
+	}
+
+
    	if (isAsciiDown('o'))
 	{
 		loadNum--;
-		if (loadNum<0) loadNum = 7;
+		if (loadNum<0) loadNum = 8;
+		printf("Loading rom: %s\n", name[loadNum]);
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-		#if ENABLE_OVERLAYS==1
-				// todo size of overlay determined by hdmi/lcd
-#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
-		loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-#else
-		loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-#endif		
 
-
-		#endif 
+		if (overlayEnabled)
+		{
+			if (mode == VIDEO_OUT_HDMI)
+				loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+			else
+				loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+		}
 		vecx_init();
 		vTaskDelay(pdMS_TO_TICKS(500));
 	}
    	if (isAsciiDown('p'))
 	{
 		loadNum++;
-		if (loadNum>7) loadNum = 0;
+		if (loadNum>8) loadNum = 0;
+		printf("Loading rom: %s\n", name[loadNum]);
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-		#if ENABLE_OVERLAYS==1
-#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
-		loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-#else
-		loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-#endif		
-		#endif 
+		if (overlayEnabled)
+		{
+			if (mode == VIDEO_OUT_HDMI)
+				loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+			else
+				loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+		}
 		vecx_init();
 		vTaskDelay(pdMS_TO_TICKS(500));
 	}
@@ -726,15 +764,18 @@ int vecx_init()
 		//cartData
 		// a cartridge was loaded!
 	}
-	#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
+	if (mode == VIDEO_OUT_HDMI)
+	{
 		SCREEN_HEIGHT = LCD_V_RES;
 		SCREEN_WIDTH = LCD_H_RES;
 		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
-	#else
+	}
+	else
+	{
 		SCREEN_HEIGHT = LCD_H_RES;
 		SCREEN_WIDTH = LCD_V_RES;
 		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
-	#endif
+	}
 
 	vecx_reset();
 	e8910_init_sound();

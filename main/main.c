@@ -2,10 +2,15 @@
 // spike is now very VERY slow???? -> Spike IS so slow!!!
 #include "defines.h"
 
+// from vecx.c
+extern int SCREEN_WIDTH;
+extern int SCREEN_HEIGHT;
 
 
 /*
 Current:
+s_overlay_bg still needed?
+
 SLOW1: Vectorblade demo last level reached 46 emu speed -> to slow! -> without overlay
 SLOW1: Karl Quappe on LCD is still about 5 FPS slower then on HDMI out... FUCK WHY???
 
@@ -205,6 +210,7 @@ void undraw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
                             int brightness);
 
+esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
 
 i2c_master_bus_handle_t i2c_bus = NULL;
 i2c_master_bus_config_t i2c_bus_cfg = {
@@ -215,7 +221,8 @@ i2c_master_bus_config_t i2c_bus_cfg = {
     .glitch_ignore_cnt = 7,
     .flags.enable_internal_pullup = true,
 };
-
+// Shared flag — core 1 writes, core 0 reads
+static volatile int s_toggle_mode = 0; // sentinel "no switch"
 
 
 // ----------------------------------------------------
@@ -224,6 +231,11 @@ i2c_master_bus_config_t i2c_bus_cfg = {
 DRAM_ATTR int  g_line_width = LINE_WIDTH;      // >= 1
 DRAM_ATTR int  g_line_glow  = LINE_GLOW_WIDTH;
 DRAM_ATTR int  brightnessAdjust = BRIGHTNESS_ADJUST;
+DRAM_ATTR int  brightnessLCD = DEFAULT_LCD_BRIGHTNESS;
+DRAM_ATTR int LCD_H_RES = 1280; // overwritten when screen is initialized
+DRAM_ATTR int LCD_V_RES = 720;
+//hdmi 1280x720
+//vdsl 480x800
 
 /* Precomputed bounding-box radius shared by all draw/undraw functions and ASM.
  * Must be updated if g_line_width or g_line_glow ever change at runtime.     */
@@ -233,12 +245,8 @@ DRAM_ATTR int g_line_Rb = (((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH) > 0)
 
 static const char *TAG = "main";
 
-DRAM_ATTR int LCD_H_RES = 1280; // overwritten when screen is initialized
-DRAM_ATTR int LCD_V_RES = 720;
-//hdmi 1280x720
-//vdsl 480x800
-static uint8_t *s_overlay    = NULL;    // this is a palette based overlay. 127 palette entries. if bit 7 is set, then alpha is present
-uint8_t        *s_overlay_bg = NULL;   /* precomputed RGB888 overlay-over-black */
+DRAM_ATTR uint8_t *s_overlay    = NULL;    // this is a palette based overlay. 127 palette entries. if bit 7 is set, then alpha is present
+DRAM_ATTR uint8_t *s_overlay_bg = NULL;   /* precomputed RGB888 overlay-over-black */
 
 
 // Logischer Frame-Slot: Liste von Linien + Hash + Status
@@ -344,6 +352,7 @@ DRAM_ATTR static esp_lcd_panel_lt8912b_io_t lt_io = {0};
 DRAM_ATTR static esp_lcd_panel_handle_t s_dpi_panel = NULL;
 DRAM_ATTR static SemaphoreHandle_t      s_vsync_sem = NULL;
 DRAM_ATTR int mode = VIDEO_OUT_SELECTED;          // default at boot
+DRAM_ATTR int overlayEnabled = ENABLE_OVERLAYS;          // default at boot
 
 // helper "c" files - that are included, instead of own objects
 #include "audio.i"
@@ -546,7 +555,7 @@ static esp_err_t video_start(int mode, bool yuv422,
                     ? lvds_start(io, dsi, yuv422, panel, w, h)
                     : hdmi_start(io, dsi, yuv422, panel, w, h);
     if (err != ESP_OK) return err;
-    if (mode == VIDEO_OUT_HDMI) lvds_backlight(false);   // LVDS panel unused -> backlight off
+    if (mode == VIDEO_OUT_HDMI) lvds_backlight(false,1023);   // LVDS panel unused -> backlight off
 
     esp_err_t err2 = esp_lcd_dpi_panel_get_frame_buffer(
         *panel,
@@ -617,8 +626,55 @@ static void video_stop(esp_lcd_panel_handle_t panel)
 
 }
 
+static void lcd_deinit(void)
+{
+    // 1. Unregister VSYNC callback first — prevents callbacks firing
+    //    during teardown.
+    if (s_dpi_panel) {
+        esp_lcd_dpi_panel_event_callbacks_t cbs = {
+            .on_refresh_done     = NULL,
+            .on_color_trans_done = NULL,
+        };
+        esp_lcd_dpi_panel_register_event_callbacks(s_dpi_panel, &cbs, NULL);
+    }
+
+    // 2. Turn display off.
+    if (s_dpi_panel) {
+        esp_lcd_panel_disp_on_off(s_dpi_panel, false);
+    }
+
+    // 3. Delete the panel (DPI panel, created inside video_start).
+    if (panel_handle) {
+        esp_lcd_panel_del(panel_handle);
+        panel_handle = NULL;
+        s_dpi_panel  = NULL;
+    }
+
+    // 4. Delete the DSI bus (releases MIPI PHY + lane config).
+    if (dsi_bus) {
+        esp_lcd_del_dsi_bus(dsi_bus);
+        dsi_bus = NULL;
+    }
+
+    // 5. Delete the three LT8912B I2C panel IOs.
+    if (lt_io.main)    { esp_lcd_panel_io_del(lt_io.main);    lt_io.main    = NULL; }
+    if (lt_io.cec_dsi) { esp_lcd_panel_io_del(lt_io.cec_dsi); lt_io.cec_dsi = NULL; }
+    if (lt_io.avi)     { esp_lcd_panel_io_del(lt_io.avi);     lt_io.avi     = NULL; }
+
+    // 6. Delete the VSYNC semaphore.
+    if (s_vsync_sem) {
+        vSemaphoreDelete(s_vsync_sem);
+        s_vsync_sem = NULL;
+    }
+
+    ESP_LOGI(TAG, "LCD deinitialized");
+}
+
 static void lcd_init(void)
 {
+    mode = VIDEO_OUT_SELECTED;          // default at boot
+
+
     ESP_LOGI(TAG, "Create VSYNC semaphore");
     s_vsync_sem = xSemaphoreCreateBinary();
     configASSERT(s_vsync_sem);
@@ -632,31 +688,33 @@ static void lcd_init(void)
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(i2c_bus, &io_avi_cfg,  &lt_io.avi));
 
     // 3) MIPI-DSI bus (2 lanes, 1000 Mbps/lane).
-    esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
 
-#define LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD()               \
+    #define LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD()               \
     {                                                    \
         .bus_id = 0,                                     \
         .num_data_lanes = 2,                             \
         .phy_clk_src = 0,                                \
         .lane_bit_rate_mbps = 720,                      \
     }
-#define LT8912B_PANEL_BUS_DSI_2CH_CONFIG_HDMI()               \
+    #define LT8912B_PANEL_BUS_DSI_2CH_CONFIG_HDMI()               \
     {                                                    \
         .bus_id = 0,                                     \
         .num_data_lanes = 2,                             \
         .phy_clk_src = 0,                                \
         .lane_bit_rate_mbps = 1200,                      \
     }
-#if VIDEO_OUT_SELECTED == VIDEO_OUT_LVDS
-    esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD();
-#else
-    esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_HDMI();
-#endif
-    ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&dsi_bus_cfg, &dsi_bus));
+    if (mode == VIDEO_OUT_LVDS)
+    {
+        esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD();
+        ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&dsi_bus_cfg, &dsi_bus));
+    }
+    else
+    {
+        esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_HDMI();
+        ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&dsi_bus_cfg, &dsi_bus));
+    }
 
     const bool yuv422 = VIDEO_FB_YUV422; // 
-    mode = VIDEO_OUT_SELECTED;          // default at boot
     panel_handle = NULL;
     int w,h;
     ESP_ERROR_CHECK(video_start(mode, yuv422, &lt_io, dsi_bus, &panel_handle, &w, &h));
@@ -673,8 +731,6 @@ static void lcd_init(void)
     };
     ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(s_dpi_panel, &cbs, NULL));
 
-    // Backlight on
-//    bsp_display_backlight_on();
     ESP_LOGI(TAG, "LCD initialized");
 }
 
@@ -710,16 +766,19 @@ IRAM_ATTR void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
     if (fs->line_count < MAX_LINE_BUFFER) 
     {
         vectrex_line_t *l = &fs->lines[fs->line_count++];
-#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
-        l->x0 = x0;
-        l->y0 = y0;
-        l->x1 = x1;
-        l->y1 = y1;
-#else
-        /* 90° CW rotation for portrait LCD: (x,y) → (y, -x) */
-        l->x0 =  LCD_H_RES-y0;  l->y0 = x0;
-        l->x1 =  LCD_H_RES-y1;  l->y1 = x1;
-#endif
+        if (mode == VIDEO_OUT_HDMI)
+        {
+            l->x0 = x0;
+            l->y0 = y0;
+            l->x1 = x1;
+            l->y1 = y1;
+        }
+        else
+        {
+            /* 90° CW rotation for portrait LCD: (x,y) → (y, -x) */
+            l->x0 =  LCD_H_RES-y0;  l->y0 = x0;
+            l->x1 =  LCD_H_RES-y1;  l->y1 = x1;
+        }
 
         l->brightness = brightness;
 
@@ -995,6 +1054,14 @@ IRAM_ATTR static void renderer_task(void *arg)
 
     for (;;)
     {
+        if (s_toggle_mode == 1)
+        {
+            void toggleVideoMode();
+            toggleVideoMode();
+            s_toggle_mode = 0;
+        }
+
+
         // DISPLAY FPS = number of actually changed frames drawn per second
         // if the drawing keeps up,
         // this is the frequency of the screen refresh - so if it shows 60 on a 60Hz display - everything is good!
@@ -1316,15 +1383,18 @@ static void audio_music_task(void *arg)
         s_audio_cb(NULL, (int16_t *) audio_buf, audio_bufsize);
 
         esp_err_t ret;
-#if AUDIO_OUT_HDMI == 1
-    size_t written = 0;
-    ret = i2s_channel_write(s_i2s_tx_chan,
-                            (void *)audio_buf,
-                            audio_bufsize,
-                            &written, portMAX_DELAY);
-#else
-    ret = esp_codec_dev_write(s_codec_dev, (void *)audio_buf, audio_bufsize);
-#endif        
+        if (mode == VIDEO_OUT_HDMI)
+        {
+            size_t written = 0;
+            ret = i2s_channel_write(s_i2s_tx_chan,
+                                    (void *)audio_buf,
+                                    audio_bufsize,
+                                    &written, portMAX_DELAY);
+        }
+        else
+        {
+            ret = esp_codec_dev_write(s_codec_dev, (void *)audio_buf, audio_bufsize);
+        }
 
         if (ret != ESP_OK)
         {
@@ -1550,9 +1620,11 @@ void clearFramebuffers()
  * full-screen BGRA overlay buffer (LCD_H_RES x LCD_V_RES, 4 bytes/pixel).
  * Surrounding area is filled with transparent black (alpha=0).
  * Pass img_w=0 / img_h=0 to stretch to full screen.                      */
+ char lastOverlay[MAX_ROM_NAME];
 esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 {
     clearFramebuffers();
+    strncpy(lastOverlay, name, MAX_ROM_NAME-1);
 
     /* clamp / default to full screen */
     if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
@@ -1576,70 +1648,73 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 
     /* fill entire buffer with transparent black */
     memset(s_overlay, 0, buf_sz);
-
+    uint8_t *scaled=NULL;
     /* decode + scale PNG into a temporary BGRA buffer */
-#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
-    uint8_t *scaled = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
-    if (!scaled)
+    if (mode ==VIDEO_OUT_HDMI)
     {
-        ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
-        heap_caps_free(s_overlay);
-        s_overlay = NULL;
-        return ESP_ERR_NO_MEM;
-    }
+        scaled = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
+        if (!scaled)
+        {
+            ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
+            heap_caps_free(s_overlay);
+            s_overlay = NULL;
+            return ESP_ERR_NO_MEM;
+        }
 
-    esp_err_t ret = overlay_load_png_bgra(name, scaled, img_w, img_h);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "PNG load failed");
-        heap_caps_free(scaled);
-        heap_caps_free(s_overlay);
-        s_overlay = NULL;
-        return ret;
-    }
-#else
-    /* LCD portrait: load PNG in landscape orientation (swapped dims), then
-     * rotate 90° CW so it fills the portrait screen.                       */
-    int load_w = img_h, load_h = img_w;
-    uint8_t *scaled = heap_caps_malloc((size_t)load_w * load_h * 4, MALLOC_CAP_SPIRAM);
-    if (!scaled)
-    {
-        ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
-        heap_caps_free(s_overlay);
-        s_overlay = NULL;
-        return ESP_ERR_NO_MEM;
-    }
-
-    esp_err_t ret = overlay_load_png_bgra(name, scaled, load_w, load_h);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "PNG load failed");
-        heap_caps_free(scaled);
-        heap_caps_free(s_overlay);
-        s_overlay = NULL;
-        return ret;
-    }
-
-    /* rotate 90° CW: src pixel (sx=dy, sy=load_h-1-dx) → dst pixel (dx, dy) */
-    uint8_t *rotated = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
-    if (!rotated)
-    {
-        ESP_LOGE(TAG, "PSRAM alloc for rotated image failed");
-        heap_caps_free(scaled);
-        heap_caps_free(s_overlay);
-        s_overlay = NULL;
-        return ESP_ERR_NO_MEM;
-    }
-    for (int dy = 0; dy < img_h; dy++) {
-        for (int dx = 0; dx < img_w; dx++) {
-            const uint8_t *s = scaled  + ((size_t)(load_h - 1 - dx) * load_w + dy) * 4;
-            uint8_t       *d = rotated + ((size_t)dy * img_w + dx) * 4;
-            d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+        esp_err_t ret = overlay_load_png_bgra(name, scaled, img_w, img_h);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "PNG load failed");
+            heap_caps_free(scaled);
+            heap_caps_free(s_overlay);
+            s_overlay = NULL;
+            return ret;
         }
     }
-    heap_caps_free(scaled);
-    scaled = rotated;
-#endif
+    else
+    {
+        /* LCD portrait: load PNG in landscape orientation (swapped dims), then
+        * rotate 90° CW so it fills the portrait screen.                       */
+        int load_w = img_h, load_h = img_w;
+        scaled = heap_caps_malloc((size_t)load_w * load_h * 4, MALLOC_CAP_SPIRAM);
+        if (!scaled)
+        {
+            ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
+            heap_caps_free(s_overlay);
+            s_overlay = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+
+        esp_err_t ret = overlay_load_png_bgra(name, scaled, load_w, load_h);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "PNG load failed");
+            heap_caps_free(scaled);
+            heap_caps_free(s_overlay);
+            s_overlay = NULL;
+            return ret;
+        }
+
+        /* rotate 90° CW: src pixel (sx=dy, sy=load_h-1-dx) → dst pixel (dx, dy) */
+        uint8_t *rotated = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
+        if (!rotated)
+        {
+            ESP_LOGE(TAG, "PSRAM alloc for rotated image failed");
+            heap_caps_free(scaled);
+            heap_caps_free(s_overlay);
+            s_overlay = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        for (int dy = 0; dy < img_h; dy++) {
+            for (int dx = 0; dx < img_w; dx++) {
+                const uint8_t *s = scaled  + ((size_t)(load_h - 1 - dx) * load_w + dy) * 4;
+                uint8_t       *d = rotated + ((size_t)dy * img_w + dx) * 4;
+                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+            }
+        }
+        heap_caps_free(scaled);
+        scaled = rotated;
+    }
 
     /* centre position */
     int off_x = (LCD_H_RES - img_w) / 2;
@@ -1732,24 +1807,29 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
         }
         ESP_LOGI(TAG, "overlay pal: %d colours, alpha_val=%d", s_overlay_pal_n, s_overlay_alpha_val);
     }
-    
     drawOverlayPal(s_fb_front);
     drawOverlayPal(s_fb_back);
-
 
     ESP_LOGI(TAG, "overlay: %s scaled to %dx%d, centred on %dx%d screen (BGRA)",
              name, img_w, img_h, LCD_H_RES, LCD_V_RES);
     return ESP_OK;
 }
-
+void initGlobals()
+{
+    overlayEnabled =  ENABLE_OVERLAYS;
+}
 
 // ----------------------------------------------------
 // app_main
 // ----------------------------------------------------
 void app_main(void)
 {
+    initGlobals();
+    
     // fill rom with 01, see https://vectrex-emu.blogspot.com/2006/07/
     memset(cartData, 0x01, MAX_CART_SIZE * sizeof(uint8_t));
+
+
 
 #if VECX_DEBUG == 1    
     esp_log_level_set("lcd.dsi.dpi", ESP_LOG_DEBUG);   // show the actual DPI pixel clock achieved
@@ -1813,17 +1893,6 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
             }
         }
     }
-/*
-    // 4) VIDEO_MODE switch: momentary tactile button, reads 1 when released.
-    //    Used as a toggle. Default output at boot = LVDS.
-    gpio_config_t btn = {
-        .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = 1ULL << BOARD_PIN_VIDEO_MODE,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-    };
-    ESP_ERROR_CHECK(gpio_config(&btn));
-
-*/
 
     if (usb_keyboard_init() != ESP_OK)
     {
@@ -1837,10 +1906,7 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
     ESP_LOGI(TAG, "VIDEO_FB_BPP: %i", VIDEO_FB_BPP);
 
     ESP_LOGI(TAG, "LCD_H_RES: %i, LCD_V_RES: %i", LCD_H_RES, LCD_V_RES);
-
-// Vecx
-extern int SCREEN_WIDTH;
-extern int SCREEN_HEIGHT;
+    // Vecx
     SCREEN_WIDTH = LCD_H_RES;
     SCREEN_HEIGHT = LCD_V_RES;
 
@@ -1848,13 +1914,13 @@ extern int SCREEN_HEIGHT;
     // Logische Frame-Slots initialisieren
     frames_init();
 
-#if ENABLE_OVERLAYS==1
-#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
- loadOverlayRGB("/sdcard/Karl.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
- #else
- loadOverlayRGB("/sdcard/Karl.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
- #endif
-#endif
+    if (overlayEnabled)
+    {
+        if (mode == VIDEO_OUT_HDMI)
+            loadOverlayRGB("/sdcard/Karl.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+        else
+            loadOverlayRGB("/sdcard/Karl.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+    }
 
     ESP_LOGI(TAG, "Start vectrex tasks");
 
@@ -1866,17 +1932,20 @@ extern int SCREEN_HEIGHT;
     ESP_ERROR_CHECK(audio_init());
 
 
-#if AUDIO_OUT_HDMI == 1
-    gpio_set_level(GPIO_OUTPUT_PA, 0);   // speaker off
-    /* enable LT8912B I2S audio input — CEC bank reg 0xB2 */
-    uint8_t val = 0x01;
-    esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-#else 
-    // switch off with
-    gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
-    uint8_t val = 0x00;
-    esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-#endif
+    if (mode == VIDEO_OUT_HDMI)
+    {
+        gpio_set_level(GPIO_OUTPUT_PA, 0);   // speaker off
+        /* enable LT8912B I2S audio input — CEC bank reg 0xB2 */
+        uint8_t val = 0x01;
+        esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
+    }
+    else
+    {
+        // switch off with
+        gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
+        uint8_t val = 0x00;
+        esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
+    }
 
     void callbackAY(void *userdata, int16_t *stream, int length);
 #ifndef NO_AUDIO
@@ -1925,4 +1994,57 @@ extern int SCREEN_HEIGHT;
     printf("Largest free DRAM block: %d bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));    
     //heap_caps_print_heap_info(MALLOC_CAP_8BIT);
 #endif    
+}
+void toggleVideoModeRequest()
+{
+    s_toggle_mode = 1;   // atomic on 32-bit aligned write on RISC-V
+}
+
+void toggleVideoMode()
+{
+    // shut Down
+
+    // UN Register VSYNC callback
+    esp_lcd_dpi_panel_event_callbacks_t cbs = {
+        .on_refresh_done     = NULL,
+        .on_color_trans_done = NULL,
+    };
+    ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(s_dpi_panel, &cbs, NULL));
+    video_stop(s_dpi_panel);
+    lcd_deinit();
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    if (mode == VIDEO_OUT_HDMI)  mode = VIDEO_OUT_LVDS;
+    else   mode = VIDEO_OUT_HDMI;
+
+    lcd_init();
+    // Vecx
+    SCREEN_WIDTH = LCD_H_RES;
+    SCREEN_HEIGHT = LCD_V_RES;
+
+    // audio is simply a switch 
+    if (mode == VIDEO_OUT_HDMI)
+    {
+        gpio_set_level(GPIO_OUTPUT_PA, 0);   // speaker off
+        /* enable LT8912B I2S audio input — CEC bank reg 0xB2 */
+        uint8_t val = 0x01;
+        esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
+    }
+    else
+    {
+        // switch off with
+        gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
+        uint8_t val = 0x00;
+        esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
+    }
+
+    if (overlayEnabled)
+    {
+        if (mode == VIDEO_OUT_HDMI)
+            loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+        else
+            loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+    }
+
 }
