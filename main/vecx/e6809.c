@@ -1,6 +1,16 @@
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "esp_attr.h"
+
 #include "e6809.h"
+extern int stepsDone;
 
 #define einline __inline
+
+//extern void //vecx_intermediateSteps(int count);
+//extern void //vecx_intermediateStepsUC(int count);
 
 
 
@@ -29,8 +39,8 @@ enum {
 DRAM_ATTR int addressBUS = 0;
 DRAM_ATTR unsigned char dataBUS = 0;
 
-DRAM_ATTR static int PRE_CLR_STEPS = 4;
-DRAM_ATTR static int POST_CLR_ADDSTEPS = -1;
+// static int PRE_CLR_STEPS = 4;
+// static int POST_CLR_ADDSTEPS = -1;
 
 /* index registers */
 
@@ -149,7 +159,7 @@ static IRAM_ATTR einline void set_reg_d (unsigned value)
  * while the upper bits are all zero.
  */
 
-static IRAM_ATTR einline unsigned _read8 (unsigned address)
+static IRAM_ATTR einline unsigned read8 (unsigned address)
 {
 	return (*e6809_read8) (address & 0xffff)&0xff;
 }
@@ -158,46 +168,46 @@ static IRAM_ATTR einline unsigned _read8 (unsigned address)
  * is written. the upper bits are ignored.
  */
 
-static IRAM_ATTR einline void _write8 (unsigned address, unsigned data)
+static IRAM_ATTR einline void write8 (unsigned address, unsigned data)
 {
 	(*e6809_write8) (address & 0xffff, (unsigned char) data);
 }
 
 static IRAM_ATTR einline unsigned read16 (unsigned address)
 {
-	unsigned datahi = _read8 (address);
-	unsigned datalo = _read8 (address + 1);
+	unsigned datahi = read8 (address);
+	unsigned datalo = read8 (address + 1);
 	return (datahi << 8) | datalo;
 }
 static IRAM_ATTR einline unsigned read16_cycloid (unsigned address)
 {
-	unsigned datahi = _read8 (address);
-//vecx_intermediateStepsUC(1);
-	unsigned datalo = _read8 (address + 1);
+	unsigned datahi = read8 (address);
+//    //vecx_intermediateStepsUC(1);
+	unsigned datalo = read8 (address + 1);
 	return (datahi << 8) | datalo;
 }
 
 static IRAM_ATTR einline void write16 (unsigned address, unsigned data)
 {
-	_write8 (address, data >> 8);
-	_write8 (address + 1, data);
+	write8 (address, data >> 8);
+	write8 (address + 1, data);
 }
 static IRAM_ATTR einline void write16_cycloid (unsigned address, unsigned data)
 {
-	_write8 (address, data >> 8);
-//vecx_intermediateStepsUC(1);
-	_write8 (address + 1, data);
+	write8 (address, data >> 8);
+//    //vecx_intermediateStepsUC(1);
+	write8 (address + 1, data);
 }
 
 static IRAM_ATTR einline void push8 (unsigned *sp, unsigned data)
 {
 	(*sp)--;
-	_write8 (*sp, data);
+	write8 (*sp, data);
 }
 
 static IRAM_ATTR einline unsigned pull8 (unsigned *sp)
 {
-	unsigned	data = _read8 (*sp);
+	unsigned	data = read8 (*sp);
 	(*sp)++;
 
 	return data;
@@ -221,7 +231,7 @@ static IRAM_ATTR einline unsigned pull16 (unsigned *sp)
 
 static IRAM_ATTR einline unsigned pc_read8 (void)
 {
-	unsigned data = _read8 (reg_pc);
+	unsigned data = read8 (reg_pc);
     reg_pc=(reg_pc+1)&0xffff;
 
 	return data;
@@ -293,7 +303,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0x68: case 0x69: case 0x6a: case 0x6b:
 	case 0x6c: case 0x6d: case 0x6e: case 0x6f:
 		/* R, +[0, 15] */
-//vecx_intermediateSteps(1);
+//		//vecx_intermediateSteps(1);
 		ea = *rptr_xyus[r] + (op & 0xf);
 		(*cycles)++;
 		break;
@@ -314,7 +324,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0x78: case 0x79: case 0x7a: case 0x7b:
 	case 0x7c: case 0x7d: case 0x7e: case 0x7f:
 		/* R, +[-16, -1] */
-//vecx_intermediateSteps(1);
+//		//vecx_intermediateSteps(1);
 
 		ea = *rptr_xyus[r] + (op & 0xf) - 0x10;
 		(*cycles)++;
@@ -324,7 +334,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xc0: case 0xc1:
 	case 0xe0: case 0xe1:
 		/* ,R+ / ,R++ */
-//vecx_intermediateSteps(2 + (op & 1));
+//		//vecx_intermediateSteps(2 + (op & 1));
 
 		ea = *rptr_xyus[r];
 		*rptr_xyus[r] += 1 + (op & 1);
@@ -336,7 +346,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xf0: case 0xf1:
 		/* [,R+] ??? / [,R++] */
 
-//vecx_intermediateSteps(5 + (op & 1));
+//		//vecx_intermediateSteps(5 + (op & 1));
 		ea = read16 (*rptr_xyus[r]);
 		*rptr_xyus[r] += 1 + (op & 1);
 		*cycles += 5 + (op & 1);
@@ -348,7 +358,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 
 		/* ,-R / ,--R */
 
-//vecx_intermediateSteps(2 + (op & 1));
+//		//vecx_intermediateSteps(2 + (op & 1));
 		*rptr_xyus[r] -= 1 + (op & 1);
 		ea = *rptr_xyus[r];
 		*cycles += 2 + (op & 1);
@@ -359,7 +369,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xf2: case 0xf3:
 		/* [,-R] ??? / [,--R] */
 
-//vecx_intermediateSteps(5 + (op & 1));
+//		//vecx_intermediateSteps(5 + (op & 1));
 		*rptr_xyus[r] -= 1 + (op & 1);
 		ea = read16 (*rptr_xyus[r]);
 		*cycles += 5 + (op & 1);
@@ -374,7 +384,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xd4: case 0xf4:
 		/* [,R] */
 
-//vecx_intermediateSteps(3);
+//		//vecx_intermediateSteps(3);
 		ea = read16 (*rptr_xyus[r]);
 		*cycles += 3;
 		break;
@@ -382,7 +392,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xc5: case 0xe5:
 		/* B,R */
 
-//vecx_intermediateSteps(1);
+//		//vecx_intermediateSteps(1);
 		ea = *rptr_xyus[r] + sign_extend (reg_b);
 		*cycles += 1;
 		break;
@@ -390,7 +400,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xd5: case 0xf5:
 		/* [B,R] */
 
-//vecx_intermediateSteps(4);
+//		//vecx_intermediateSteps(4);
 		ea = read16 (*rptr_xyus[r] + sign_extend (reg_b));
 		*cycles += 4;
 		break;
@@ -398,7 +408,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xc6: case 0xe6:
 		/* A,R */
 
-//		vecx_intermediateSteps(1);
+		////vecx_intermediateSteps(1);
 		ea = *rptr_xyus[r] + sign_extend (reg_a);
 		*cycles += 1;
 		break;
@@ -406,7 +416,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xd6: case 0xf6:
 		/* [A,R] */
 
-//vecx_intermediateSteps(4);
+//		//vecx_intermediateSteps(4);
 		ea = read16 (*rptr_xyus[r] + sign_extend (reg_a));
 		*cycles += 4;
 		break;
@@ -414,7 +424,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xc8: case 0xe8:
 		/* byte,R */
 
-//vecx_intermediateSteps(1);
+//		//vecx_intermediateSteps(1);
 		ea = *rptr_xyus[r] + sign_extend (pc_read8 ());
 		*cycles += 1;
 		break;
@@ -422,7 +432,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xd8: case 0xf8:
 		/* [byte,R] */
 
-//vecx_intermediateSteps(4);
+//		//vecx_intermediateSteps(4);
 		ea = read16 (*rptr_xyus[r] + sign_extend (pc_read8 ()));
 		*cycles += 4;
 		break;
@@ -430,7 +440,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xc9: case 0xe9:
 		/* word,R */
 
-//vecx_intermediateSteps(4);
+//		//vecx_intermediateSteps(4);
 		ea = *rptr_xyus[r] + pc_read16 ();
 		*cycles += 4;
 		break;
@@ -438,7 +448,7 @@ static IRAM_ATTR einline unsigned ea_indexed (unsigned *cycles)
 	case 0xd9: case 0xf9:
 		/* [word,R] */
 
-//		vecx_intermediateSteps(7);
+		//vecx_intermediateSteps(7);
 		ea = read16 (*rptr_xyus[r] + pc_read16 ());
 		*cycles += 7;
 		break;
@@ -1116,6 +1126,7 @@ static IRAM_ATTR einline void inst_tfr (void)
 }
 
 /* reset the 6809 */
+
 void e6809_reset (void)
 {
 	reg_x = 0;
@@ -1136,10 +1147,7 @@ void e6809_reset (void)
 /* execute a single instruction or handle interrupts and return */
 
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Woverride-init"
-
-IRAM_ATTR unsigned e6809_sstep_old (unsigned irq_i, unsigned irq_f)
+IRAM_ATTR unsigned e6809_sstep (unsigned irq_i, unsigned irq_f)
 {
     unsigned op;
     unsigned cycles = 0;
@@ -1201,6 +1209,8 @@ IRAM_ATTR unsigned e6809_sstep_old (unsigned irq_i, unsigned irq_f)
     }
 
     op = pc_read8 ();
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverride-init"
 
     /* computed-goto Dispatch-Tabelle */
     static void *opcode_table[256] = {
@@ -1453,70 +1463,70 @@ IRAM_ATTR unsigned e6809_sstep_old (unsigned irq_i, unsigned irq_f)
 
 op_00: /* 0x00: neg direct */
     ea = ea_direct ();
-    r = inst_neg (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_neg (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_03: /* 0x03: com direct */
     ea = ea_direct ();
-    r = inst_com (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_com (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_04: /* 0x04: lsr direct */
     ea = ea_direct ();
-    r = inst_lsr (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_lsr (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_06: /* 0x06: ror direct */
     ea = ea_direct ();
-    r = inst_ror (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_ror (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_07: /* 0x07: asr direct */
     ea = ea_direct ();
-    r = inst_asr (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_asr (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_08: /* 0x08: asl direct */
     ea = ea_direct ();
-    r = inst_asl (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_asl (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_09: /* 0x09: rol direct */
     ea = ea_direct ();
-    r = inst_rol (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_rol (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_0a: /* 0x0a: dec direct */
     ea = ea_direct ();
-    r = inst_dec (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_dec (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_0c: /* 0x0c: inc direct */
     ea = ea_direct ();
-    r = inst_inc (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_inc (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_0d: /* 0x0d: tst direct */
     ea = ea_direct ();
-    inst_tst8 (_read8 (ea));
+    inst_tst8 (read8 (ea));
     cycles += 6;
     goto end;
 
@@ -1528,8 +1538,8 @@ op_0e: /* 0x0e: jmp direct */
 op_0f: /* 0x0f: clr direct */
     ea = ea_direct ();
     inst_clr ();
-    _read8(ea); // clear reads! important for shift reg emulation!
-    _write8 (ea, 0);
+    read8(ea); // clear reads! important for shift reg emulation!
+    write8 (ea, 0);
     cycles += 6;
     goto end;
 
@@ -2143,70 +2153,70 @@ op_5f: /* 0x5f clrb */
 /* neg indexed */
 op_60: /* 0x60 */
     ea = ea_indexed (&cycles);
-    r = inst_neg (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_neg (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_63: /* 0x63 com indexed */
     ea = ea_indexed (&cycles);
-    r = inst_com (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_com (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_64: /* 0x64 lsr indexed */
     ea = ea_indexed (&cycles);
-    r = inst_lsr (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_lsr (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_66: /* 0x66 ror indexed */
     ea = ea_indexed (&cycles);
-    r = inst_ror (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_ror (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_67: /* 0x67 asr indexed */
     ea = ea_indexed (&cycles);
-    r = inst_asr (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_asr (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_68: /* 0x68 asl indexed */
     ea = ea_indexed (&cycles);
-    r = inst_asl (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_asl (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_69: /* 0x69 rol indexed */
     ea = ea_indexed (&cycles);
-    r = inst_rol (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_rol (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_6a: /* 0x6a dec indexed */
     ea = ea_indexed (&cycles);
-    r = inst_dec (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_dec (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_6c: /* 0x6c inc indexed */
     ea = ea_indexed (&cycles);
-    r = inst_inc (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_inc (read8 (ea));
+    write8 (ea, r);
     cycles += 6;
     goto end;
 
 op_6d: /* 0x6d tst indexed */
     ea = ea_indexed (&cycles);
-    inst_tst8 (_read8 (ea));
+    inst_tst8 (read8 (ea));
     cycles += 6;
     goto end;
 
@@ -2218,8 +2228,8 @@ op_6e: /* 0x6e jmp indexed */
 op_6f: /* 0x6f clr indexed */
     ea = ea_indexed (&cycles);
     inst_clr ();
-    _read8(ea);
-    _write8 (ea, 0);
+    read8(ea);
+    write8 (ea, 0);
     cycles += 6;
     goto end;
 
@@ -2227,70 +2237,70 @@ op_6f: /* 0x6f clr indexed */
 
 op_70: /* 0x70 neg extended */
     ea = ea_extended ();
-    r = inst_neg (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_neg (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_73: /* 0x73 com extended */
     ea = ea_extended ();
-    r = inst_com (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_com (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_74: /* 0x74 lsr extended */
     ea = ea_extended ();
-    r = inst_lsr (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_lsr (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_76: /* 0x76 ror extended */
     ea = ea_extended ();
-    r = inst_ror (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_ror (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_77: /* 0x77 asr extended */
     ea = ea_extended ();
-    r = inst_asr (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_asr (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_78: /* 0x78 asl extended */
     ea = ea_extended ();
-    r = inst_asl (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_asl (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_79: /* 0x79 rol extended */
     ea = ea_extended ();
-    r = inst_rol (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_rol (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_7a: /* 0x7a dec extended */
     ea = ea_extended ();
-    r = inst_dec (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_dec (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_7c: /* 0x7c inc extended */
     ea = ea_extended ();
-    r = inst_inc (_read8 (ea));
-    _write8 (ea, r);
+    r = inst_inc (read8 (ea));
+    write8 (ea, r);
     cycles += 7;
     goto end;
 
 op_7d: /* 0x7d tst extended */
     ea = ea_extended ();
-    inst_tst8 (_read8 (ea));
+    inst_tst8 (read8 (ea));
     cycles += 7;
     goto end;
 
@@ -2302,8 +2312,8 @@ op_7e: /* 0x7e jmp extended */
 op_7f: /* 0x7f clr extended */
     ea = ea_extended ();
     inst_clr ();
-    _read8(ea);
-    _write8 (ea, 0);
+    read8(ea);
+    write8 (ea, 0);
     cycles += 7;
     goto end;
 
@@ -2315,19 +2325,19 @@ op_80: /* 0x80 */
 
 op_90: /* 0x90 */
     ea = ea_direct ();
-    reg_a = inst_sub8 (reg_a, _read8 (ea)) & 0xff;
+    reg_a = inst_sub8 (reg_a, read8 (ea)) & 0xff;
     cycles += 4;
     goto end;
 
 op_a0: /* 0xa0 */
     ea = ea_indexed (&cycles);
-    reg_a = inst_sub8 (reg_a, _read8 (ea)) & 0xff;
+    reg_a = inst_sub8 (reg_a, read8 (ea)) & 0xff;
     cycles += 4;
     goto end;
 
 op_b0: /* 0xb0 */
     ea = ea_extended ();
-    reg_a = inst_sub8 (reg_a, _read8 (ea)) & 0xff;
+    reg_a = inst_sub8 (reg_a, read8 (ea)) & 0xff;
     cycles += 5;
     goto end;
 
@@ -2339,19 +2349,19 @@ op_81: /* 0x81 */
 
 op_91: /* 0x91 */
     ea = ea_direct ();
-    inst_sub8 (reg_a, _read8 (ea));
+    inst_sub8 (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_a1: /* 0xa1 */
     ea = ea_indexed (&cycles);
-    inst_sub8 (reg_a, _read8 (ea));
+    inst_sub8 (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_b1: /* 0xb1 */
     ea = ea_extended ();
-    inst_sub8 (reg_a, _read8 (ea));
+    inst_sub8 (reg_a, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2363,19 +2373,19 @@ op_82: /* 0x82 */
 
 op_92: /* 0x92 */
     ea = ea_direct ();
-    reg_a = inst_sbc (reg_a, _read8 (ea));
+    reg_a = inst_sbc (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_a2: /* 0xa2 */
     ea = ea_indexed (&cycles);
-    reg_a = inst_sbc (reg_a, _read8 (ea));
+    reg_a = inst_sbc (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_b2: /* 0xb2 */
     ea = ea_extended ();
-    reg_a = inst_sbc (reg_a, _read8 (ea));
+    reg_a = inst_sbc (reg_a, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2411,43 +2421,52 @@ op_84: /* 0x84 */
 
 op_94: /* 0x94 */
     ea = ea_direct ();
-    reg_a = inst_and (reg_a, _read8 (ea));
+    reg_a = inst_and (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_a4: /* 0xa4 */
     ea = ea_indexed (&cycles);
-    reg_a = inst_and (reg_a, _read8 (ea));
+    reg_a = inst_and (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_b4: /* 0xb4 */
     ea = ea_extended ();
-    reg_a = inst_and (reg_a, _read8 (ea));
+    reg_a = inst_and (reg_a, read8 (ea));
     cycles += 5;
     goto end;
 
 /* bita */
-op_85: /* 0x85 */
+op_85: /* 0x85 */  
     inst_and (reg_a, pc_read8 ());
     cycles += 2;
     goto end;
 
 op_95: /* 0x95 */
-    ea = ea_direct ();
-    inst_and (reg_a, _read8 (ea));
-    cycles += 4;
+//    ea = ea_direct ();
+  //  inst_and (reg_a, read8 (ea));
+//    cycles += 4;
+void vecx_intermediateSteps(int count);
+
+		ea = ea_direct ();
+		vecx_intermediateSteps(3); // MUST KEEEP FOR BEDLAM
+		inst_and (reg_a, read8 (ea));
+//		vecx_intermediateSteps(1);
+		cycles += 4;
+
+
     goto end;
 
 op_a5: /* 0xa5 */
     ea = ea_indexed (&cycles);
-    inst_and (reg_a, _read8 (ea));
+    inst_and (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_b5: /* 0xb5 */
     ea = ea_extended ();
-    inst_and (reg_a, _read8 (ea));
+    inst_and (reg_a, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2460,21 +2479,21 @@ op_86: /* 0x86 */
 
 op_96: /* 0x96 */
     ea = ea_direct ();
-    reg_a = _read8 (ea);
+    reg_a = read8 (ea);
     inst_tst8 (reg_a);
     cycles += 4;
     goto end;
 
 op_a6: /* 0xa6 */
     ea = ea_indexed (&cycles);
-    reg_a = _read8 (ea);
+    reg_a = read8 (ea);
     inst_tst8 (reg_a);
     cycles += 4;
     goto end;
 
 op_b6: /* 0xb6 */
     ea = ea_extended ();
-    reg_a = _read8 (ea);
+    reg_a = read8 (ea);
     inst_tst8 (reg_a);
     cycles += 5;
     goto end;
@@ -2564,21 +2583,21 @@ op_bd: /* 0xbd */
 /* sta */
 op_97: /* 0x97 */
     ea = ea_direct ();
-    _write8 (ea, reg_a);
+    write8 (ea, reg_a);
     inst_tst8 (reg_a);
     cycles += 4;
     goto end;
 
 op_a7: /* 0xa7 */
     ea = ea_indexed (&cycles);
-    _write8 (ea, reg_a);
+    write8 (ea, reg_a);
     inst_tst8 (reg_a);
     cycles += 4;
     goto end;
 
 op_b7: /* 0xb7 */
     ea = ea_extended ();
-    _write8 (ea, reg_a);
+    write8 (ea, reg_a);
     inst_tst8 (reg_a);
     cycles += 5;
     goto end;
@@ -2586,21 +2605,21 @@ op_b7: /* 0xb7 */
 /* stb */
 op_d7: /* 0xd7 */
     ea = ea_direct ();
-    _write8 (ea, reg_b);
+    write8 (ea, reg_b);
     inst_tst8 (reg_b);
     cycles += 4;
     goto end;
 
 op_e7: /* 0xe7 */
     ea = ea_indexed (&cycles);
-    _write8 (ea, reg_b);
+    write8 (ea, reg_b);
     inst_tst8 (reg_b);
     cycles += 4;
     goto end;
 
 op_f7: /* 0xf7 */
     ea = ea_extended ();
-    _write8 (ea, reg_b);
+    write8 (ea, reg_b);
     inst_tst8 (reg_b);
     cycles += 5;
     goto end;
@@ -2613,19 +2632,19 @@ op_88: /* 0x88 */
 
 op_98: /* 0x98 */
     ea = ea_direct ();
-    reg_a = inst_eor (reg_a, _read8 (ea));
+    reg_a = inst_eor (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_a8: /* 0xa8 */
     ea = ea_indexed (&cycles);
-    reg_a = inst_eor (reg_a, _read8 (ea));
+    reg_a = inst_eor (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_b8: /* 0xb8 */
     ea = ea_extended ();
-    reg_a = inst_eor (reg_a, _read8 (ea));
+    reg_a = inst_eor (reg_a, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2637,19 +2656,19 @@ op_89: /* 0x89 */
 
 op_99: /* 0x99 */
     ea = ea_direct ();
-    reg_a = inst_adc (reg_a, _read8 (ea));
+    reg_a = inst_adc (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_a9: /* 0xa9 */
     ea = ea_indexed (&cycles);
-    reg_a = inst_adc (reg_a, _read8 (ea));
+    reg_a = inst_adc (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_b9: /* 0xb9 */
     ea = ea_extended ();
-    reg_a = inst_adc (reg_a, _read8 (ea));
+    reg_a = inst_adc (reg_a, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2661,19 +2680,19 @@ op_8a: /* 0x8a */
 
 op_9a: /* 0x9a */
     ea = ea_direct ();
-    reg_a = inst_or (reg_a, _read8 (ea));
+    reg_a = inst_or (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_aa: /* 0xaa */
     ea = ea_indexed (&cycles);
-    reg_a = inst_or (reg_a, _read8 (ea));
+    reg_a = inst_or (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_ba: /* 0xba */
     ea = ea_extended ();
-    reg_a = inst_or (reg_a, _read8 (ea));
+    reg_a = inst_or (reg_a, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2685,19 +2704,19 @@ op_8b: /* 0x8b */
 
 op_9b: /* 0x9b */
     ea = ea_direct ();
-    reg_a = inst_add8 (reg_a, _read8 (ea));
+    reg_a = inst_add8 (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_ab: /* 0xab */
     ea = ea_indexed (&cycles);
-    reg_a = inst_add8 (reg_a, _read8 (ea));
+    reg_a = inst_add8 (reg_a, read8 (ea));
     cycles += 4;
     goto end;
 
 op_bb: /* 0xbb */
     ea = ea_extended ();
-    reg_a = inst_add8 (reg_a, _read8 (ea));
+    reg_a = inst_add8 (reg_a, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2737,19 +2756,19 @@ op_c1: /* 0xc1 */
 
 op_d1: /* 0xd1 */
     ea = ea_direct ();
-    inst_sub8 (reg_b, _read8 (ea));
+    inst_sub8 (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_e1: /* 0xe1 */
     ea = ea_indexed (&cycles);
-    inst_sub8 (reg_b, _read8 (ea));
+    inst_sub8 (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_f1: /* 0xf1 */
     ea = ea_extended ();
-    inst_sub8 (reg_b, _read8 (ea));
+    inst_sub8 (reg_b, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2761,19 +2780,19 @@ op_c2: /* 0xc2 */
 
 op_d2: /* 0xd2 */
     ea = ea_direct ();
-    reg_b = inst_sbc (reg_b, _read8 (ea));
+    reg_b = inst_sbc (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_e2: /* 0xe2 */
     ea = ea_indexed (&cycles);
-    reg_b = inst_sbc (reg_b, _read8 (ea));
+    reg_b = inst_sbc (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_f2: /* 0xf2 */
     ea = ea_extended ();
-    reg_b = inst_sbc (reg_b, _read8 (ea));
+    reg_b = inst_sbc (reg_b, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2809,19 +2828,19 @@ op_c4: /* 0xc4 */
 
 op_d4: /* 0xd4 */
     ea = ea_direct ();
-    reg_b = inst_and (reg_b, _read8 (ea));
+    reg_b = inst_and (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_e4: /* 0xe4 */
     ea = ea_indexed (&cycles);
-    reg_b = inst_and (reg_b, _read8 (ea));
+    reg_b = inst_and (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_f4: /* 0xf4 */
     ea = ea_extended ();
-    reg_b = inst_and (reg_b, _read8 (ea));
+    reg_b = inst_and (reg_b, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2833,19 +2852,19 @@ op_c5: /* 0xc5 */
 
 op_d5: /* 0xd5 */
     ea = ea_direct ();
-    inst_and (reg_b, _read8 (ea));
+    inst_and (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_e5: /* 0xe5 */
     ea = ea_indexed (&cycles);
-    inst_and (reg_b, _read8 (ea));
+    inst_and (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_f5: /* 0xf5 */
     ea = ea_extended ();
-    inst_and (reg_b, _read8 (ea));
+    inst_and (reg_b, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2858,21 +2877,21 @@ op_c6: /* 0xc6 */
 
 op_d6: /* 0xd6 */
     ea = ea_direct ();
-    reg_b = _read8 (ea);
+    reg_b = read8 (ea);
     inst_tst8 (reg_b);
     cycles += 4;
     goto end;
 
 op_e6: /* 0xe6 */
     ea = ea_indexed (&cycles);
-    reg_b = _read8 (ea);
+    reg_b = read8 (ea);
     inst_tst8 (reg_b);
     cycles += 4;
     goto end;
 
 op_f6: /* 0xf6 */
     ea = ea_extended ();
-    reg_b = _read8 (ea);
+    reg_b = read8 (ea);
     inst_tst8 (reg_b);
     cycles += 5;
     goto end;
@@ -2885,19 +2904,19 @@ op_c8: /* 0xc8 */
 
 op_d8: /* 0xd8 */
     ea = ea_direct ();
-    reg_b = inst_eor (reg_b, _read8 (ea));
+    reg_b = inst_eor (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_e8: /* 0xe8 */
     ea = ea_indexed (&cycles);
-    reg_b = inst_eor (reg_b, _read8 (ea));
+    reg_b = inst_eor (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_f8: /* 0xf8 */
     ea = ea_extended ();
-    reg_b = inst_eor (reg_b, _read8 (ea));
+    reg_b = inst_eor (reg_b, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2909,19 +2928,19 @@ op_c9: /* 0xc9 */
 
 op_d9: /* 0xd9 */
     ea = ea_direct ();
-    reg_b = inst_adc (reg_b, _read8 (ea));
+    reg_b = inst_adc (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_e9: /* 0xe9 */
     ea = ea_indexed (&cycles);
-    reg_b = inst_adc (reg_b, _read8 (ea));
+    reg_b = inst_adc (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_f9: /* 0xf9 */
     ea = ea_extended ();
-    reg_b = inst_adc (reg_b, _read8 (ea));
+    reg_b = inst_adc (reg_b, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2933,19 +2952,19 @@ op_ca: /* 0xca */
 
 op_da: /* 0xda */
     ea = ea_direct ();
-    reg_b = inst_or (reg_b, _read8 (ea));
+    reg_b = inst_or (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_ea: /* 0xea */
     ea = ea_indexed (&cycles);
-    reg_b = inst_or (reg_b, _read8 (ea));
+    reg_b = inst_or (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_fa: /* 0xfa */
     ea = ea_extended ();
-    reg_b = inst_or (reg_b, _read8 (ea));
+    reg_b = inst_or (reg_b, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -2957,19 +2976,19 @@ op_cb: /* 0xcb */
 
 op_db: /* 0xdb */
     ea = ea_direct ();
-    reg_b = inst_add8 (reg_b, _read8 (ea));
+    reg_b = inst_add8 (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_eb: /* 0xeb */
     ea = ea_indexed (&cycles);
-    reg_b = inst_add8 (reg_b, _read8 (ea));
+    reg_b = inst_add8 (reg_b, read8 (ea));
     cycles += 4;
     goto end;
 
 op_fb: /* 0xfb */
     ea = ea_extended ();
-    reg_b = inst_add8 (reg_b, _read8 (ea));
+    reg_b = inst_add8 (reg_b, read8 (ea));
     cycles += 5;
     goto end;
 
@@ -3075,19 +3094,19 @@ op_c0: /* 0xC0 */
 
 op_d0: /* 0xD0 */
     ea = ea_direct ();
-    reg_b = inst_sub8 (reg_b, _read8 (ea)) & 0xff;
+    reg_b = inst_sub8 (reg_b, read8 (ea)) & 0xff;
     cycles += 4;
     goto end;
 
 op_e0: /* 0xE0 */
     ea = ea_indexed (&cycles);
-    reg_b = inst_sub8 (reg_b, _read8 (ea)) & 0xff;
+    reg_b = inst_sub8 (reg_b, read8 (ea)) & 0xff;
     cycles += 4;
     goto end;
 
 op_f0: /* 0xF0 */
     ea = ea_extended ();
-    reg_b = inst_sub8 (reg_b, _read8 (ea)) & 0xff;
+    reg_b = inst_sub8 (reg_b, read8 (ea)) & 0xff;
     cycles += 5;
     goto end;
 
@@ -3100,1931 +3119,4 @@ op_default:
 end:
     return cycles;
 }
-
-
-
-
-#pragma GCC diagnostic pop
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-IRAM_ATTR unsigned e6809_sstep (unsigned irq_i, unsigned irq_f)
-{
-	unsigned op;
-	unsigned cycles = 0;
-	unsigned ea, i0, i1, r;
-
-	if (irq_f) 
-	{
-		if (((reg_cc & FLAG_F) != FLAG_F)) 
-		{
-			if (irq_status != IRQ_CWAI) 
-			{
-                reg_cc = (reg_cc & ~FLAG_E);
-				inst_psh (0x81, &reg_s, reg_u, &cycles);
-			}
-
-            reg_cc = (reg_cc | FLAG_I);
-            reg_cc = (reg_cc | FLAG_F);
-
-			reg_pc = read16 (0xfff6);
-			irq_status = IRQ_NORMAL;
-			cycles += 7;
-		} 
-		else 
-		{
-			if (irq_status == IRQ_SYNC) 
-			{
-				irq_status = IRQ_NORMAL;
-			}
-		}
-	}
-
-	if (irq_i) 
-	{
-        if (((reg_cc & FLAG_I) != FLAG_I)) 
-		{
-			if (irq_status != IRQ_CWAI) 
-			{
-                reg_cc = (reg_cc | FLAG_E);
-				inst_psh (0xff, &reg_s, reg_u, &cycles);
-			}
-
-            reg_cc = (reg_cc | FLAG_I);
-
-			reg_pc = read16 (0xfff8);
-			irq_status = IRQ_NORMAL;
-			cycles += 7;
-		} 
-		else 
-		{
-			if (irq_status == IRQ_SYNC) 
-			{
-				irq_status = IRQ_NORMAL;
-			}
-		}
-	}
-
-	if (irq_status != IRQ_NORMAL) {
-		return cycles + 1;
-	}
-
-	op = pc_read8 ();
-	switch (op) {
-	/* page 0 instructions */
-
-	/* neg, nega, negb */
-	case 0x00:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_neg (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x40:
-		vecx_intermediateSteps(2);
-		reg_a = inst_neg (reg_a)&0xff;
-		cycles += 2;
-		break;
-	case 0x50:
-		vecx_intermediateSteps(2);
-		reg_b = inst_neg (reg_b)&0xff;
-		cycles += 2;
-		break;
-	case 0x60:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_neg (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x70:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_neg (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* com, coma, comb */
-	case 0x03:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_com (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x43:
-		vecx_intermediateSteps(2);
-		reg_a = inst_com (reg_a);
-		cycles += 2;
-		break;
-	case 0x53:
-		vecx_intermediateSteps(2);
-		reg_b = inst_com (reg_b);
-		cycles += 2;
-		break;
-	case 0x63:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_com (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x73:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_com (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* lsr, lsra, lsrb */
-	case 0x04:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_lsr (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x44:
-		reg_a = inst_lsr (reg_a);
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x54:
-		reg_b = inst_lsr (reg_b);
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x64:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_lsr (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x74:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_lsr (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* ror, rora, rorb */
-	case 0x06:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_ror (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x46:
-		reg_a = inst_ror (reg_a);
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x56:
-		reg_b = inst_ror (reg_b);
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x66:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_ror (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x76:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_ror (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* asr, asra, asrb */
-	case 0x07:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_asr (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x47:
-		reg_a = inst_asr (reg_a);
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x57:
-		reg_b = inst_asr (reg_b);
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x67:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_asr (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x77:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_asr (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* asl, asla, aslb */
-	case 0x08:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_asl (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x48:
-		vecx_intermediateSteps(2);
-		reg_a = inst_asl (reg_a);
-		cycles += 2;
-		break;
-	case 0x58:
-		vecx_intermediateSteps(2);
-		reg_b = inst_asl (reg_b);
-		cycles += 2;
-		break;
-	case 0x68:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_asl (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x78:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_asl (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* rol, rola, rolb */
-	case 0x09:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_rol (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x49:
-		vecx_intermediateSteps(2);
-		reg_a = inst_rol (reg_a);
-		cycles += 2;
-		break;
-	case 0x59:
-		vecx_intermediateSteps(2);
-		reg_b = inst_rol (reg_b);
-		cycles += 2;
-		break;
-	case 0x69:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_rol (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x79:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_rol (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* dec, deca, decb */
-	case 0x0a:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_dec (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x4a:
-		vecx_intermediateSteps(2);
-		reg_a = inst_dec (reg_a);
-		cycles += 2;
-		break;
-	case 0x5a:
-		vecx_intermediateSteps(2);
-		reg_b = inst_dec (reg_b);
-		cycles += 2;
-		break;
-	case 0x6a:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_dec (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x7a:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_dec (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* inc, inca, incb */
-	case 0x0c:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		r = inst_inc (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x4c:
-		vecx_intermediateSteps(2);
-		reg_a = inst_inc (reg_a);
-		cycles += 2;
-		break;
-	case 0x5c:
-		vecx_intermediateSteps(2);
-		reg_b = inst_inc (reg_b);
-		cycles += 2;
-		break;
-	case 0x6c:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		r = inst_inc (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 6;
-		break;
-	case 0x7c:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		r = inst_inc (_read8 (ea));
-		vecx_intermediateSteps(3);
-		_write8 (ea, r);
-		cycles += 7;
-		break;
-	/* tst, tsta, tstb */
-	case 0x0d:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		inst_tst8 (_read8 (ea));
-		vecx_intermediateSteps(3);
-		cycles += 6;
-		break;
-	case 0x4d:
-		vecx_intermediateSteps(2);
-		inst_tst8 (reg_a);
-		cycles += 2;
-		break;
-	case 0x5d:
-		vecx_intermediateSteps(2);
-		inst_tst8 (reg_b);
-		cycles += 2;
-		break;
-	case 0x6d:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		inst_tst8 (_read8 (ea));
-		vecx_intermediateSteps(3);
-		cycles += 6;
-		break;
-	case 0x7d:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		inst_tst8 (_read8 (ea));
-		vecx_intermediateSteps(3);
-		cycles += 7;
-		break;
-	/* jmp */
-	case 0x0e:
-		reg_pc = ea_direct ();
-		vecx_intermediateSteps(3);
-		cycles += 3;
-		break;
-	case 0x6e:
-		reg_pc = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		cycles += 3;
-		break;
-	case 0x7e:
-		reg_pc = ea_extended ();
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-	/* clr */
-	case 0x0f:
-		ea = ea_direct ();
-		vecx_intermediateSteps(PRE_CLR_STEPS);
-		inst_clr ();
-		_read8(ea); // clear reads! important for shift reg emulation! e.g.
-        vecx_intermediateSteps(2+1+POST_CLR_ADDSTEPS);
-		_write8 (ea, 0);
-		cycles += 6;
-		break;
-	case 0x4f:
-		inst_clr ();
-		reg_a = 0;
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x5f:
-		inst_clr ();
-		reg_b = 0;
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x6f:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(PRE_CLR_STEPS);
-		inst_clr ();
-		_read8(ea); // clear reads! important for shift reg emulation! e.g.
-        vecx_intermediateSteps(2+1+POST_CLR_ADDSTEPS);
-		_write8 (ea, 0);
-		cycles += 6;
-		break;
-	case 0x7f:
-		ea = ea_extended ();
-		vecx_intermediateSteps(1+PRE_CLR_STEPS);
-		inst_clr ();
-		_read8(ea); // clear reads! important for shift reg emulation! e.g.
-        vecx_intermediateSteps(2+1+POST_CLR_ADDSTEPS);
-		_write8 (ea, 0);
-		cycles += 7;
-		break;
-	/* suba */
-	case 0x80:
-		vecx_intermediateSteps(2);
-		reg_a = inst_sub8 (reg_a, pc_read8 ())&0xff;
-		cycles += 2;
-		break;
-	case 0x90:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_a = inst_sub8 (reg_a, _read8 (ea))&0xff;
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xa0:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_a = inst_sub8 (reg_a, _read8 (ea))&0xff;
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xb0:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_a = inst_sub8 (reg_a, _read8 (ea))&0xff;
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* subb */
-	case 0xc0:
-		vecx_intermediateSteps(2);
-		reg_b = inst_sub8 (reg_b, pc_read8 ())&0xff;
-		cycles += 2;
-		break;
-	case 0xd0:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_b = inst_sub8 (reg_b, _read8 (ea))&0xff;
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xe0:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_b = inst_sub8 (reg_b, _read8 (ea))&0xff;
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xf0:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_b = inst_sub8 (reg_b, _read8 (ea))&0xff;
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* cmpa */
-	case 0x81:
-		vecx_intermediateSteps(2);
-		inst_sub8 (reg_a, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0x91:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		inst_sub8 (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xa1:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		inst_sub8 (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xb1:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		inst_sub8 (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* cmpb */
-	case 0xc1:
-		vecx_intermediateSteps(2);
-		inst_sub8 (reg_b, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0xd1:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		inst_sub8 (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xe1:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		inst_sub8 (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xf1:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		inst_sub8 (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* sbca */
-	case 0x82:
-		vecx_intermediateSteps(2);
-		reg_a = inst_sbc (reg_a, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0x92:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_a = inst_sbc (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xa2:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_a = inst_sbc (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xb2:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_a = inst_sbc (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* sbcb */
-	case 0xc2:
-		vecx_intermediateSteps(2);
-		reg_b = inst_sbc (reg_b, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0xd2:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_b = inst_sbc (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xe2:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_b = inst_sbc (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xf2:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_b = inst_sbc (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* anda */
-	case 0x84:
-		vecx_intermediateSteps(2);
-		reg_a = inst_and (reg_a, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0x94:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_a = inst_and (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xa4:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_a = inst_and (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xb4:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_a = inst_and (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* andb */
-	case 0xc4:
-		vecx_intermediateSteps(2);
-		reg_b = inst_and (reg_b, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0xd4:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_b = inst_and (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xe4:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_b = inst_and (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xf4:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_b = inst_and (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* bita */
-	case 0x85:
-		vecx_intermediateSteps(2);
-		inst_and (reg_a, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0x95:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		inst_and (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xa5:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		inst_and (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xb5:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		inst_and (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* bitb */
-	case 0xc5:
-		vecx_intermediateSteps(2);
-		inst_and (reg_b, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0xd5:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		inst_and (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xe5:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		inst_and (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xf5:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		inst_and (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* lda */
-	case 0x86:
-		dataBUS = reg_a = pc_read8 ();
-		vecx_intermediateSteps(2);
-		inst_tst8 (reg_a);
-		cycles += 2;
-		break;
-	case 0x96:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_a = _read8 (ea);
-		vecx_intermediateSteps(1);
-		inst_tst8 (reg_a);
-		cycles += 4;
-		break;
-	case 0xa6:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_a = _read8 (ea);
-		vecx_intermediateSteps(1);
-		inst_tst8 (reg_a);
-		cycles += 4;
-		break;
-	case 0xb6:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_a = _read8 (ea);
-		vecx_intermediateSteps(1);
-		inst_tst8 (reg_a);
-		cycles += 5;
-		break;
-	/* ldb */
-	case 0xc6:
-		dataBUS = reg_b = pc_read8 ();
-		vecx_intermediateSteps(2);
-		inst_tst8 (reg_b);
-		cycles += 2;
-		break;
-	case 0xd6:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_b = _read8 (ea);
-		vecx_intermediateSteps(1);
-		inst_tst8 (reg_b);
-		cycles += 4;
-		break;
-	case 0xe6:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_b = _read8 (ea);
-		vecx_intermediateSteps(1);
-		inst_tst8 (reg_b);
-		cycles += 4;
-		break;
-	case 0xf6:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_b = _read8 (ea);
-		vecx_intermediateSteps(1);
-		inst_tst8 (reg_b);
-		cycles += 5;
-		break;
-	/* sta */
-	case 0x97:
-		ea = ea_direct ();
-		vecx_intermediateSteps(4);
-		_write8 (ea, reg_a);
-		inst_tst8 (reg_a);
-		cycles += 4;
-		break;
-	case 0xa7:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(4);
-		_write8 (ea, reg_a);
-		inst_tst8 (reg_a);
-		cycles += 4;
-		break;
-	case 0xb7:
-		ea = ea_extended ();
-		vecx_intermediateSteps(5);
-		_write8 (ea, reg_a);
-		inst_tst8 (reg_a);
-		cycles += 5;
-		break;
-	/* stb */
-	case 0xd7:
-		ea = ea_direct ();
-		vecx_intermediateSteps(4);
-		_write8 (ea, reg_b);
-		inst_tst8 (reg_b);
-		cycles += 4;
-		break;
-	case 0xe7:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(4);
-		_write8 (ea, reg_b);
-		inst_tst8 (reg_b);
-		cycles += 4;
-		break;
-	case 0xf7:
-		ea = ea_extended ();
-		vecx_intermediateSteps(5);
-		_write8 (ea, reg_b);
-		inst_tst8 (reg_b);
-		cycles += 5;
-		break;
-	/* eora */
-	case 0x88:
-		reg_a = inst_eor (reg_a, pc_read8 ());
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x98:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_a = inst_eor (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xa8:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_a = inst_eor (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xb8:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_a = inst_eor (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* eorb */
-	case 0xc8:
-		reg_b = inst_eor (reg_b, pc_read8 ());
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0xd8:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_b = inst_eor (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xe8:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_b = inst_eor (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xf8:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_b = inst_eor (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* adca */
-	case 0x89:
-		reg_a = inst_adc (reg_a, pc_read8 ());
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x99:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_a = inst_adc (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xa9:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_a = inst_adc (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xb9:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_a = inst_adc (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* adcb */
-	case 0xc9:
-		reg_b = inst_adc (reg_b, pc_read8 ());
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0xd9:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_b = inst_adc (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xe9:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_b = inst_adc (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xf9:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_b = inst_adc (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* ora */
-	case 0x8a:
-		reg_a = inst_or (reg_a, pc_read8 ());
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x9a:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_a = inst_or (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xaa:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_a = inst_or (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xba:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_a = inst_or (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* orb */
-	case 0xca:
-		reg_b = inst_or (reg_b, pc_read8 ());
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0xda:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_b = inst_or (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xea:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_b = inst_or (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xfa:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_b = inst_or (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* adda */
-	case 0x8b:
-		reg_a = inst_add8 (reg_a, pc_read8 ());
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	case 0x9b:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_a = inst_add8 (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xab:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_a = inst_add8 (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xbb:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_a = inst_add8 (reg_a, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* addb */
-	case 0xcb:
-		vecx_intermediateSteps(2);
-		reg_b = inst_add8 (reg_b, pc_read8 ());
-		cycles += 2;
-		break;
-	case 0xdb:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		reg_b = inst_add8 (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xeb:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		reg_b = inst_add8 (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 4;
-		break;
-	case 0xfb:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		reg_b = inst_add8 (reg_b, _read8 (ea));
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	/* subd */
-	case 0x83:
-		set_reg_d (inst_sub16 (get_reg_d (), pc_read16 ()));
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-	case 0x93:
-		ea = ea_direct ();
-		vecx_intermediateSteps(4);
-		set_reg_d (inst_sub16 (get_reg_d (), read16 (ea)));
-		vecx_intermediateSteps(2);
-		cycles += 6;
-		break;
-	case 0xa3:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(4);
-		set_reg_d (inst_sub16 (get_reg_d (), read16 (ea)));
-		vecx_intermediateSteps(2);
-		cycles += 6;
-		break;
-	case 0xb3:
-		ea = ea_extended ();
-		vecx_intermediateSteps(5);
-		set_reg_d (inst_sub16 (get_reg_d (), read16 (ea)));
-		vecx_intermediateSteps(2);
-		cycles += 7;
-		break;
-	/* cmpx */
-	case 0x8c:
-		inst_sub16 (reg_x, pc_read16 ());
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-	case 0x9c:
-		ea = ea_direct ();
-		vecx_intermediateSteps(4);
-		inst_sub16 (reg_x, read16 (ea));
-		vecx_intermediateSteps(2);
-		cycles += 6;
-		break;
-	case 0xac:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(4);
-		inst_sub16 (reg_x, read16 (ea));
-		vecx_intermediateSteps(2);
-		cycles += 6;
-		break;
-	case 0xbc:
-		ea = ea_extended ();
-		vecx_intermediateSteps(5);
-		inst_sub16 (reg_x, read16 (ea));
-		vecx_intermediateSteps(2);
-		cycles += 7;
-		break;
-	/* ldx */
-	case 0x8e:
-		reg_x = pc_read16 ();
-		inst_tst16 (reg_x);
-		vecx_intermediateSteps(3);
-		cycles += 3;
-		break;
-	case 0x9e:
-		ea = ea_direct ();
-		reg_x = read16 (ea);
-		vecx_intermediateSteps(5);
-		inst_tst16 (reg_x);
-		cycles += 5;
-		break;
-	case 0xae:
-		ea = ea_indexed (&cycles);
-		reg_x = read16 (ea);
-		inst_tst16 (reg_x);
-		vecx_intermediateSteps(5);
-		cycles += 5;
-		break;
-	case 0xbe:
-		ea = ea_extended ();
-		reg_x = read16 (ea);
-		inst_tst16 (reg_x);
-		vecx_intermediateSteps(6);
-		cycles += 6;
-		break;
-	/* ldu */
-	case 0xce:
-		reg_u = pc_read16 ();
-		inst_tst16 (reg_u);
-		vecx_intermediateSteps(3);
-		cycles += 3;
-		break;
-	case 0xde:
-		ea = ea_direct ();
-		reg_u = read16 (ea);
-		inst_tst16 (reg_u);
-		vecx_intermediateSteps(5);
-		cycles += 5;
-		break;
-	case 0xee:
-		ea = ea_indexed (&cycles);
-		reg_u = read16 (ea);
-		inst_tst16 (reg_u);
-		vecx_intermediateSteps(5);
-		cycles += 5;
-		break;
-	case 0xfe:
-		ea = ea_extended ();
-		reg_u = read16 (ea);
-		inst_tst16 (reg_u);
-		vecx_intermediateSteps(6);
-		cycles += 6;
-		break;
-	/* stx */
-	case 0x9f:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		write16_cycloid(ea, reg_x);
-		inst_tst16 (reg_x);
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	case 0xaf:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		write16_cycloid (ea, reg_x);
-		inst_tst16 (reg_x);
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	case 0xbf:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		write16_cycloid (ea, reg_x);
-		inst_tst16 (reg_x);
-		vecx_intermediateSteps(1);
-		cycles += 6;
-		break;
-	/* stu */
-	case 0xdf:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		write16_cycloid (ea, reg_u);
-		inst_tst16 (reg_u);
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	case 0xef:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		write16_cycloid (ea, reg_u);
-		inst_tst16 (reg_u);
-		vecx_intermediateSteps(1);
-		cycles += 5;
-		break;
-	case 0xff:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		write16_cycloid (ea, reg_u);
-		inst_tst16 (reg_u);
-		vecx_intermediateSteps(1);
-		cycles += 6;
-		break;
-	/* addd */
-	case 0xc3:
-		set_reg_d (inst_add16 (get_reg_d (), pc_read16 ()));
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-	case 0xd3:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		set_reg_d (inst_add16 (get_reg_d (), read16 (ea)));
-		vecx_intermediateSteps(3);
-		cycles += 6;
-		break;
-	case 0xe3:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		set_reg_d (inst_add16 (get_reg_d (), read16 (ea)));
-		vecx_intermediateSteps(3);
-		cycles += 6;
-		break;
-	case 0xf3:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		set_reg_d (inst_add16 (get_reg_d (), read16 (ea)));
-		vecx_intermediateSteps(3);
-		cycles += 7;
-		break;
-	/* ldd */
-	case 0xcc:
-		set_reg_d (pc_read16 ());
-		vecx_intermediateSteps(3);
-		inst_tst16 (get_reg_d ());
-		cycles += 3;
-		break;
-	case 0xdc:
-		ea = ea_direct ();
-		vecx_intermediateSteps(3);
-		set_reg_d (read16_cycloid (ea));
-		vecx_intermediateSteps(1);
-		inst_tst16 (get_reg_d ());
-		cycles += 5;
-		break;
-	case 0xec:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(3);
-		set_reg_d (read16_cycloid (ea));
-		vecx_intermediateSteps(1);
-		inst_tst16 (get_reg_d ());
-		cycles += 5;
-		break;
-	case 0xfc:
-		ea = ea_extended ();
-		vecx_intermediateSteps(4);
-		set_reg_d (read16_cycloid (ea));
-		vecx_intermediateSteps(1);
-		inst_tst16 (get_reg_d ());
-		cycles += 6;
-		break;
-	/* std */
-	case 0xdd:
-		ea = ea_direct ();
-		vecx_intermediateSteps(4);
-		write16_cycloid (ea, get_reg_d ());
-		inst_tst16 (get_reg_d ());
-		cycles += 5;
-		break;
-	case 0xed:
-		ea = ea_indexed (&cycles);
-		vecx_intermediateSteps(4);
-		write16_cycloid (ea, get_reg_d ());
-		inst_tst16 (get_reg_d ());
-		cycles += 5;
-		break;
-	case 0xfd:
-		ea = ea_extended ();
-		vecx_intermediateSteps(5);
-		write16_cycloid (ea, get_reg_d ());
-		inst_tst16 (get_reg_d ());
-		cycles += 6;
-		break;
-	/* nop */
-	case 0x12:
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	/* mul */
-	case 0x3d:
-		r = (reg_a & 0xff) * (reg_b & 0xff);
-		set_reg_d (r);
-
-		set_cc (FLAG_Z, test_z16 (r));
-		set_cc (FLAG_C, (r >> 7) & 1);
-		vecx_intermediateSteps(11);
-
-		cycles += 11;
-		break;
-	/* bra */
-	case 0x20:
-	/* brn */
-	case 0x21:
-		inst_bra8 (0, op, &cycles);
-		vecx_intermediateSteps(3);
-		break;
-	/* bhi */
-	case 0x22:
-	/* bls */
-	case 0x23:
-		inst_bra8 (((reg_cc & FLAG_C) == FLAG_C) | ((reg_cc & FLAG_Z) == FLAG_Z), op, &cycles);
-		vecx_intermediateSteps(3);
-		break;
-	/* bhs/bcc */
-	case 0x24:
-	/* blo/bcs */
-	case 0x25:
-		inst_bra8 (((reg_cc & FLAG_C) == FLAG_C), op, &cycles);
-		vecx_intermediateSteps(3);
-		break;
-	/* bne */
-	case 0x26:
-	/* beq */
-	case 0x27:
-		inst_bra8 (((reg_cc & FLAG_Z) == FLAG_Z), op, &cycles);
-		vecx_intermediateSteps(3);
-		break;
-	/* bvc */
-	case 0x28:
-	/* bvs */
-	case 0x29:
-		inst_bra8 (((reg_cc & FLAG_V) == FLAG_V), op, &cycles);
-		vecx_intermediateSteps(3);
-		break;
-	/* bpl */
-	case 0x2a:
-	/* bmi */
-	case 0x2b:
-		inst_bra8 (((reg_cc & FLAG_N) == FLAG_N), op, &cycles);
-		vecx_intermediateSteps(3);
-		break;
-	/* bge */
-	case 0x2c:
-	/* blt */
-	case 0x2d:
-		inst_bra8 (((reg_cc & FLAG_N) == FLAG_N) ^ ((reg_cc & FLAG_V) == FLAG_V), op, &cycles);
-		vecx_intermediateSteps(3);
-		break;
-	/* bgt */
-	case 0x2e:
-	/* ble */
-	case 0x2f:
-		inst_bra8 (((reg_cc & FLAG_Z) == FLAG_Z) | (((reg_cc & FLAG_N) == FLAG_N) ^ ((reg_cc & FLAG_V) == FLAG_V)), op, &cycles);
-		vecx_intermediateSteps(3);
-		break;
-	/* lbra */
-	case 0x16:
-		r = pc_read16 ();
-		reg_pc = (reg_pc+r)&0xffff;
-		vecx_intermediateSteps(5);
-		cycles += 5;
-		break;
-	/* lbsr */
-	case 0x17:
-		r = pc_read16 ();
-		push16 (&reg_s, reg_pc);
-		reg_pc = (reg_pc+r)&0xffff;
-		vecx_intermediateSteps(9);
-		cycles += 9;
-		break;
-	/* bsr */
-	case 0x8d:
-		r = pc_read8 ();
-		push16 (&reg_s, reg_pc);
-		reg_pc = (reg_pc+sign_extend (r))&0xffff;
-		vecx_intermediateSteps(7);
-		cycles += 7;
-		break;
-	/* jsr */
-	case 0x9d:
-		ea = ea_direct ();
-		push16 (&reg_s, reg_pc);
-		vecx_intermediateSteps(7);
-		reg_pc = ea;
-		cycles += 7;
-		break;
-	case 0xad:
-		ea = ea_indexed (&cycles);
-		push16 (&reg_s, reg_pc);
-		reg_pc = ea;
-		vecx_intermediateSteps(7);
-		cycles += 7;
-		break;
-	case 0xbd:
-		ea = ea_extended ();
-		push16 (&reg_s, reg_pc);
-		reg_pc = ea;
-		vecx_intermediateSteps(8);
-		cycles += 8;
-		break;
-	/* leax */
-	case 0x30:
-		reg_x = ea_indexed (&cycles);
-		set_cc (FLAG_Z, test_z16 (reg_x));
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-	/* leay */
-	case 0x31:
-		reg_y = ea_indexed (&cycles);
-		set_cc (FLAG_Z, test_z16 (reg_y));
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-	/* leas */
-	case 0x32:
-		reg_s = ea_indexed (&cycles);
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-	/* leau */
-	case 0x33:
-		reg_u = ea_indexed (&cycles);
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-	/* pshs */
-	case 0x34:
-		inst_psh (pc_read8 (), &reg_s, reg_u, &cycles);
-		vecx_intermediateSteps(5);
-		cycles += 5;
-		break;
-	/* puls */
-	case 0x35:
-		inst_pul (pc_read8 (), &reg_s, &reg_u, &cycles);
-		vecx_intermediateSteps(5);
-		cycles += 5;
-		break;
-	/* pshu */
-	case 0x36:
-		inst_psh (pc_read8 (), &reg_u, reg_s, &cycles);
-		cycles += 5;
-		vecx_intermediateSteps(5);
-		break;
-	/* pulu */
-	case 0x37:
-		inst_pul (pc_read8 (), &reg_u, &reg_s, &cycles);
-		cycles += 5;
-		vecx_intermediateSteps(5);
-		break;
-	/* rts */
-	case 0x39:
-		reg_pc = pull16 (&reg_s);
-		cycles += 5;
-		vecx_intermediateSteps(5);
-		break;
-	/* abx */
-	case 0x3a:
-		reg_x += reg_b & 0xff;
-		cycles += 3;
-		vecx_intermediateSteps(3);
-		break;
-	/* orcc */
-	case 0x1a:
-		reg_cc |= pc_read8 ();
-		cycles += 3;
-		vecx_intermediateSteps(3);
-		break;
-	/* andcc */
-	case 0x1c:
-		reg_cc &= pc_read8 ();
-		vecx_intermediateSteps(3);
-		cycles += 3;
-		break;
-	/* sex */
-	case 0x1d:
-		set_reg_d (sign_extend (reg_b));
-		set_cc (FLAG_N, test_n (reg_a));
-		set_cc (FLAG_Z, test_z16 (get_reg_d ()));
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	/* exg */
-	case 0x1e:
-		inst_exg ();
-		cycles += 8;
-		vecx_intermediateSteps(8);
-		break;
-	/* tfr */
-	case 0x1f:
-		inst_tfr ();
-		vecx_intermediateSteps(6);
-		cycles += 6;
-		break;
-	/* rti */
-	case 0x3b:
-		inst_pul (0x01, &reg_s, &reg_u, &cycles);
-		if (((reg_cc & FLAG_E) == FLAG_E))
-		{
-			inst_pul (0xfe, &reg_s, &reg_u, &cycles);
-		} 
-		else 
-		{
-			inst_pul (0x80, &reg_s, &reg_u, &cycles);
-		}
-
-		vecx_intermediateSteps(3);
-		cycles += 3;
-		break;
-	/* swi */
-	case 0x3f:
-		set_cc (FLAG_E, 1);
-		inst_psh (0xff, &reg_s, reg_u, &cycles);
-		set_cc (FLAG_I, 1);
-		set_cc (FLAG_F, 1);
-        reg_pc = read16 (0xfffa);
-		vecx_intermediateSteps(7);
-        cycles += 7;
-		break;
-	/* sync */
-	case 0x13:
-		irq_status = IRQ_SYNC;
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	/* daa */
-	case 0x19:
-		i0 = reg_a;
-		i1 = 0;
-
-            if ((reg_a & 0x0f) > 0x09 || ((reg_cc & FLAG_H) == FLAG_H)) {
-                i1 |= 0x06;
-            }
-            
-            if ((reg_a & 0xf0) > 0x80 && (reg_a & 0x0f) > 0x09) {
-                i1 |= 0x60;
-            }
-            
-            if ((reg_a & 0xf0) > 0x90 || ((reg_cc & FLAG_C) == FLAG_C)) {
-                i1 |= 0x60;
-            }
-            
-		reg_a = i0 + i1;
-
-		reg_a = (i0 + i1)&0xff;
-		
-		set_cc (FLAG_N, test_n (reg_a));
-		set_cc (FLAG_Z, test_z8 (reg_a));
-		reg_cc = (reg_cc & ~FLAG_V);
-		set_cc (FLAG_C, test_c (i0, i1, reg_a, 0));
-		vecx_intermediateSteps(2);
-		cycles += 2;
-		break;
-	/* cwai */
-	case 0x3c:
-		reg_cc &= pc_read8 ();
-        set_cc (FLAG_E, 1);
-		inst_psh (0xff, &reg_s, reg_u, &cycles);
-		irq_status = IRQ_CWAI;
-		vecx_intermediateSteps(4);
-		cycles += 4;
-		break;
-
-	/* page 1 instructions */
-
-	case 0x10:
-		op = pc_read8 ();
-		switch (op) 
-		{
-		/* lbra */
-		case 0x20:
-		/* lbrn */
-		case 0x21:
-			inst_bra16 (0, op, &cycles);
-			break;
-		/* lbhi */
-		case 0x22:
-		/* lbls */
-		case 0x23:
-			inst_bra16 (get_cc (FLAG_C) | get_cc (FLAG_Z), op, &cycles);
-			break;
-		/* lbhs/lbcc */
-		case 0x24:
-		/* lblo/lbcs */
-		case 0x25:
-			inst_bra16 (get_cc (FLAG_C), op, &cycles);
-			break;
-		/* lbne */
-		case 0x26:
-		/* lbeq */
-		case 0x27:
-			inst_bra16 (get_cc (FLAG_Z), op, &cycles);
-//printf("10 27-> Cycles: %i\n",cycles);			
-			
-			break;
-		/* lbvc */
-		case 0x28:
-		/* lbvs */
-		case 0x29:
-			inst_bra16 (get_cc (FLAG_V), op, &cycles);
-			break;
-		/* lbpl */
-		case 0x2a:
-		/* lbmi */
-		case 0x2b:
-			inst_bra16 (get_cc (FLAG_N), op, &cycles);
-			break;
-		/* lbge */
-		case 0x2c:
-		/* lblt */
-		case 0x2d:
-			inst_bra16 (get_cc (FLAG_N) ^ get_cc (FLAG_V), op, &cycles);
-			break;
-		/* lbgt */
-		case 0x2e:
-		/* lble */
-		case 0x2f:
-			inst_bra16 (get_cc (FLAG_Z) |
-						(get_cc (FLAG_N) ^ get_cc (FLAG_V)), op, &cycles);
-			break;
-		/* cmpd */
-		case 0x83:
-			vecx_intermediateSteps(4);
-			inst_sub16 (get_reg_d (), pc_read16 ());
-			vecx_intermediateSteps(1);
-			cycles += 5;
-			break;
-		case 0x93:
-			ea = ea_direct ();
-			vecx_intermediateSteps(6);
-			inst_sub16 (get_reg_d (), read16_cycloid (ea));
-			vecx_intermediateSteps(1);
-			cycles += 7;
-			break;
-		case 0xa3:
-			ea = ea_indexed (&cycles);
-			vecx_intermediateSteps(6);
-			inst_sub16 (get_reg_d (), read16_cycloid (ea));
-			vecx_intermediateSteps(1);
-			cycles += 7;
-			break;
-		case 0xb3:
-			ea = ea_extended ();
-			vecx_intermediateSteps(7);
-			inst_sub16 (get_reg_d (), read16_cycloid (ea));
-			vecx_intermediateSteps(1);
-			cycles += 8;
-			break;
-		/* cmpy */
-		case 0x8c:
-			inst_sub16 (reg_y, pc_read16 ());
-			vecx_intermediateSteps(5);
-			cycles += 5;
-			break;
-		case 0x9c:
-			ea = ea_direct ();
-			vecx_intermediateSteps(6);
-			inst_sub16 (reg_y, read16 (ea));
-			vecx_intermediateSteps(1);
-			cycles += 7;
-			break;
-		case 0xac:
-			ea = ea_indexed (&cycles);
-			vecx_intermediateSteps(6);
-			inst_sub16 (reg_y, read16 (ea));
-			vecx_intermediateSteps(1);
-			cycles += 7;
-			break;
-		case 0xbc:
-			ea = ea_extended ();
-			vecx_intermediateSteps(7);
-			inst_sub16 (reg_y, read16 (ea));
-			vecx_intermediateSteps(1);
-			cycles += 8;
-			break;
-		/* ldy */
-		case 0x8e:
-			reg_y = pc_read16 ();
-			vecx_intermediateSteps(3);
-			inst_tst16 (reg_y);
-			vecx_intermediateSteps(1);
-			cycles += 4;
-			break;
-		case 0x9e:
-			ea = ea_direct ();
-			vecx_intermediateSteps(5);
-			reg_y = read16 (ea);
-			vecx_intermediateSteps(1);
-			inst_tst16 (reg_y);
-			cycles += 6;
-			break;
-		case 0xae:
-			ea = ea_indexed (&cycles);
-			vecx_intermediateSteps(5);
-			reg_y = read16 (ea);
-			vecx_intermediateSteps(1);
-			inst_tst16 (reg_y);
-			cycles += 6;
-			break;
-		case 0xbe:
-			ea = ea_extended ();
-			vecx_intermediateSteps(6);
-			reg_y = read16 (ea);
-			vecx_intermediateSteps(1);
-			inst_tst16 (reg_y);
-			cycles += 7;
-			break;
-		/* sty */
-		case 0x9f:
-			ea = ea_direct ();
-			vecx_intermediateSteps(4);
-			write16 (ea, reg_y);
-			vecx_intermediateSteps(2);
-			inst_tst16 (reg_y);
-			cycles += 6;
-			break;
-		case 0xaf:
-			ea = ea_indexed (&cycles);
-			vecx_intermediateSteps(4);
-			write16 (ea, reg_y);
-			vecx_intermediateSteps(2);
-			inst_tst16 (reg_y);
-			cycles += 6;
-			break;
-		case 0xbf:
-			ea = ea_extended ();
-			vecx_intermediateSteps(5);
-			write16 (ea, reg_y);
-			vecx_intermediateSteps(2);
-			inst_tst16 (reg_y);
-			cycles += 7;
-			break;
-		/* lds */
-		case 0xce:
-			reg_s = pc_read16 ();
-			vecx_intermediateSteps(3);
-			inst_tst16 (reg_s);
-			vecx_intermediateSteps(1);
-			cycles += 4;
-			break;
-		case 0xde:
-			ea = ea_direct ();
-			vecx_intermediateSteps(5);
-			reg_s = read16 (ea);
-			vecx_intermediateSteps(1);
-			inst_tst16 (reg_s);
-			cycles += 6;
-			break;
-		case 0xee:
-			ea = ea_indexed (&cycles);
-			vecx_intermediateSteps(5);
-			reg_s = read16 (ea);
-			vecx_intermediateSteps(1);
-			inst_tst16 (reg_s);
-			cycles += 6;
-			break;
-		case 0xfe:
-			ea = ea_extended ();
-			vecx_intermediateSteps(6);
-			reg_s = read16 (ea);
-			vecx_intermediateSteps(1);
-			inst_tst16 (reg_s);
-			cycles += 7;
-			break;
-		/* sts */
-		case 0xdf:
-			ea = ea_direct ();
-			vecx_intermediateSteps(4);
-			write16 (ea, reg_s);
-			vecx_intermediateSteps(2);
-			inst_tst16 (reg_s);
-			cycles += 6;
-			break;
-		case 0xef:
-			ea = ea_indexed (&cycles);
-			vecx_intermediateSteps(4);
-			write16 (ea, reg_s);
-			vecx_intermediateSteps(2);
-			inst_tst16 (reg_s);
-			cycles += 6;
-			break;
-		case 0xff:
-			ea = ea_extended ();
-			vecx_intermediateSteps(5);
-			write16 (ea, reg_s);
-			vecx_intermediateSteps(2);
-			inst_tst16 (reg_s);
-			cycles += 7;
-			break;
-		/* swi2 */
-		case 0x3f:
-			set_cc (FLAG_E, 1);
-			inst_psh (0xff, &reg_s, reg_u, &cycles);
-		    reg_pc = read16 (0xfff4);
-			vecx_intermediateSteps(8);
-			cycles += 8;
-			break;
-		default:
-			break;
-		}
-
-		break;
-
-	/* page 2 instructions */
-
-	case 0x11:
-		op = pc_read8 ();
-
-		switch (op) {
-		/* cmpu */
-		case 0x83:
-			vecx_intermediateSteps(4);
-			inst_sub16 (reg_u, pc_read16 ());
-			vecx_intermediateSteps(1);
-			cycles += 5;
-			break;
-		case 0x93:
-			ea = ea_direct ();
-			vecx_intermediateSteps(6);
-			inst_sub16 (reg_u, read16 (ea));
-			vecx_intermediateSteps(1);
-			cycles += 7;
-			break;
-		case 0xa3:
-			ea = ea_indexed (&cycles);
-			vecx_intermediateSteps(6);
-			inst_sub16 (reg_u, read16 (ea));
-			vecx_intermediateSteps(1);
-			cycles += 7;
-			break;
-		case 0xb3:
-			ea = ea_extended ();
-			vecx_intermediateSteps(7);
-			inst_sub16 (reg_u, read16 (ea));
-			vecx_intermediateSteps(1);
-			cycles += 8;
-			break;
-		/* cmps */
-		case 0x8c:
-			vecx_intermediateSteps(4);
-			inst_sub16 (reg_s, pc_read16 ());
-			vecx_intermediateSteps(1);
-			cycles += 5;
-			break;
-		case 0x9c:
-			ea = ea_direct ();
-			vecx_intermediateSteps(6);
-			inst_sub16 (reg_s, read16 (ea));
-			vecx_intermediateSteps(1);
-			cycles += 7;
-			break;
-		case 0xac:
-			ea = ea_indexed (&cycles);
-			vecx_intermediateSteps(6);
-			inst_sub16 (reg_s, read16 (ea));
-			vecx_intermediateSteps(1);
-			cycles += 7;
-			break;
-		case 0xbc:
-			ea = ea_extended ();
-			vecx_intermediateSteps(6);
-			inst_sub16 (reg_s, read16 (ea));
-			vecx_intermediateSteps(2);
-			cycles += 8;
-			break;
-		/* swi3 */
-		case 0x3f:
-			set_cc (FLAG_E, 1);
-			inst_psh (0xff, &reg_s, reg_u, &cycles);
-		    reg_pc = read16 (0xfff2);
-			vecx_intermediateSteps(8);
-			cycles += 8;
-			break;
-		default:
-			break;
-		}
-
-		break;
-
-	default:
-
-		break;
-	}
-
-	return cycles;
-}
-
-
-
-
 

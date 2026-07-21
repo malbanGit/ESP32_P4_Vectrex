@@ -3,7 +3,7 @@
 //#define NO_AUDIO 1 just be quiet!
 
 #define VECX_DEBUG 1
-#define MAX_EMU_FPS 50
+#define MAX_EMU_FPS 150
 #define ENABLE_OVERLAYS 1
 
 #define LINE_WIDTH 1

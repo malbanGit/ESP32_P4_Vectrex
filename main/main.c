@@ -320,6 +320,9 @@ DRAM_ATTR static int          s_build_frame_index = 0;   // Slot, in den der Emu
  * Built once at load time with the then-current alphaAdjust.              */
 uint8_t       *s_overlay_pal = NULL;
 DRAM_ATTR uint8_t  s_overlay_palette[128][3];
+DRAM_ATTR uint8_t  s_overlay_palette_yuv[128][3];    /* {Y, U, V} full-range for YUV draw */
+DRAM_ATTR uint8_t  s_overlay_palette_yuv_ea[128][3]; /* {Y, U, V} ea-scaled for YUV undraw */
+
 DRAM_ATTR int      s_overlay_pal_n   = 0;
 DRAM_ATTR uint8_t  s_overlay_alpha_val = GLOBAL_OVERLAY_ALPHA;  /* representative raw alpha */
 DRAM_ATTR int      s_ov_off_x = 0;             /* active region x offset   */
@@ -934,114 +937,6 @@ IRAM_ATTR static void emulator_task(void *arg)
     }
 }
 
-// kept for testing only
-// asm versions are about 15% faster!
-IRAM_ATTR static inline void drawLine_raw_c(int x0, int y0, int x1, int y1, uint8_t brightness)
-{
-#if VIDEO_FB_YUV422 == 1
-    if (brightness == 0) 
-    {
-        if (s_overlay == NULL)
-        {
-            undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
-        }
-        else        
-        {
-            undraw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
-        }
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-            {
-                if (s_overlay == NULL)
-                {
-                    draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-                }
-                else
-                {
-                    draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-                }
-            }
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
-        if (b>0)
-        {
-            if (s_overlay == NULL)
-            {
-                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-            }
-            else
-            {
-                draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-            }
-        }
-    }
-
-#else
-    if (brightness == 0) 
-    {
-        if (s_overlay == NULL)
-        {
-            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
-        }
-        else        
-        {
-            undraw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
-
-        }
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-            {
-                if (s_overlay == NULL)
-                {
-                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-                }
-                else
-                {
-                    draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-                }
-            }
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
-        if (b>0)
-        {
-            if (s_overlay == NULL)
-            {
-                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-            }
-            else
-            {
-                draw_line_rgb888_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-            }
-        }
-    }
-    #endif
-}
-
-IRAM_ATTR static inline void undraw_previous_fb_c(int fb_index)
-{
-    int count = s_fb_line_count[fb_index];
-//    ESP_LOGI(TAG, "LINES TO ERASE: %i", count);
-
-    for (int i = 0; i < count; ++i) {
-        vectrex_line_t *l = &s_fb_lines[fb_index][i];
-        // Erase the line (brightness 0)
-        drawLine_raw_c(l->x0, l->y0, l->x1, l->y1, 0);
-    }
-
-    s_fb_line_count[fb_index] = 0;
-}
 IRAM_ATTR static inline uint32_t line_hash_key(const vectrex_line_t *l)
 {
     uint32_t h = (uint32_t)l->x0 * 2654435761u;
@@ -1328,9 +1223,6 @@ IRAM_ATTR static void renderer_task(void *arg)
         fs->state = FRAME_FREE;
     }
 }
-
-
-IRAM_ATTR void e8910_callback(void *userdata, int16_t *stream, int length);// from e8910.c
 
 // audio task is now running in core 1 with the emulation
 // if it ran together with the renderer - interferences occured massively!
@@ -1787,6 +1679,28 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
                 }
             }
         }
+        /* Build YUV palette caches used by the YUV422 distance-field renderer. */
+        {
+            int ea = s_overlay_alpha_val;
+            for (int i = 0; i < 128; i++) {
+                int b = s_overlay_palette[i][0];
+                int g = s_overlay_palette[i][1];
+                int r = s_overlay_palette[i][2];
+                /* full-range YUV for draw blending */
+                s_overlay_palette_yuv[i][0] = (uint8_t)((77*r + 150*g + 29*b) >> 8);
+                int u = 128 + ((-43*r - 85*g + 128*b) >> 8);
+                int v = 128 + ((128*r - 107*g - 21*b) >> 8);
+                s_overlay_palette_yuv[i][1] = (uint8_t)(u < 0 ? 0 : u > 255 ? 255 : u);
+                s_overlay_palette_yuv[i][2] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+                /* ea-scaled YUV for undraw restore */
+                int bs = (b * ea) >> 8, gs = (g * ea) >> 8, rs = (r * ea) >> 8;
+                s_overlay_palette_yuv_ea[i][0] = (uint8_t)((77*rs + 150*gs + 29*bs) >> 8);
+                int ue = 128 + ((-43*rs - 85*gs + 128*bs) >> 8);
+                int ve = 128 + ((128*rs - 107*gs - 21*bs) >> 8);
+                s_overlay_palette_yuv_ea[i][1] = (uint8_t)(ue < 0 ? 0 : ue > 255 ? 255 : ue);
+                s_overlay_palette_yuv_ea[i][2] = (uint8_t)(ve < 0 ? 0 : ve > 255 ? 255 : ve);
+            }
+        }
         ESP_LOGI(TAG, "overlay pal: %d colours, alpha_val=%d", s_overlay_pal_n, s_overlay_alpha_val);
     }
     drawOverlayPal(s_fb_front);
@@ -1859,7 +1773,7 @@ void app_main(void)
             printf("ROM Name in ini: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
 
-cartSize = load_rom_file("bedlam.BIN", cartData, sizeof(cartData));
+cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
 //cartSize = load_rom_file("VBLADE.NIB", cartData, sizeof(cartData));
 //cartSize = load_rom_file("AKLABETH.BIN", cartData, sizeof(cartData));
 //cartSize = load_rom_file("BERZERKU.BIN", cartData, sizeof(cartData));
@@ -1894,9 +1808,9 @@ cartSize = load_rom_file("bedlam.BIN", cartData, sizeof(cartData));
     frames_init();
 
     if (mode == VIDEO_OUT_HDMI)
-        loadOverlayRGB("/sdcard/Bedlam.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+        loadOverlayRGB("/sdcard/KARL.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
     else
-        loadOverlayRGB("/sdcard/Bedlam.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+        loadOverlayRGB("/sdcard/KARL.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
 
     ESP_LOGI(TAG, "Start vectrex tasks");
 

@@ -507,6 +507,7 @@ char  *ov[]={
 //IRAM_ATTR 
 IRAM_ATTR static einline void readevents()
 {
+return;
 	// Public API:
 	extern IRAM_ATTR bool isKeyDown(uint8_t hid_code);
 	extern IRAM_ATTR bool isAsciiDown(char c);
@@ -2391,11 +2392,7 @@ IRAM_ATTR void vecxSteps (long icycles)
 */
 
 
-
-
-
-
-IRAM_ATTR static einline void vecx_intermediateSteps(int count)
+IRAM_ATTR void vecx_intermediateSteps(int count)
 {
   for (int c = 0; c < count; c++)
   {
@@ -2406,91 +2403,11 @@ IRAM_ATTR static einline void vecx_intermediateSteps(int count)
 	 stepsDone++;
      cyclesRunning++;
 
+	}
 
-#ifdef FLASH_SUPPORT
-
-        if ((idSequenceAddress == 0) && (addressBUS == 0x5555)) idSequenceAddress = 1;
-        else if ((idSequenceAddress == 1) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
-        {
-            if (addressBUS == 0x2aaa) idSequenceAddress = 2;
-        }
-        else if ((idSequenceAddress == 2) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
-        {
-            if (addressBUS == 0x5555) idSequenceAddress = 3;
-        }
-        else if ((idSequenceAddress == 3) && (addressBUS == 0x5555) )
-        {
-            ; 
-        }
-        else if ((idSequenceData == 3) && (idSequenceAddress == 3)  )
-        {
-            ;
-        }
-        else idSequenceAddress = 0;
-
-        if ((idSequenceData == 0) && (dataBUS == 0xaa))
-        {
-            idSequenceData = 1;
-        }
-        else if ((idSequenceData == 1) && ( (dataBUS == 0xaa)||(dataBUS == 0x55) ))
-        {
-            if (dataBUS == 0x55) idSequenceData = 2;
-        }
-        else if ((idSequenceData == 2) && ( (dataBUS == 0x55)||(dataBUS == 0x90) ))
-        {
-            if (dataBUS == 0x90) idSequenceData = 3;
-        }
-        else if ((idSequenceData == 3) && (dataBUS == 0x90) )
-        {
-            ;
-        }
-        else if ((idSequenceData == 3) && (idSequenceAddress == 3)  )
-        {
-            // log.addLog("Id Sequence on", INFO);
-        }
-        else idSequenceData = 0;
-
-        if ((idSequenceAddress == 3) && (idSequenceData == 3))
-        {
-            if (dataBUS==0xf0)
-            {
-                idSequenceAddress = 0;
-                idSequenceData = 0;
-                // log.addLog("Id Sequence off", INFO);
-            }
-        }
-
-        if (flashSupport>1) // watch lines!
-        {
-            checkEraseSequence();
-            checkWriteSequence();
-        }
-#endif		
-  }
-}
-
-// if following is enabled 
-// Karl Quappe does not display correctly
-IRAM_ATTR static einline void vecx_intermediateStepsUC(int count)
-{
-	/*
-  for (int c = 0; c < count; c++)
-  {
-	 via_sstep0 ();
-	 timerDoStep();
-	 alg_sstep ();
-//			via_sstep1 (); // not needed without lightpen / imager support
-     cyclesRunning++;
-  }
-	 */
 }
 
 
-
-
-
-
-#include "e6809.i"
 
 
 
@@ -2509,13 +2426,12 @@ IRAM_ATTR void vecx_emu (long cycles)
       icycles = e6809_sstep (via_ifr & 0x80, 0);
 
 	  
-	  vecx_intermediateSteps(icycles-stepsDone);
 
 
 	  if (reg_pc == 0xf1a2) thisWaitRecal = 1;
 
-/*
-		for (int c = 0; c < icycles; c++) {
+
+		for (int c = 0; c < icycles-stepsDone; c++) {
 			cyclesRunning++;
 			via_sstep0 ();
 		    timerDoStep();
@@ -2584,7 +2500,7 @@ IRAM_ATTR void vecx_emu (long cycles)
 			}
 #endif		
 		}
-*/
+
 		cycles -= (long) icycles;
 		fcycles -= (long) icycles;
 		int doSync = 0;

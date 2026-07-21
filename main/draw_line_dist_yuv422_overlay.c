@@ -6,7 +6,7 @@
  * compare) instead of the Q16 mulhu sequence.  Only glow pixels still need the
  * full 64-bit divide-by-len2 path.
  */
-
+ 
 #include <stdint.h>
 #include <stddef.h>
 #include "esp_attr.h"
@@ -19,6 +19,8 @@ extern const uint8_t gauss_lut[];
 
 extern uint8_t *s_overlay_pal;
 extern uint8_t  s_overlay_palette[128][3];
+extern uint8_t  s_overlay_palette_yuv[128][3];
+extern uint8_t  s_overlay_palette_yuv_ea[128][3];
 extern uint8_t  s_overlay_alpha_val;
 extern int      s_ov_off_x;
 extern int      s_ov_off_y;
@@ -43,23 +45,6 @@ static inline uint32_t cap_d2_q16(int apx, int apy)
     uint32_t ax = (uint32_t)(apx << 8);
     uint32_t ay = (uint32_t)(apy << 8);
     return ax * ax + ay * ay;
-}
-
-static inline int bgr_to_y(int b, int g, int r)
-{
-    return (77 * r + 150 * g + 29 * b) >> 8;
-}
-
-static inline int bgr_to_u(int b, int g, int r)
-{
-    int u = 128 + ((-43 * r - 85 * g + 128 * b) >> 8);
-    return u < 0 ? 0 : (u > 255 ? 255 : u);
-}
-
-static inline int bgr_to_v(int b, int g, int r)
-{
-    int v = 128 + ((128 * r - 107 * g - 21 * b) >> 8);
-    return v < 0 ? 0 : (v > 255 ? 255 : v);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -132,8 +117,7 @@ IRAM_ATTR void draw_line_yuv422_overlay_c(
         for (int px = px_lo_r; px <= px_hi_r; px++) {
             uint8_t pidx = row_pal[px];
             if (!(pidx & 0x80)) goto px_next;
-            const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-            int b_col = c[0], g_col = c[1], r_col = c[2];
+            const uint8_t *yuv = s_overlay_palette_yuv[pidx & 0x7F];
 
             uint32_t d2_q16 = 0;
             int in_beam = 0;
@@ -145,7 +129,9 @@ IRAM_ATTR void draw_line_yuv422_overlay_c(
                 d2_q16  = cap_d2_q16(px - x1, py - y1);
                 in_beam = (d2_q16 <= beam_r2_q16);
             } else {
-                uint32_t csq = (uint32_t)((int32_t)cross * cross);
+                uint64_t csq64 = (uint64_t)((int64_t)cross * cross);
+                if (csq64 > 0xFFFFFFFFu) goto px_next;
+                uint32_t csq = (uint32_t)csq64;
                 if (csq <= beam_r2_len2) {
                     in_beam = 1;
                 } else {
@@ -168,12 +154,12 @@ IRAM_ATTR void draw_line_yuv422_overlay_c(
 
             {
                 uint8_t *dst    = row_fb + px * 2;
-                int y_contrib   = (bgr_to_y(b_col, g_col, r_col) * contrib) >> 8;
+                int y_contrib   = (yuv[0] * contrib) >> 8;
                 int yv          = dst[0] + y_contrib;
                 dst[0]          = (uint8_t)(yv > 255 ? 255 : yv);
                 int u_off       = (px & 1) ? -1 : 1;
-                int u_delta     = ((bgr_to_u(b_col, g_col, r_col) - 128) * contrib) >> 8;
-                int v_delta     = ((bgr_to_v(b_col, g_col, r_col) - 128) * contrib) >> 8;
+                int u_delta     = ((yuv[1] - 128) * contrib) >> 8;
+                int v_delta     = ((yuv[2] - 128) * contrib) >> 8;
                 int uv          = (int)dst[u_off]     + u_delta;
                 int vv          = (int)dst[u_off + 2] + v_delta;
                 dst[u_off]      = (uint8_t)(uv < 0 ? 0 : uv > 255 ? 255 : uv);
@@ -220,8 +206,6 @@ IRAM_ATTR void undraw_line_yuv422_overlay_c(
     int cross_row = dx * (by0 - y0) - dy * (bx0 - x0);
     int dot_row   = (bx0 - x0) * dx + (by0 - y0) * dy;
 
-    int ea = (int)s_overlay_alpha_val;
-
     int udx = dx < 0 ? -dx : dx, udy = dy < 0 ? -dy : dy;
     int ud_half_w  = (udy > 0) ? Rb * (udx + udy) / udy + 1 : 0x7FFFFFFF;
     int ud_px_lo_g = bx0 > s_ov_off_x ? bx0 : s_ov_off_x;
@@ -265,7 +249,9 @@ IRAM_ATTR void undraw_line_yuv422_overlay_c(
                 d2_q16  = cap_d2_q16(px - x1, py - y1);
                 in_beam = (d2_q16 <= beam_r2_q16);
             } else {
-                uint32_t csq = (uint32_t)((int32_t)cross * cross);
+                uint64_t csq64 = (uint64_t)((int64_t)cross * cross);
+                if (csq64 > 0xFFFFFFFFu) goto ud_px_next;
+                uint32_t csq = (uint32_t)csq64;
                 if (csq <= beam_r2_len2) {
                     in_beam = 1;
                 } else {
@@ -287,15 +273,12 @@ IRAM_ATTR void undraw_line_yuv422_overlay_c(
             {
                 uint8_t pidx = row_pal[px];
                 if (pidx & 0x80) {
-                    const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-                    int b_sc = (c[0] * ea) >> 8;
-                    int g_sc = (c[1] * ea) >> 8;
-                    int r_sc = (c[2] * ea) >> 8;
+                    const uint8_t *yuv = s_overlay_palette_yuv_ea[pidx & 0x7F];
                     uint8_t *dst = row_fb + px * 2;
-                    dst[0] = (uint8_t)bgr_to_y(b_sc, g_sc, r_sc);
+                    dst[0] = yuv[0];
                     int u_off      = (px & 1) ? -1 : 1;
-                    dst[u_off]     = (uint8_t)bgr_to_u(b_sc, g_sc, r_sc);
-                    dst[u_off + 2] = (uint8_t)bgr_to_v(b_sc, g_sc, r_sc);
+                    dst[u_off]     = yuv[1];
+                    dst[u_off + 2] = yuv[2];
                 }
             }
 

@@ -12,7 +12,7 @@
  *   · ea (s_overlay_alpha_val) checked once at function entry; no per-pixel reload.
  *   · pal_ptr and fb_ptr advanced incrementally (+1 / +2); no per-pixel multiply.
  *   · BT.601 full-range BGR→YUV inlined; no function-call overhead.
- *
+ * 
  * YUV422 (YUYV) pixel layout: [Y0][U][Y1][V] per 4-byte pair, 2 bytes/pixel.
  *   Y for pixel px : row_fb[px*2 + 0]
  *   U (pair)  : row_fb[(px&~1)*2 + 1]   (even: dst[+1], odd: dst[-1])
@@ -168,7 +168,7 @@ undraw_line_yuv422_overlay:
 
     /* Load overlay globals */
     la    t0, s_overlay_pal; lw s7, 0(t0)
-    la    s8, s_overlay_palette
+    la    s8, s_overlay_palette_yuv_ea  /* ea-prescaled YUV palette for undraw restore */
     la    t0, s_overlay_alpha_val; lbu s6, 0(t0)
     la    t0, s_ov_off_x; lw s9, 0(t0)
     la    t0, s_ov_w;     lw s10, 0(t0)
@@ -332,6 +332,8 @@ undraw_line_yuv422_overlay:
     bge   t3, a6, .Luydf_ecap
 
     mul   a0, t2, t2
+    mulh  a1, t2, t2               /* upper 32 bits of cross^2 */
+    bnez  a1, .Luydf_pxskip        /* overflow → way outside glow, skip */
     lw    a1, UYDF_BR2L(sp)
     bgeu  a1, a0, .Luydf_restore   /* csq <= beam_r2_len2 → in beam */
     lw    a1, UYDF_INV(sp)
@@ -376,41 +378,19 @@ undraw_line_yuv422_overlay:
     lbu   a0, 0(t6)                /* pidx */
     andi  a1, a0, 0x80; beqz a1, .Luydf_pxskip   /* transparent */
     andi  a0, a0, 0x7f
-    slli  a1, a0, 1; add a1, a1, a0; add a1, s8, a1   /* &palette[idx] */
+    slli  a1, a0, 1; add a1, a1, a0; add a1, s8, a1   /* &yuv_ea[idx] */
 
-    lbu   a2, 2(a1); mul a2, a2, s6; srli a2, a2, 8   /* r_sc */
-    lbu   a3, 1(a1); mul a3, a3, s6; srli a3, a3, 8   /* g_sc */
-    lbu   a4, 0(a1); mul a4, a4, s6; srli a4, a4, 8   /* b_sc */
+    lbu   a2, 0(a1)                /* Y (ea-scaled, precomputed) */
+    sb    a2, 0(t1)
 
-    /* Y = (77*r + 150*g + 29*b) >> 8 */
-    li    a0, 77;   mul a0, a0, a2
-    li    a1, 150;  mul a1, a1, a3;  add a0, a0, a1
-    li    a1, 29;   mul a1, a1, a4;  add a0, a0, a1
-    srli  a0, a0, 8
-    sb    a0, 0(t1)
+    andi  a2, t4, 1                /* u_ptr: t1+1 even, t1-1 odd */
+    slli  a2, a2, 1
+    li    a3, 1; sub a3, a3, a2; add a3, a3, t1
 
-    /* u_ptr: t1-1 for odd px, t1+1 for even px */
-    andi  a0, t4, 1
-    slli  a0, a0, 1
-    li    a1, 1;  sub a1, a1, a0;  add a1, a1, t1   /* a1 = u_ptr */
-
-    /* U = 128 + (128*b - 43*r - 85*g) >> 8 */
-    slli  a0, a4, 7
-    li    t0, 43;   mul t0, t0, a2;  sub a0, a0, t0
-    li    t0, 85;   mul t0, t0, a3;  sub a0, a0, t0
-    srai  a0, a0, 8;  addi a0, a0, 128
-    bge   a0, zero, 1f;  li a0, 0
-1:  li    t0, 255;  blt a0, t0, 2f;  mv a0, t0
-2:  sb    a0, 0(a1)
-
-    /* V = 128 + (128*r - 107*g - 21*b) >> 8 */
-    slli  a0, a2, 7
-    li    t0, 107;  mul t0, t0, a3;  sub a0, a0, t0
-    li    t0, 21;   mul t0, t0, a4;  sub a0, a0, t0
-    srai  a0, a0, 8;  addi a0, a0, 128
-    bge   a0, zero, 1f;  li a0, 0
-1:  li    t0, 255;  blt a0, t0, 2f;  mv a0, t0
-2:  sb    a0, 2(a1)
+    lbu   a2, 1(a1)                /* U (ea-scaled, precomputed) */
+    sb    a2, 0(a3)
+    lbu   a2, 2(a1)                /* V (ea-scaled, precomputed) */
+    sb    a2, 2(a3)
 
 .Luydf_pxskip:
     addi  t6, t6, 1
@@ -535,7 +515,7 @@ draw_line_yuv422_overlay:
     /* Load palette globals */
     la    t0, s_overlay_pal; lw s7, 0(t0)
 
-    la    s8, s_overlay_palette
+    la    s8, s_overlay_palette_yuv      /* precomputed {Y,U,V} palette for draw */
     la    t0, s_ov_off_x;  lw s9,  0(t0)
     la    t0, s_ov_w;      lw s10, 0(t0)
     la    t0, s_ov_off_y;  lw t1, 0(t0);  sw t1, DF_OFFSY(sp)
@@ -729,6 +709,8 @@ draw_line_yuv422_overlay:
     bge   t3, a6, .Ldyv_pal_ecap
 
     mul   a0, t2, t2
+    mulh  a1, t2, t2               /* upper 32 bits of cross^2 */
+    bnez  a1, .Ldyv_pal_skip       /* overflow → way outside glow, skip */
     lw    a1, DF_BR2L(sp)
     bgeu  a1, a0, .Ldyv_pal_in_beam /* csq <= beam_r2_len2 → in beam */
     lw    a1, DF_INV(sp)
@@ -775,51 +757,35 @@ draw_line_yuv422_overlay:
 .Ldyv_pal_write:
     /* a0=contrib, t0=palette_idx, t1=fb_ptr, t4=px */
 
-    /* Palette lookup: a1 = &palette[idx] */
+    /* YUV palette lookup: a1 = &palette_yuv[idx] — {Y, U, V} precomputed */
     slli  a1, t0, 1; add a1, a1, t0; add a1, s8, a1
 
-    /* Load R, G, B (unscaled palette colors) */
-    lbu   a2, 2(a1)                 /* r */
-    lbu   a3, 1(a1)                 /* g */
-    lbu   a4, 0(a1)                 /* b */
+    lbu   a2, 0(a1)                 /* Y */
+    lbu   a3, 1(a1)                 /* U */
+    lbu   a4, 2(a1)                 /* V */
 
-    /* Y_full = (77*r + 150*g + 29*b) >> 8 */
-    li    a5, 77;   mul a5, a5, a2
-    li    t0, 150;  mul t0, t0, a3;  add a5, a5, t0
-    li    t0, 29;   mul t0, t0, a4;  add a5, a5, t0
-    srli  a5, a5, 8                 /* a5 = Y_full */
-
-    /* y_contrib = Y_full * contrib >> 8 */
-    mul   a5, a5, a0
-    srli  a5, a5, 8
-
-    /* dst[0] += y_contrib  (additive, saturating at 255) */
-    lbu   t0, 0(t1)
-    add   a5, a5, t0
+    /* y_contrib = Y * contrib >> 8; dst[0] += y_contrib (saturating) */
+    mul   a5, a2, a0;  srli a5, a5, 8
+    lbu   t0, 0(t1);   add a5, a5, t0
     li    t0, 255;  blt a5, t0, 1f;  mv a5, t0
 1:  sb    a5, 0(t1)
 
-    /* u_ptr = t1-1 for odd px, t1+1 for even px; U at u_ptr[0], V at u_ptr[2].
-     * Mirrors RGB additive: U-128 += (U_full-128)*contrib/256 for every pixel. */
+    /* u_ptr = t1+1 for even px, t1-1 for odd px */
     andi  t0, t4, 1
     slli  t0, t0, 1
     li    a5, 1;  sub a5, a5, t0;  add a5, a5, t1   /* a5 = u_ptr */
 
-    /* U additive delta = (128*b - 43*r - 85*g) * contrib >> 16 */
-    slli  t0, a4, 7
-    li    a1, 43;   mul a1, a1, a2;  sub t0, t0, a1
-    li    a1, 85;   mul a1, a1, a3;  sub t0, t0, a1
-    mul   t0, t0, a0;  srai t0, t0, 16   /* signed u_delta */
+    /* U: (U-128)*contrib >> 8  (signed delta, clamp 0-255) */
+    addi  a3, a3, -128
+    mul   t0, a3, a0;  srai t0, t0, 8
     lbu   a1, 0(a5);   add a1, a1, t0
     bge   a1, zero, 1f;  li a1, 0
 1:  li    t0, 255;  blt a1, t0, 2f;  mv a1, t0
 2:  sb    a1, 0(a5)
 
-    /* V additive delta = (128*r - 107*g - 21*b) * contrib >> 16 */
-    slli  t0, a2, 7
-    li    a1, 107;  mul a1, a1, a3;  sub t0, t0, a1
-    li    a1, 21;   mul a1, a1, a4;  sub t0, t0, a1
-    mul   t0, t0, a0;  srai t0, t0, 16   /* signed v_delta */
+    /* V: (V-128)*contrib >> 8  (signed delta, clamp 0-255) */
+    addi  a4, a4, -128
+    mul   t0, a4, a0;  srai t0, t0, 8
     lbu   a1, 2(a5);   add a1, a1, t0
     bge   a1, zero, 1f;  li a1, 0
 1:  li    t0, 255;  blt a1, t0, 2f;  mv a1, t0
