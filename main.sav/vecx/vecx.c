@@ -2506,7 +2506,7 @@ IRAM_ATTR void vecx_emu (long cycles)
 		stepsDone = 0;
 
 //      icycles = e6809_sstep (via_ifr & 0x80, 0);
-      icycles = e6809_sstep (via_ifr & 0x80, 0);
+      icycles = e6809_sstep_old (via_ifr & 0x80, 0);
 
 	  
 	  vecx_intermediateSteps(icycles-stepsDone);

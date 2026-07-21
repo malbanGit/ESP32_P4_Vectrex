@@ -8,17 +8,6 @@ extern int SCREEN_HEIGHT;
 
 
 /*
-1) 6909 to slow in new version
-Karl Quappe 44 statt 50 fps in emulation
-
-testen welche instruction "zwischenstep" brauchen und dann zruückgehen?
-
-
-2) dann die YUV Paletten variante!
-
-
-
-
 Die genau Core hat ein problem mit Karl Quappe läuft nicht mehr richtig!
 
 
