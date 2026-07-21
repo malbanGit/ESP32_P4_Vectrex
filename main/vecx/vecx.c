@@ -32,10 +32,6 @@ extern  unsigned char cartData[MAX_CART_SIZE];
 
 
 
-DRAM_ATTR static int stepsDone = 0;
-
-
-
 DRAM_ATTR static long xChange = 0;
 DRAM_ATTR static long rChange = 0;
 
@@ -501,13 +497,12 @@ char  *ov[]={
 	"/sdcard/BEDLAM.PNG",
 	"/sdcard/CASTLE.PNG",
 	"/sdcard/COSMIC.PNG"
-};
+}; 
  esp_err_t loadOverlayRGB(char * n, int w, int h);
 
 //IRAM_ATTR 
 IRAM_ATTR static einline void readevents()
 {
-return;
 	// Public API:
 	extern IRAM_ATTR bool isKeyDown(uint8_t hid_code);
 	extern IRAM_ATTR bool isAsciiDown(char c);
@@ -769,13 +764,6 @@ void resize(int width, int height){
 
 	scl_factorx = ALG_MAX_X / width;
 	scl_factory = ALG_MAX_Y / height;
-
-
-	offx = (width - ALG_MAX_X / scl_factorx) / 2;
-	offy = (height - ALG_MAX_Y / scl_factory) / 2;
-
-	offx = (  ALG_MAX_X / scl_factorx) / 2;
-	offy = (  ALG_MAX_Y / scl_factory) / 2;
 	offx = (SCREEN_WIDTH-width)/2;
 	offy = (SCREEN_HEIGHT-height)/2;
 }
@@ -787,18 +775,15 @@ int vecx_init()
 		//cartData
 		// a cartridge was loaded!
 	}
-	if (mode == VIDEO_OUT_HDMI)
-	{
+	#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
 		SCREEN_HEIGHT = LCD_V_RES;
 		SCREEN_WIDTH = LCD_H_RES;
 		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
-	}
-	else
-	{
+	#else
 		SCREEN_HEIGHT = LCD_H_RES;
 		SCREEN_WIDTH = LCD_V_RES;
 		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
-	}
+	#endif
 
 	vecx_reset();
 	e8910_init_sound();
@@ -815,7 +800,6 @@ IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, 
 		color = (int)(((double)color)*degradePercent);
 	}
 
-//	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
 	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
 	return;
 }
@@ -1231,11 +1215,10 @@ static IRAM_ATTR einline void timerDoStep()
 		}
 		node = node->next;
 	}
-#if VECX_DEBUG == 1
-	if (doRamp>1) printf("DOUBLE RAMP!\n");
-	if (doInt>1) printf("DOUBLE INT!\n");
-	if (doMUL>1) printf("DOUBLE MULTI!\n");
-#endif
+//	if (doRamp>1) printf("DOUBLE RAMP!\n");
+//	if (doInt>1) printf("DOUBLE INT!\n");
+//	if (doMUL>1) printf("DOUBLE MULTI!\n");
+
 	if (doRamp>0) doCheckRamp(0);
 	if (doInt>0) int_update ();
 	if (doMUL>0) doCheckMultiplexer();
@@ -1286,7 +1269,7 @@ static inline __attribute__((always_inline, hot)) void snd_update(int command)
 	}
 }
 
-IRAM_ATTR unsigned char read8 (unsigned address)
+IRAM_ATTR unsigned char read8VIA (unsigned address)
 {
    unsigned char data = 0;
 
@@ -1453,7 +1436,7 @@ IRAM_ATTR unsigned char read8 (unsigned address)
 }
 
 
-IRAM_ATTR void write8 (unsigned address, unsigned char data)
+IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
 {
    /* rom */
 	if ((address & 0xe000) == 0xe000) { }
@@ -1798,7 +1781,6 @@ timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
 }
 
 
-
 void vecx_reset (void)
 {
 	unsigned r;
@@ -1880,8 +1862,8 @@ void vecx_reset (void)
 
 	syncImpulse = 0;
 	fcycles = FCYCLES_INIT;
-	e6809_read8 = read8;
-	e6809_write8 = write8;
+	e6809_read8 = read8VIA;
+	e6809_write8 = write8VIA;
 
 	e6809_reset ();
 	currentPB6 = 1;
@@ -1906,7 +1888,6 @@ void vecx_reset (void)
 	}
 	TimerList_init();
 	cyclesRunning = 0;
-	stepsDone = 0;
 
 	e6809_reset ();
 }
@@ -1966,17 +1947,6 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
             if (via_t2int) 
             {
                 via_ifr |= 0x20;
-
-				if ((via_ifr & 0x7f) & (via_ier & 0x7f))
-				{
-					via_ifr |= 0x80;
-				}
-				else
-				{
-					via_ifr &= 0x7f;
-				}
-
-
                 int_update();
                 via_t2int = 0;
                 syncImpulse = 1;
@@ -2189,14 +2159,14 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 			rampOffFraction = false;
 			alg_curr_x += (makeSigned(alg_xsh)*(rampOffFractionValue))/8;
 			alg_curr_y += - (makeSigned(alg_ysh)*(rampOffFractionValue))/8;
-                if (alg_vectoring == 1 && alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y) 
-                {
-                    /* we're vectoring ... current point is still within limits so
-                     * extend the current vector.
-                     */
-                    alg_vector_x1 = (int)alg_curr_x;
-                    alg_vector_y1 = (int)alg_curr_y;
-                }  
+			if (alg_vectoring == 1 && alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y) 
+			{
+				/* we're vectoring ... current point is still within limits so
+					* extend the current vector.
+					*/
+				alg_vector_x1 = (int)alg_curr_x;
+				alg_vector_y1 = (int)alg_curr_y;
+			}  
 		}
 	}
 
@@ -2389,10 +2359,10 @@ IRAM_ATTR void vecxSteps (long icycles)
 		e8910_tick ();
 	}
 }
+
 */
-
-
-IRAM_ATTR void vecx_intermediateSteps(int count)
+DRAM_ATTR static int stepsDone = 0;
+IRAM_ATTR static inline __attribute__((always_inline, hot))  void vecx_intermediateSteps(int count)
 {
   for (int c = 0; c < count; c++)
   {
@@ -2404,14 +2374,11 @@ IRAM_ATTR void vecx_intermediateSteps(int count)
      cyclesRunning++;
 
 	}
-
 }
+#include "e6809.i"
 
-
-
-
-
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverride-init"
 
 IRAM_ATTR void vecx_emu (long cycles)
 {
@@ -2420,16 +2387,13 @@ IRAM_ATTR void vecx_emu (long cycles)
 
 	while (cycles > 0) 
 	{
-		stepsDone = 0;
 
-//      icycles = e6809_sstep (via_ifr & 0x80, 0);
-      icycles = e6809_sstep (via_ifr & 0x80, 0);
-
-	  
-
-
-	  if (reg_pc == 0xf1a2) thisWaitRecal = 1;
-
+		// the second might be needed for imager or lightpen
+//		icycles = e6809_sstep (via_ifr & 0x80, 0)-stepsDone;
+//		icycles = e6809_sstep ();
+		#include "6809Step.i"
+		
+	    if (reg_pc == 0xf1a2) thisWaitRecal = 1;
 
 		for (int c = 0; c < icycles-stepsDone; c++) {
 			cyclesRunning++;
@@ -2437,9 +2401,7 @@ IRAM_ATTR void vecx_emu (long cycles)
 		    timerDoStep();
 			alg_sstep ();
 //			via_sstep1 (); // not needed without lightpen / imager support
-
-
-
+		}
 #ifdef FLASH_SUPPORT
 
 			if ((idSequenceAddress == 0) && (addressBUS == 0x5555)) idSequenceAddress = 1;
@@ -2499,7 +2461,6 @@ IRAM_ATTR void vecx_emu (long cycles)
 				checkWriteSequence();
 			}
 #endif		
-		}
 
 		cycles -= (long) icycles;
 		fcycles -= (long) icycles;
@@ -2559,7 +2520,6 @@ IRAM_ATTR void vecx_emu (long cycles)
 			emu_end_frame();
 		}	  
 	}
-
 }
 
 

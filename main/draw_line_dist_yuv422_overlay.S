@@ -1,6 +1,6 @@
 /* draw_line_dist_yuv422_overlay.S
  *
- * RV32IMAC hand-optimised assembly for:
+ * RV32IMAC hand-optimised assembly for: 
  *   undraw_line_yuv422_overlay   (replaces C version; C renamed to _c)
  *   draw_line_yuv422_overlay     (replaces C version; C renamed to _c)
  *
@@ -19,7 +19,7 @@
  *   V (pair)  : row_fb[(px&~1)*2 + 3]   (even: dst[+3], odd: dst[+1])
  * U/V are written for every pixel (both even and odd) to eliminate YUV422
  * chroma artifacts on nearly-vertical lines.
- *
+ * 
  * BT.601 full-range integer formulas (77+150+29=256):
  *   Y = (77*R + 150*G + 29*B) >> 8          range [0,255] — no clamp needed
  *   U = 128 + ((128*B - 43*R - 85*G) >> 8)  clamped [0,255]

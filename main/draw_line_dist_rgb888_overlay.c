@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "esp_attr.h"
-#include "draw_line_dist_rgb888_overlay.h"
 
 extern int           g_line_glow;
 extern int           g_line_width;

@@ -1,4 +1,4 @@
-/* draw_line_dist_rgb888_overlay.S
+/* draw_line_dist_rgb888_overlay.S 
  *
  * RV32IMAC hand-optimised assembly for:
  *   undraw_line_rgb888_overlay   (replaces C version; C renamed to _c)
@@ -19,7 +19,7 @@
     .extern g_line_glow
     .extern g_line_width
     .extern g_line_Rb
-
+ 
     .section .iram0.text,"ax",@progbits
     .align 2
 

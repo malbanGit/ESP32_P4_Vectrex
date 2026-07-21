@@ -3,7 +3,7 @@
 //#define NO_AUDIO 1 just be quiet!
 
 #define VECX_DEBUG 1
-#define MAX_EMU_FPS 150
+#define MAX_EMU_FPS 50
 #define ENABLE_OVERLAYS 1
 
 #define LINE_WIDTH 1
@@ -65,5 +65,6 @@ extern int LCD_V_RES;
 
 extern int  g_line_width;
 extern int  g_line_glow;
+
 extern int  brightnessAdjust;
 extern int  brightnessLCD;

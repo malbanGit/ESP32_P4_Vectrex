@@ -9,37 +9,7 @@ extern int SCREEN_HEIGHT;
 
 /*
 1) 6909 to slow in new version
-Karl Quappe 44 statt 50 fps in emulation
-
-testen welche instruction "zwischenstep" brauchen und dann zruückgehen?
-
-
-2) dann die YUV Paletten variante!
-
-
-
-
-Die genau Core hat ein problem mit Karl Quappe läuft nicht mehr richtig!
-
-
-
-we have 32 MB of PSRAM
-At the moment for the overlay restore - we calculate the YUV components from the palette.
-
-The palette is an Array in PSRAM
-
-Would it speed things up of we precalculated the YUV background in a buffer and instead of building the YUV from the Palette and the brightness and transparency 
-
-Use a YUF buffer directly? DIRECTLY Two read per pixel and no calculation.
-
-But it would be TWO PSRAM reads instead of ONE.
-
-
-
-
-may revisit the 6809. setp - like goto array again!
-
-
+Karl Quappe 47 statt 50 fps in emulation
 
 SLOW1: Vectorblade demo last level reached 46 emu speed -> to slow! -> without overlay
 SLOW1: Karl Quappe on LCD is still about 5 FPS slower then on HDMI out... FUCK WHY???
@@ -88,28 +58,13 @@ c)
 
 
 
-Try out ESP IDF 6 with 400 Mhz
-
-
-
-B) Renderer side
-
-4. O(n²) line-match in frame-diff mode — biggest renderer gain.
-The exact-match pass at ~main.c:961 does old_count × line_count struct comparisons. At ~100 lines × 50fps = ~500,000 comparisons/sec. Replace with a hash-map: pack (x0,y0,x1,y1) into a uint64_t key, build a small hash set of new-frame lines, then match old lines in O(n).
-
-5. Redundant bbox recomputation inside the diff loops — also in the frame-diff path. The same bounding boxes are computed multiple times across steps 2, 3, 3b. Pre-compute them once into a local array before the matching starts.
-
-6. O(n² × passes) damage propagation — worst-case pathological, but fixing #5 (cached bboxes) is the prerequisite anyway.
-
-
+Try out ESP IDF 6 with 400 Mhz -> not working with my chip!!!
 
 
 Highscore saving
 joystick
 settings save ti ini
-toggle overlay on off
 sound volume
-
 
 TODO: Calibration Ala Tuts
 
@@ -148,10 +103,10 @@ Start
 Should connect to COM 4, flash and play.
 
 
-Sound
-  BUG - no
+  BUG - no!
   FCYCLES_INIT = 50000
-  should be 30000 for one round -> Nope the 50000 is fallback for "not" autosyncable... watch it "flicker" when spike speaks!
+  should be 30000 for one round -> Nope the 50000 is fallback for "not" autosyncable... 
+  watch it "flicker" when spike speaks!
 
 */
 
@@ -161,6 +116,7 @@ Sound
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_check.h"
+#include "esp_clk_tree.h"
 #include "esp_heap_caps.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -190,7 +146,6 @@ Sound
 
 #include "vecx\vecx.h"
 
-#include "draw_line_dist_rgb888_overlay.h"
 
 
 char * audio_buf;
@@ -215,6 +170,16 @@ void draw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
 void undraw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
                             int brightness);
+void draw_line_yuv422_overlay(
+                            uint8_t *fb, int fb_w, int fb_h,
+                            int x0, int y0, int x1, int y1,
+                            int brightness,
+                            const uint8_t *overlay);
+void undraw_line_yuv422_overlay(
+                            uint8_t *fb, int fb_w, int fb_h,
+                            int x0, int y0, int x1, int y1,
+                            int brightness,
+                            const uint8_t *overlay);
 
 esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
 
@@ -402,7 +367,6 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
     return (xHigherPriorityTaskWoken == pdTRUE);
 }
 
-#include "draw_line_dist_yuv422_overlay.h"
 // a line draw - ONE
 // used to draw and undraw (undraw brightness = 0)
 // at the moment a few different line-draws are possible
@@ -1716,6 +1680,7 @@ void initGlobals()
     mode = VIDEO_OUT_SELECTED;          // default at boot
 }
 
+
 // ----------------------------------------------------
 // app_main
 // ----------------------------------------------------
@@ -1726,13 +1691,12 @@ void app_main(void)
     // fill rom with 01, see https://vectrex-emu.blogspot.com/2006/07/
     memset(cartData, 0x01, MAX_CART_SIZE * sizeof(uint8_t));
 
-
-
 #if VECX_DEBUG == 1    
     esp_log_level_set("lcd.dsi.dpi", ESP_LOG_DEBUG);   // show the actual DPI pixel clock achieved
     esp_log_level_set("lcd_panel.dpi", ESP_LOG_DEBUG);
     esp_log_level_set("mipi_dsi", ESP_LOG_DEBUG);
     esp_log_level_set("*", ESP_LOG_DEBUG);  
+
 #else    
     /*
     ESP_LOG_NONE — no output at all
