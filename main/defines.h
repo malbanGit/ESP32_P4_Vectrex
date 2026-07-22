@@ -4,7 +4,7 @@
 
 #define VECX_DEBUG 1
 #define MAX_EMU_FPS 50
-#define ENABLE_OVERLAYS 1
+#define ENABLE_OVERLAYS 0
 
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2

@@ -459,9 +459,9 @@ DRAM_ATTR bool rampOffFraction = false;
 DRAM_ATTR static long fcycles;
 
 
-void emu_begin_frame(void);
-void emu_end_frame(void);
-void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // For ESP32
+//void emu_begin_frame(void);
+void mini_end_frame(void);
+void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // brightness or color - depending on mode, 0 is always undraw
 void vecx_emu (long cycles);
 #include "usb/hid_usage_keyboard.h"
 
@@ -753,7 +753,7 @@ void lvds_backlight(bool on, int level);
       snd_regs[14] |= 128;
 }
 
-IRAM_ATTR void osint_emuloop(int cycles)
+IRAM_ATTR void mini_taskloop(int cycles)
 {
 	vecx_emu(cycles);
 	readevents();
@@ -800,7 +800,7 @@ IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, 
 		color = (int)(((double)color)*degradePercent);
 	}
 
-	emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
+	mini_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
 	return;
 }
 
@@ -2517,7 +2517,7 @@ IRAM_ATTR void vecx_emu (long cycles)
 
 			syncImpulse = 0;
 			fcycles = FCYCLES_INIT;
-			emu_end_frame();
+			mini_end_frame();
 		}	  
 	}
 }

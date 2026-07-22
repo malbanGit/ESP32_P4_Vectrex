@@ -8,6 +8,13 @@ extern int SCREEN_HEIGHT;
 
 
 /*
+for the draw line color also use the YUV palette!!!
+DRAM_ATTR uint8_t  s_overlay_palette[128][3];
+DRAM_ATTR uint8_t  s_overlay_palette_yuv[128][3];     {Y, U, V} full-range for YUV draw 
+DRAM_ATTR uint8_t  s_overlay_palette_yuv_ea[128][3];  {Y, U, V} ea-scaled for YUV undraw 
+
+
+
 1) 6909 to slow in new version
 Karl Quappe 47 statt 50 fps in emulation
 
@@ -180,6 +187,14 @@ void undraw_line_yuv422_overlay(
                             int x0, int y0, int x1, int y1,
                             int brightness,
                             const uint8_t *overlay);
+
+// color lines
+void draw_line_yuv422(uint8_t *fb, int fb_w, int fb_h,
+                      int x0, int y0, int x1, int y1,
+                      int colorPaletteEntry);
+
+void undraw_line_yuv422(uint8_t *fb, int fb_w, int fb_h,
+                        int x0, int y0, int x1, int y1);                            
 
 esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
 
@@ -372,6 +387,19 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 // at the moment a few different line-draws are possible
 // if RGS stays stable I will drop the YUV
 
+IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry)
+{
+#if VIDEO_FB_YUV422 == 1
+    if (colorPaletteEntry == 0) 
+    {
+        undraw_line_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1);
+    }
+    else
+    {
+        draw_line_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
+    }
+#endif
+}
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
 #if VIDEO_FB_YUV422 == 1
@@ -733,9 +761,12 @@ static void frames_init(void)
 // ----------------------------------------------------
 // Emulator-side API
 // ----------------------------------------------------
+// when in color mode
+// color from palette 127
+// color = 0 -> undraw
 
 // Emulator calls this for each line in the CURRENT emulated frame
-IRAM_ATTR void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
+IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
     int idx = s_build_frame_index;
     frame_slot_t *fs = &s_frames[idx];
@@ -778,7 +809,7 @@ IRAM_ATTR void emu_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
 // are kept in 3 buffers
 // the state of the buffer determines which is drawn on screen
 // and which is used to recieve "new" lines.
-IRAM_ATTR void emu_end_frame(void)
+IRAM_ATTR void mini_end_frame(void)
 {
     static uint64_t emu_last_time   = 0;
     static int      emu_frame_count = 0;
@@ -880,14 +911,14 @@ IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 // ----------------------------------------------------
 // Tasks
 // ----------------------------------------------------
-void osint_emuloop(int cycles);
-IRAM_ATTR static void emulator_task(void *arg)
+void mini_taskloop(int cycles);
+IRAM_ATTR static void application_task(void *arg)
 {
     while (1) 
     {
         uint64_t start = esp_timer_get_time();
 
-        osint_emuloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
+        mini_taskloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
 
         // slow down if we are too fast
         // emulating 30000 vectrex cycles should take 1/50 of a second...
@@ -1821,8 +1852,8 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
 
     // Emulator task (core 1) — static stack in internal SRAM
     xTaskCreateStaticPinnedToCore(
-        emulator_task,
-        "emulator",
+        application_task,
+        "application",
         EMU_STACK_SIZE,
         NULL,
         7,
