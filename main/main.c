@@ -8,10 +8,27 @@ extern int SCREEN_HEIGHT;
 
 
 /*
-for the draw line color also use the YUV palette!!!
-DRAM_ATTR uint8_t  s_overlay_palette[128][3];
-DRAM_ATTR uint8_t  s_overlay_palette_yuv[128][3];     {Y, U, V} full-range for YUV draw 
-DRAM_ATTR uint8_t  s_overlay_palette_yuv_ea[128][3];  {Y, U, V} ea-scaled for YUV undraw 
+
+#define JOYSTICK_VERTICAL 1
+#define JOYSTICK_HORIZONTAL 1
+#define KEY_ ...
+ 
+true / false or value
+int getInput(JOYSTICK_VERTICAL);
+
+int playWAV();
+
+setSoundCallback(*functionPointer)
+
+
+gives one FPS!
+
+		 && alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y
+
+ 
+
+
+
 
 
 
@@ -171,6 +188,19 @@ void draw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
 void undraw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
                             int brightness);
+
+void draw_line_rgb888_overlay(
+                            uint8_t *fb, int fb_w, int fb_h,
+                            int x0, int y0, int x1, int y1,
+                            int brightness,
+                            const uint8_t *overlay);
+void undraw_line_rgb888_overlay(
+                            uint8_t *fb, int fb_w, int fb_h,
+                            int x0, int y0, int x1, int y1,
+                            int brightness,
+                            const uint8_t *overlay);
+
+
 void draw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
                             int x0, int y0, int x1, int y1,
                             int brightness);
@@ -840,15 +870,16 @@ IRAM_ATTR void mini_end_frame(void)
     // and each of these 50000 cycle frames - have different lines, different count of lines -> flicker.
     uint64_t now = esp_timer_get_time();
     emu_frame_count++;
+    int idx = s_build_frame_index;
+    frame_slot_t *cur = &s_frames[idx];
     if (now - emu_last_time >= 1000000) // has one second passed?
     {
+//        printf("EMU FPS = %d (Lines: %i )\n", emu_frame_count, cur->line_count);
         printf("EMU FPS = %d\n", emu_frame_count);
         emu_frame_count = 0;
         emu_last_time   = now;
     }
 
-    int idx = s_build_frame_index;
-    frame_slot_t *cur = &s_frames[idx];
 
     // Aktuellen Slot als READY markieren
     cur->state = FRAME_READY;
@@ -965,14 +996,14 @@ IRAM_ATTR static void renderer_task(void *arg)
             void toggleVideoMode();
             toggleVideoMode();
             s_toggle_display_mode = 0;
-            redraw = 2;
+            redraw = 3;
         }
         else if (s_toggle_overlay_mode)
         {
             void toggleOverlay();
             toggleOverlay();
             s_toggle_overlay_mode = 0;
-            redraw = 2;
+            redraw = 3;
         }
 
         // DISPLAY FPS = number of actually changed frames drawn per second

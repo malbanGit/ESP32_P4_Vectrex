@@ -4,7 +4,7 @@
 
 #define VECX_DEBUG 1
 #define MAX_EMU_FPS 50
-#define ENABLE_OVERLAYS 0
+#define ENABLE_OVERLAYS 1
 
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2
@@ -38,12 +38,14 @@
 #define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
 
 #define HDMI_VECX_WIDTH 500		
-#define HDMI_VECX_HEIGHT 700		
-#define LCD_VECX_WIDTH 430		
-#define LCD_VECX_HEIGHT 740		
+#define HDMI_VECX_HEIGHT 700	
+
+#define LCD_VECX_WIDTH 410 // 410		
+#define LCD_VECX_HEIGHT 730		
 
 #define HDMI_OVERLAY_WIDTH 564		
 #define HDMI_OVERLAY_HEIGHT 720		
+
 #define LCD_OVERLAY_WIDTH 800		
 #define LCD_OVERLAY_HEIGHT 480		
 

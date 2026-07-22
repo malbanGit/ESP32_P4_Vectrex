@@ -29,11 +29,12 @@ this must be "restored"
 extern char *cartName;
 extern long cartSize;
 extern  unsigned char cartData[MAX_CART_SIZE];
+DRAM_ATTR int isBedlam = 0;
 
 
 
-DRAM_ATTR static long xChange = 0;
-DRAM_ATTR static long rChange = 0;
+//DRAM_ATTR static long xChange = 0;
+//DRAM_ATTR static long rChange = 0;
 
 DRAM_ATTR long cyclesRunning = 0;
 DRAM_ATTR static int thisWaitRecal = 0;
@@ -56,14 +57,14 @@ DRAM_ATTR static int BANK_MAX = 1;
 
 
 static int resistorOhm = 175;
-static double supplyVoltage=0;
+static float supplyVoltage=0;
 
-static double capacitorFarad = 0.000000006;
-static double currentVoltage=0;
-static double timeConstant = 0;
+static float capacitorFarad = 0.000000006f;
+static float currentVoltage=0;
+static float timeConstant = 0;
 
-static double VECTREX_CYCLE_TIME = (double)(1.0/1500000.0);
-static double percentageDifChangePerCycle = 0;
+static float VECTREX_CYCLE_TIME = (float)(1.0/1500000.0f);
+static float percentageDifChangePerCycle = 0;
 
 int SCREEN_WIDTH=800;
 int SCREEN_HEIGHT=1280;
@@ -117,7 +118,6 @@ DRAM_ATTR static uint8_t via_cb2s;  /* version of cb2 controlled by the shift re
 /* analog devices */
 
 DRAM_ATTR static unsigned alg_sel;
-DRAM_ATTR static unsigned alg_ramping;
 DRAM_ATTR static signed alg_DAC;  /* z sample and hold */
 DRAM_ATTR static signed alg_ssh;
 DRAM_ATTR static unsigned alg_rsh;  /* zero ref sample and hold */
@@ -155,8 +155,6 @@ enum {
 DRAM_ATTR static unsigned alg_vectoring; /* are we drawing a vector right now? */
 DRAM_ATTR static long alg_vector_x0;
 DRAM_ATTR static long alg_vector_y0;
-DRAM_ATTR static long alg_vector_x1;
-DRAM_ATTR static long alg_vector_y1;
 DRAM_ATTR static long alg_vector_dx;
 DRAM_ATTR static long alg_vector_dy;
 DRAM_ATTR static unsigned char alg_vector_color;
@@ -188,11 +186,11 @@ int getIntVoltageValue()
 {
 	return (int)currentVoltage;
 }
-double getVoltageValue()
+float getVoltageValue()
 {
 	return currentVoltage;
 }
-double getDigitalValue()
+float getDigitalValue()
 {
 	return currentVoltage/5.0*128.0;
 }
@@ -202,7 +200,7 @@ int getDigitalIntValue()
 }
 static einline void doStep()
 {
-	double dif = supplyVoltage - currentVoltage;
+	float dif = supplyVoltage - currentVoltage;
 	currentVoltage += percentageDifChangePerCycle*dif;
 }
 // -128 - +127
@@ -210,11 +208,11 @@ void setDigitalVoltage(unsigned char v)
 {
 	if (v<=127)
 	{
-		supplyVoltage = (((double)v)/127.0)*5.0;
+		supplyVoltage = (((float)v)/127.0f)*5.0f;
 	}
 	else
 	{
-		supplyVoltage = (((((double)v)-256))/128.0)*5.0;
+		supplyVoltage = (((((float)v)-256.0f))/128.0f)*5.0f;
 	}
 }
 #ifdef FLASH_SUPPORT
@@ -377,7 +375,6 @@ typedef struct TimerItem_s
 	unsigned char valueToSet;
 	int *whereToSet;
 	int type;
-	int active;
 } TimerItem;
 DRAM_ATTR TimerItem timerItemArray[MAX_TIMER]; // should be saved
 
@@ -509,10 +506,10 @@ IRAM_ATTR static einline void readevents()
 	extern IRAM_ATTR bool isShiftDown(void);
 	extern IRAM_ATTR bool isCtrlDown(void);
 	extern IRAM_ATTR bool isAltDown(void);
-extern int  brightnessLCD; // defined in main.c
+	extern int  brightnessLCD; // defined in main.c
 
-int modeSwitchActive=0;
-void lvds_backlight(bool on, int level);
+	int modeSwitchActive=0;
+	void lvds_backlight(bool on, int level);
 
 	#ifndef HID_KEY_LEFT_ARROW
 	#define HID_KEY_LEFT_ARROW   0x50
@@ -793,11 +790,11 @@ int vecx_init()
 
 IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
 {
-	if (intensityDrift>100000)
+	if (intensityDrift>200000)
 	{
-		double degradePercent = (180000000.0-((double)intensityDrift))/180000000.0; // two minutes
+		float degradePercent = (180000000.0f-((float)intensityDrift))/180000000.0f; // two minutes
 		if (degradePercent<0) degradePercent = 0;
-		color = (int)(((double)color)*degradePercent);
+		color = (int)(((float)color)*degradePercent);
 	}
 
 	mini_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
@@ -844,7 +841,8 @@ static inline __attribute__((always_inline, hot)) void timerAddItem(int value, v
 
     if (freeListHead == NULL) {
 		printf("NOT ENOUGH TIMERS! PANIC!!!\n");
-		exit(3);
+//		exit(3);
+		return;
     }
 
  // Kopf von freeList nehmen
@@ -857,7 +855,6 @@ static inline __attribute__((always_inline, hot)) void timerAddItem(int value, v
     t->valueToSet = value&0xff;
     t->whereToSet = destination;
     t->type       = ty;
-    t->active     = 1;
 
     // vorne in usedList einfügen
     push_front(&usedListHead, node);
@@ -912,7 +909,7 @@ static inline __attribute__((always_inline, hot)) unsigned char makeUnsigned(sig
 // assuming
 // 64k carts are two banks of 32k
 // 256k carts (VB) are 4 banks of 64k
-IRAM_ATTR void setBank()
+IRAM_ATTR static inline __attribute__((always_inline, hot)) void setBank()
 {
 	currentBank = 0;
 	if (BANK_MAX == 1) return;
@@ -925,7 +922,7 @@ IRAM_ATTR void setBank()
 		if (currentIRQ) currentBank+=2;
 	}
 }
-IRAM_ATTR void setPB6FromVectrex(int tobe_via_orb, int  tobe_via_ddrb, int orbInitiated)
+IRAM_ATTR static inline __attribute__((always_inline, hot)) void setPB6FromVectrex(int tobe_via_orb, int  tobe_via_ddrb, int orbInitiated)
 {
 	if (BANK_MAX <= 1) return;
 
@@ -935,7 +932,7 @@ IRAM_ATTR void setPB6FromVectrex(int tobe_via_orb, int  tobe_via_ddrb, int orbIn
 	currentPB6 = (npb6 != 0);
 	setBank();
 }
-void setPB6FromExternal(int b)
+IRAM_ATTR static inline __attribute__((always_inline, hot)) void setPB6FromExternal(int b)
 {
 	if (b)
 		pb6_in = 0x40;
@@ -944,15 +941,14 @@ void setPB6FromExternal(int b)
 
 }
 	
-IRAM_ATTR void setIRQFromVectrex(int irq)
+IRAM_ATTR static inline __attribute__((always_inline, hot)) void setIRQFromVectrex(int irq)
 {
 	if (BANK_MAX <= 2) return;
 	currentIRQ = !irq;
 	setBank();
 }
 
-IRAM_ATTR
-static inline __attribute__((always_inline, hot)) void int_update ()
+IRAM_ATTR static inline __attribute__((always_inline, hot)) void int_update ()
 {
 	if ( (((via_ifr & 0x7f) & (via_ier & 0x7f))) != 0   ) 
 	{
@@ -1004,7 +1000,7 @@ static inline __attribute__((always_inline, hot)) void doCheckMultiplexer()
 			/* demultiplexor is on */
 #ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
 			alg_rsh = makeSigned(alg_xsh);
-			setDigitalVoltage(alg_xsh);
+			//setDigitalVoltage(alg_xsh);
 #else
 			timerAddItem(alg_DAC, 0, TIMER_MUX_R_CHANGE);
 #endif
@@ -1039,7 +1035,6 @@ void TimerList_init(void)
 
     for (int i = 0; i < MAX_TIMER; i++) 
 	{
-        timerItemArray[i].active     = 0;
         timerItemArray[i].countDown  = 0;
         timerItemArray[i].valueToSet = 0;
         timerItemArray[i].whereToSet = NULL;
@@ -1076,8 +1071,8 @@ static IRAM_ATTR einline void timerDoStep()
 		item->countDown--;
 		if (item->countDown <=0)
 		{
-#ifdef TIMER_SHIFT_VALUE_IS_NULL	
-#else
+	#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+	#else
 			if (item->type == TIMER_SHIFT_READ)
 			{
 				alternate = 1;
@@ -1099,9 +1094,9 @@ static IRAM_ATTR einline void timerDoStep()
 				doInt++;
 			}
 			else 
-#endif
-#ifdef TIMER_T1_VALUE_IS_NULL	
-#else
+	#endif
+	#ifdef TIMER_T1_VALUE_IS_NULL	
+	#else
 			if (item->type == TIMER_T1)
 			{
 				via_t1on = 1; /* timer 1 starts running */
@@ -1115,9 +1110,9 @@ static IRAM_ATTR einline void timerDoStep()
 				doInt++;
 			}
 			else 
-#endif
-#ifdef TIMER_T2_VALUE_IS_NULL	
-#else
+	#endif
+	#ifdef TIMER_T2_VALUE_IS_NULL	
+	#else
 			if (item->type == TIMER_T2)
 			{
 				via_t2c = ((item->valueToSet) << 8) | via_t2ll;
@@ -1128,17 +1123,17 @@ static IRAM_ATTR einline void timerDoStep()
 				doInt++;
 			}
 			else 
-#endif			
-#ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
-#else
+	#endif			
+	#ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
+	#else
 			if (item->type == TIMER_MUX_R_CHANGE)
 			{
 				//noiseCycles = cyclesRunning;
-				setDigitalVoltage(item->valueToSet); 
+				//setDigitalVoltage(item->valueToSet); 
 				alg_rsh = makeSigned(item->valueToSet);
 			}
 			else 
-#endif
+	#endif
 			
 			if (item->whereToSet != 0)   
 			{
@@ -1154,7 +1149,7 @@ static IRAM_ATTR einline void timerDoStep()
 					{
 						rampOffFraction = 1;
 					}
-					rChange = cyclesRunning;
+	//					rChange = cyclesRunning;
 
 				}
 				else if (item->type == TIMER_RAMP_CHANGE) 
@@ -1169,9 +1164,9 @@ static IRAM_ATTR einline void timerDoStep()
 					{
 						rampOnFraction = 1;
 					}
-					rChange = cyclesRunning;
+	//					rChange = cyclesRunning;
 				}
-/*                    
+				/*                    
 				// ATTENTION!
 				// it looks like MUX SEL has a time - offset
 				// but the value that is used to "transport" to the receiving SH
@@ -1185,7 +1180,7 @@ static IRAM_ATTR einline void timerDoStep()
 					// test above "theory" with Y
 					t.whereToSet = via_ora & 0xff;
 				}
-*/
+				*/
 				if (item->type == TIMER_MUX_Z_CHANGE) // Z must not be negative
 				{
 					*item->whereToSet = makeUnsigned(item->valueToSet & 0xff);
@@ -1193,19 +1188,15 @@ static IRAM_ATTR einline void timerDoStep()
 				else
 				{
 					*item->whereToSet = makeSigned(item->valueToSet & 0xff);
-					if (item->type == TIMER_XSH_CHANGE)
-						xChange = cyclesRunning;
+    //					if (item->type == TIMER_XSH_CHANGE) xChange = cyclesRunning;
 				}
 				if (item->type == TIMER_MUX_SEL_CHANGE)
 					doMUL++;
-#ifdef TIMER_MUX_Z_CHANGE_VALUE_IS_NULL	
-#else
-#endif
-
-			
+					#ifdef TIMER_MUX_Z_CHANGE_VALUE_IS_NULL	
+					#else
+					#endif
 			}
 
-			item->active = 0;
 			TimerNode *n = node->next;
 			detach_from_list(&usedListHead, node);
 			push_front(&freeListHead, node);
@@ -1215,10 +1206,6 @@ static IRAM_ATTR einline void timerDoStep()
 		}
 		node = node->next;
 	}
-//	if (doRamp>1) printf("DOUBLE RAMP!\n");
-//	if (doInt>1) printf("DOUBLE INT!\n");
-//	if (doMUL>1) printf("DOUBLE MULTI!\n");
-
 	if (doRamp>0) doCheckRamp(0);
 	if (doInt>0) int_update ();
 	if (doMUL>0) doCheckMultiplexer();
@@ -1346,7 +1333,7 @@ IRAM_ATTR unsigned char read8VIA (unsigned address)
 				/* T1 low order counter */
 				data = via_t1c;
 				via_ifr &= 0xbf; /* remove timer 1 interrupt flag */
-//                        via_t1int = 0; // THIS WAS original - and is wrong!
+	//                        via_t1int = 0; // THIS WAS original - and is wrong!
 				via_t1int = 1;
 				int_update ();
 				return data&0xff;
@@ -1377,16 +1364,16 @@ IRAM_ATTR unsigned char read8VIA (unsigned address)
             case 0xa:
                data = (unsigned char) via_sr&0xff;
 
-#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+		#ifdef TIMER_SHIFT_VALUE_IS_NULL	
 				alternate = 1;
 				//lastShiftTriggered = cyclesRunning;
 				via_ifr &= 0xfb; /* remove shift register interrupt flag */
 				via_srb = 0;
 				via_srclk = 1;
 				int_update ();
-#else
-               timerAddItem(via_sr, 0, TIMER_SHIFT_READ);
-#endif
+		#else
+				timerAddItem(via_sr, 0, TIMER_SHIFT_READ);
+		#endif
                break;
             case 0xb:
                data = (unsigned char) via_acr;
@@ -1414,7 +1401,7 @@ IRAM_ATTR unsigned char read8VIA (unsigned address)
 		   data = cartData[address+(currentBank *32768)] & 0xff; // 
 	   else 
 		   data = cartData[address+(currentBank *65536)] & 0xff; // 
-#ifdef FLASH_SUPPORT
+		#ifdef FLASH_SUPPORT
 		if ((idSequenceData == 3) && (idSequenceAddress == 3)  )
 		{
 			if ((address%2) == 0)
@@ -1428,13 +1415,12 @@ IRAM_ATTR unsigned char read8VIA (unsigned address)
 				return 0xb6; // SST39SF020A
 			}
 		}
-#endif
+		#endif
 	}
    else
       data = 0xff;
    return data;
 }
-
 
 IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
 {
@@ -1467,11 +1453,11 @@ IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
 					 * goes low whenever orb is written.
 					 */
 					via_cb2h = 0;
-#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
-sig_blank = 0;
-#else
-timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
-#endif
+					#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+					sig_blank = 0;
+					#else
+					timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
+					#endif
 	
 				}
 				doCheckRamp(1);
@@ -1520,7 +1506,7 @@ timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
                break;
             case 0x5:
                /* T1 high order counter */
-#ifdef TIMER_T1_VALUE_IS_NULL	
+	#ifdef TIMER_T1_VALUE_IS_NULL	
 				via_t1on = 1; /* timer 1 starts running */
 				via_t1lh = data;
 				via_t1c = (via_t1lh << 8) | via_t1ll;
@@ -1530,9 +1516,9 @@ timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
 				via_t1pb7 = 0;
 				doCheckRamp(0);
 				int_update ();
-#else
+	#else
                timerAddItem(data,0, TIMER_T1);
-#endif
+	#endif
 
 
                break;
@@ -1554,21 +1540,21 @@ timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
             case 0x9:
                /* T2 high order latch/counter */
 
-#ifdef TIMER_T2_VALUE_IS_NULL	
+	#ifdef TIMER_T2_VALUE_IS_NULL	
 				via_t2c = ((data) << 8) | via_t2ll;
 				via_t2c += 0; // hack, it seems vectrex (via) takes two cycles to "process" the setting...
 				via_ifr &= 0xdf;
 				via_t2on = 1; /* timer 2 starts running */
 				via_t2int = 1;
 				int_update ();
-#else
+	#else
                timerAddItem(data,0, TIMER_T2);
-#endif
+	#endif
 
 
                break;
             case 0xa:
-#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+	#ifdef TIMER_SHIFT_VALUE_IS_NULL	
 				alternate = 1;
 				//via_stalling = 0;
 				//lastShiftTriggered = cyclesRunning;
@@ -1577,9 +1563,9 @@ timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
 				via_srb = 0;
 				via_srclk = 1;
 				int_update ();
-#else
+	#else
 				timerAddItem(data, &via_sr, TIMER_SHIFT_WRITE);
-#endif
+	#endif
                break;
             case 0xb:
 				if ((via_acr & 0x1c) != (data & 0x1c))
@@ -1589,11 +1575,11 @@ timerAddItem(via_cb2h, &sig_blank, TIMER_BLANK_ON_CHANGE);
 					}
 					else // use the last shift
 					{
-#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
-sig_blank = 0;
-#else
-timerAddItem(0, &sig_blank, TIMER_BLANK_ON_CHANGE);
-#endif
+						#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+						sig_blank = 0;
+						#else
+						timerAddItem(0, &sig_blank, TIMER_BLANK_ON_CHANGE);
+						#endif
 
 					}
 				}
@@ -1627,21 +1613,21 @@ timerAddItem(0, &sig_blank, TIMER_BLANK_ON_CHANGE);
 					{
 						/* cb2 is outputting low */
 						via_cb2h = 0;
-#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
-sig_blank = 0;
-#else
-timerAddItem(0, &sig_blank, TIMER_BLANK_ON_CHANGE);
-#endif
+						#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+						sig_blank = 0;
+						#else
+						timerAddItem(0, &sig_blank, TIMER_BLANK_ON_CHANGE);
+						#endif
 					} 
 					else if ((via_pcr & 0xe0) == 0xe0) 
 					{
 						/* cb2 is outputting high */
 						via_cb2h = 1;
-#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
-sig_blank = 1;
-#else
-timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
-#endif
+						#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
+						sig_blank = 1;
+						#else
+						timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+						#endif
 					} 
 					else 
 					{
@@ -1649,11 +1635,11 @@ timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
 						 * outputting high.
 						 */
 						via_cb2h = 1;
-#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
-sig_blank = 1;
-#else
-timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
-#endif
+						#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
+						sig_blank = 1;
+						#else
+						timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
+						#endif
 					}
 				}
 				break;
@@ -1680,7 +1666,7 @@ timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
    else 
    if (address < 0xC000) 
    { 
-#ifdef MOVIE_SUPPORT	
+	#ifdef MOVIE_SUPPORT	
 		//printf ("Rom write access at: %4X %2X\n", address, data);
 		//void writeExtreme(int addr, byte data)
 		if ((address&0xff)==0xff) 
@@ -1702,14 +1688,14 @@ timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
 						//printf("no movie path!\n");
 						return;
 					}
-//printf ("Looking to open Movie: %s\n", path);
+	//printf ("Looking to open Movie: %s\n", path);
 					moveFile =fopen(path, "rb");
 					if (moveFile == NULL) return;
-//printf ("File opened!\n");
+	//printf ("File opened!\n");
 
 					fseek(moveFile, 0L, SEEK_END);
 					int len = ftell(moveFile);
-//printf ("Size: %i\n", len);
+	//printf ("Size: %i\n", len);
 					rewind(moveFile);
 					fseek(moveFile, 0, SEEK_SET);
 
@@ -1722,40 +1708,40 @@ timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
 						moveFile = NULL;
 						return;
 					}
-//printf ("Buffer allocated!\n");
+	//printf ("Buffer allocated!\n");
 
-  readLen = fread(movieBuffer, 1, len, moveFile);
+  					readLen = fread(movieBuffer, 1, len, moveFile);
 					
-//printf ("File read size: %i\n", readLen);
-//if (feof(moveFile)) printf ("END OF FILE\n");
-//if (ferror(moveFile)) printf ("READ ERROR \n");
+	//printf ("File read size: %i\n", readLen);
+	//if (feof(moveFile)) printf ("END OF FILE\n");
+	//if (ferror(moveFile)) printf ("READ ERROR \n");
   				    fclose(moveFile);
 					moveFile = NULL;
 
 					if (readLen != len) 
 					{
-//printf ("Size Mismatch!\n");
+	//printf ("Size Mismatch!\n");
 						free(movieBuffer);
 						movieBuffer = NULL;
-// exit(1);
+	// exit(1);
 						return;
 					}
 				}
 				if (readLen<pos+1024+512) pos = 0;
 				for (int ii=0; ii< 1024+512;ii++)
 				{
-//					cart[currentBank][0x4000+ii] = movieBuffer[pos];
+	//					cart[currentBank][0x4000+ii] = movieBuffer[pos];
 					// allways no bankswitch!
 					cart[0x4000+ii] = movieBuffer[pos];
 					pos++;
 				}
-//				if (doExtremeOutput)
-//					System.out.println("Read 1536 bytes "+String.format("%02X", cart[currentBank][0x4000])+".");
+	//				if (doExtremeOutput)
+	//					System.out.println("Read 1536 bytes "+String.format("%02X", cart[currentBank][0x4000])+".");
 			}
 		}
-#endif
+	#endif
 
-#ifdef FLASH_SUPPORT
+	#ifdef FLASH_SUPPORT
 		if ((writeSequenceAddress >= 3) && (writeSequenceData >= 3))
 		{
 			if ((address!=0x5555) && (address!=0x2aaa))
@@ -1768,11 +1754,11 @@ timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
 				// only erase of bit is allowed!
 				unsigned char newData = (unsigned char) (data & oldData);
 				cart[address+(currentBank *65536)] = newData;
-//				printf("FLASH write (%i, %4X->%2x)\n", currentBank, address, newData);
+	//				printf("FLASH write (%i, %4X->%2x)\n", currentBank, address, newData);
 				flashcartChanged=1;
 			}
 		}
-#endif		
+	#endif		
 		
 		
 
@@ -1780,6 +1766,11 @@ timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
    
 }
 
+IRAM_ATTR void testBedlam()
+{
+	isBedlam = (cartData[0x11]=='B') && (cartData[0x13]=='E') && (cartData[0x15]=='D') && (cartData[0x17]=='L') && (cartData[0x19]=='A') &&  (cartData[0x1b]=='M');
+	//printf("isBedlam: %i", isBedlam);
+}
 
 void vecx_reset (void)
 {
@@ -1854,7 +1845,7 @@ void vecx_reset (void)
 	currentVoltage=0;
 	timeConstant = resistorOhm*capacitorFarad;
 
-	VECTREX_CYCLE_TIME = (double) 1.0/1500000.0;
+	VECTREX_CYCLE_TIME = (float) 1.0f/1500000.0f;
 	percentageDifChangePerCycle = exp(-VECTREX_CYCLE_TIME/timeConstant);
 	
 	alternate = 0; // 
@@ -1890,6 +1881,7 @@ void vecx_reset (void)
 	cyclesRunning = 0;
 
 	e6809_reset ();
+	testBedlam();
 }
 
 
@@ -1897,15 +1889,14 @@ void vecx_reset (void)
  * via_sstep0 is the first postion of the emulation.
  */
 
-IRAM_ATTR
-static inline __attribute__((always_inline, hot)) void via_sstep0(void)
+IRAM_ATTR static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 {
     int t2shift;
     /* --- T1-Timer --- */
 	if (via_t1on) 
 	{
 		via_t1c--;
-		if (via_t1c == 0xFFFFu)
+		if (unlikely(via_t1c == 0xFFFFu))
 		{
 			if (via_acr & 0x40u)
 			{
@@ -1922,10 +1913,6 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 					via_t1pb7 = 0x80u;
 					doCheckRamp(0);
 				}
-				else
-				{
-					via_t1pb7 = 0x80u;
-				}
 
 				if (via_t1int)
 				{
@@ -1941,7 +1928,7 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
     if (via_t2on && ((via_acr & 0x20u) == 0u)) 
     {
         via_t2c--;
-        if ((uint16_t)via_t2c == 0xFFFFu)   // "läuft 1,5 Takte zu lang"
+        if (unlikely((uint16_t)via_t2c == 0xFFFFu))   // "läuft 1,5 Takte zu lang"
         {
             /* one shot mode */
             if (via_t2int) 
@@ -1980,7 +1967,7 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 
 	/* --- Shift-Teil von via_sstep0 --- */
 
-// might be correct TODO CHECK!	
+	// might be correct TODO CHECK!	
 	if (via_srb >= 8u)
 		return;    /* oder zum Ende von via_sstep0 springen */
 
@@ -2004,7 +1991,7 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 	}
 
 	/* Shift-Register nur solange noch Bits zu schieben sind */
-	if (via_srb < 8u)
+	//if (via_srb < 8u)
 	{
 		uint8_t mode = via_acr & 0x1Cu;
 
@@ -2072,62 +2059,10 @@ static inline __attribute__((always_inline, hot)) void via_sstep0(void)
 }
 
 
-/* perform the second part of the via emulation */
-IRAM_ATTR
-static inline __attribute__((always_inline, hot)) void via_sstep1(void)
-{
-	// the pulse modes are not really used!
-
-    /* CA2 pulse mode: restore to '1' after pulse */
-    if ((via_pcr & 0x0Eu) == 0x0Au)
-    {
-        via_ca2 = 1;
-		printf("Fire Zero: %ld\n", cyclesRunning);
-        timerAddItem(via_ca2, &sig_zero, TIMER_ZERO);
-    }
-
-    /* CB2 pulse mode: restore to '1' after pulse */
-    if ((via_pcr & 0xE0u) == 0xA0u)
-    {
-        via_cb2h = 1;
-    #ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
-        sig_blank = 1;
-    #else
-        timerAddItem(1, &sig_blank, TIMER_BLANK_OFF_CHANGE);
-    #endif
-    }
-
-    /* CA1 edge detection / interrupt */
-	// CA 1 is only used for imager and lightpen
-    if (via_ca1 != old_via_ca1)
-    {
-        // via_pcr bit0: 1 = low->high triggers, 0 = high->low triggers
-        uint8_t trigger_on_rising = (via_pcr & 0x01u) != 0u;
-
-        if (trigger_on_rising ? (via_ca1 != 0u) : (via_ca1 == 0u))
-        {
-            via_ifr |= 0x02u;
-            int_update();
-        }
-    }
-
-    // Remember last CA1 state
-    old_via_ca1 = via_ca1;
-}
-
-
 /* perform a single cycle worth of analog emulation */
-IRAM_ATTR
-static inline __attribute__((always_inline, hot)) void alg_sstep (void)
+IRAM_ATTR static inline __attribute__((always_inline, hot)) void alg_sstep(void)
 {
 	long sig_dx=0, sig_dy=0;
-/*	
-	if (((via_orb & 0x01) == 0) && ((alg_sel & 0x06) == 0x02))
-		doStep(); // capacitor
-*/
-
-	intensityDrift++;
-
 
 	if (sig_zero == 0)
     {
@@ -2137,8 +2072,11 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 		sig_dx = ALG_MAX_X/2  - alg_curr_x;
 		sig_dy = ALG_MAX_Y/2  - alg_curr_y;
     }
+	#define inBounds ((unsigned long)alg_curr_x < (unsigned long)ALG_MAX_X && \
+	                  (unsigned long)alg_curr_y < (unsigned long)ALG_MAX_Y)
    	
-	
+
+	int visible = (sig_blank == 1) && (((alg_zsh &0x80) ==0) &&  ((alg_zsh&0x7f) !=0) );
 	
 	if (sig_ramp== 0) 
 	{
@@ -2147,9 +2085,8 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 		if (rampOnFraction)
 		{
 			rampOnFraction = false;
-			alg_curr_x -= (makeSigned(alg_xsh)*(rampOnFractionValue))/8;
-			alg_curr_y -= - (makeSigned(alg_ysh)*(rampOnFractionValue))/8;
-
+			alg_curr_x -= (makeSigned(alg_xsh)*(rampOnFractionValue))>>8;
+			alg_curr_y -= - (makeSigned(alg_ysh)*(rampOnFractionValue))>>8;
 		}
 	} 
 	else 
@@ -2157,210 +2094,102 @@ static inline __attribute__((always_inline, hot)) void alg_sstep (void)
 		if (rampOffFraction)
 		{
 			rampOffFraction = false;
-			alg_curr_x += (makeSigned(alg_xsh)*(rampOffFractionValue))/8;
-			alg_curr_y += - (makeSigned(alg_ysh)*(rampOffFractionValue))/8;
-			if (alg_vectoring == 1 && alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y) 
-			{
-				/* we're vectoring ... current point is still within limits so
-					* extend the current vector.
-					*/
-				alg_vector_x1 = (int)alg_curr_x;
-				alg_vector_y1 = (int)alg_curr_y;
-			}  
+			alg_curr_x += (makeSigned(alg_xsh)*(rampOffFractionValue))>>8;
+			alg_curr_y += - (makeSigned(alg_ysh)*(rampOffFractionValue))>>8;
 		}
 	}
 
 
+  	if (alg_vectoring == 0)
+   	{
+		if ((visible) && (inBounds) )
+      	{
+			/* start a new vector */
+
+			alg_vectoring = 1;
+
+			long adderX = (long)((blankOffDelay*makeSigned(alg_xsh))>>3);
+			long adderY = (long)((blankOffDelay*makeSigned(alg_ysh))>>3);
 
 
-   if (alg_vectoring == 0)
-   {
-      if ((sig_blank == 1 
-		
-			&& 
-			alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && 
-			alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y
-			
-		) 
-		&& (((alg_zsh &0x80) ==0) &&  ((alg_zsh&0x7f) !=0) ) )
-      {
+	#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
+			alg_vector_x0 = alg_curr_x + adderX;
+			alg_vector_y0 = alg_curr_y + adderY;
+	#else
+			alg_vector_x0 = alg_curr_x + adderX+ DELAYS[TIMER_BLANK_OFF_CHANGE]*makeSigned(alg_xsh),
+			alg_vector_y0 = alg_curr_y + adderY+ DELAYS[TIMER_BLANK_OFF_CHANGE]*makeSigned(alg_ysh),
+	#endif
 
-         /* start a new vector */
-
-         alg_vectoring = 1;
-
-		long adderX = (long)((blankOffDelay*makeSigned(alg_xsh))/8);
-		long adderY = (long)((blankOffDelay*makeSigned(alg_ysh))/8);
-
-
-#ifdef TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL
-		 alg_vector_x0 = alg_curr_x + adderX;
-         alg_vector_y0 = alg_curr_y + adderY;
-#else
-		 alg_vector_x0 = alg_curr_x + adderX+ DELAYS[TIMER_BLANK_OFF_CHANGE]*makeSigned(alg_xsh);
-         alg_vector_y0 = alg_curr_y + adderY+ DELAYS[TIMER_BLANK_OFF_CHANGE]*makeSigned(alg_ysh);
-#endif
-
-		 alg_vector_x1 = alg_curr_x;
-         alg_vector_y1 = alg_curr_y;
-		 alg_vector_dx = alg_xsh;
-		 alg_vector_dy = -alg_ysh;
-		 alg_ramping = (sig_ramp== 0);
-         alg_vector_color = makeUnsigned((signed int)alg_zsh);
-      }
+			alg_vector_dx = alg_xsh;
+			alg_vector_dy = -alg_ysh;
+			alg_vector_color = makeUnsigned((signed int)alg_zsh);
+		}
    	}
 	else 
    	{
       /* already drawing a vector ... check if we need to turn it off */
 
-      if ((sig_blank == 0) || ((alg_zsh&0x80) !=0) || ((alg_zsh &0x7f) ==0))
+      if (!visible)
       {
-         /* blank just went on, vectoring turns off, and we've got a
-          * new line.
-          */
+			/* blank just went on, vectoring turns off, and we've got a
+			* new line.
+			*/
 
-         alg_vectoring = 0;
+         	alg_vectoring = 0;
 
-		if (sig_blank == 0)
-		{
 			// Jul 26
-			long adderX = (long)((blankOnDelay*makeSigned(alg_xsh))/8);
-			long adderY = (long)((blankOnDelay*makeSigned(alg_ysh))/8);
+			long adderX = (long)((blankOnDelay*makeSigned(alg_xsh))>>3);
+			long adderY = (long)((blankOnDelay*makeSigned(alg_ysh))>>3);
 
 
 
 			alg_addline (alg_vector_x0, 
 						 alg_vector_y0, 
-#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
-		 alg_vector_x1 + adderX,
-         alg_vector_y1 + adderY,
-#else
-		 alg_vector_x1 + adderX+ DELAYS[TIMER_BLANK_ON_CHANGE]*makeSigned(alg_xsh);
-         alg_vector_y1 + adderY+ DELAYS[TIMER_BLANK_ON_CHANGE]*makeSigned(alg_ysh);
-#endif
+	#ifdef TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL
+						alg_curr_x + adderX,
+						alg_curr_y + adderY,
+	#else
+						alg_curr_x + adderX+ DELAYS[TIMER_BLANK_ON_CHANGE]*makeSigned(alg_xsh),
+						alg_curr_y + adderY+ DELAYS[TIMER_BLANK_ON_CHANGE]*makeSigned(alg_ysh),
+	#endif
 						 alg_vector_color);
-		}
-		else
-			
-		{
-			alg_addline (alg_vector_x0, 
-						 alg_vector_y0, 
-						 alg_vector_x1, 
-						 alg_vector_y1, 
-						 alg_vector_color);
-		}
       }
 
-//was muss ich nehmen für KQ???
-
-
-//todo?
-      else if (((alg_xsh != alg_vector_dx) && (sig_ramp== 0) ) || 
-	           ((-alg_ysh != alg_vector_dy)&& (sig_ramp== 0)) || 
-			   (makeUnsigned((signed int)alg_zsh) != alg_vector_color)  
-// removed Dec 2025, nice - but WHY?			   
-// || ((sig_ramp == 0) != alg_ramping)
-			   )
-			   
+      else if (((alg_xsh != alg_vector_dx)  ||  (-alg_ysh != alg_vector_dy))  && (sig_ramp== 0)) 
       {
+			// for splines and curved vectors the following is relevant
+			// as it is - for now in this emulator it is not working correctly :-()
 
-// for splines and curved vectors the following is relevant
-// as it is - for now in this emulator it is not working correctly :-()
+			/* the parameters of the vectoring processing has changed.
+			* so end the current line.
+			*/
+			alg_addline (alg_vector_x0, 
+							alg_vector_y0, 
+							alg_curr_x, 
+							alg_curr_y, 
+							alg_vector_color);
 
-/* removed JUL 26 - with this "enabled" smartdraw function display only "half"???
-		if ((cyclesRunning - rChange) == 0)
-		{
-            alg_vector_x0 = alg_curr_x;
-            alg_vector_y0 = alg_curr_y;
-            alg_vector_x1 = alg_curr_x;
-            alg_vector_y1 = alg_curr_y;
-			if (sig_ramp==0)
+			/* we continue vectoring with a new set of parameters if the
+			* current point is not out of limits.
+			*/
+			
+
+			if (inBounds)
 			{
+				alg_vector_x0 = alg_curr_x;
+				alg_vector_y0 = alg_curr_y;
 				alg_vector_dx = alg_xsh;
 				alg_vector_dy = -alg_ysh;
+				alg_vector_color = makeUnsigned((signed int)alg_zsh);
 			}
 			else
-			{
-				alg_vector_dx = 0;
-				alg_vector_dy = 0;
-			}
-			goto contx;
-		}
-*/
-         /* the parameters of the vectoring processing has changed.
-          * so end the current line.
-          */
-				alg_addline (alg_vector_x0, 
-							 alg_vector_y0, 
-							 alg_vector_x1, 
-							 alg_vector_y1, 
-							 alg_vector_color);
-
-         /* we continue vectoring with a new set of parameters if the
-          * current point is not out of limits.
-          */
-
-         if (alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X &&
-               alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y)
-         {
-            alg_vector_x0 = alg_curr_x;
-            alg_vector_y0 = alg_curr_y;
-            alg_vector_x1 = alg_curr_x;
-            alg_vector_y1 = alg_curr_y;
-			if (sig_ramp==0)
-			{
-				alg_vector_dx = alg_xsh;
-				alg_vector_dy = -alg_ysh;
-			}
-			else
-			{
-				alg_vector_dx = 0;
-				alg_vector_dy = 0;
-			}
-            alg_vector_color = makeUnsigned((signed int)alg_zsh);
-         }
-         else
-            alg_vectoring = 0;
+				alg_vectoring = 0;
       }
 	}
-	
-
 	alg_curr_x += sig_dx;
 	alg_curr_y += sig_dy;
-	if (sig_ramp== 0) 
-	{
-// THIS DISTORTS EVERYTING!		
-// for this to work alg_curr_x/alg_curr_y should be double!
-//		alg_curr_x -= getDigitalValue();
-//		alg_curr_y += getDigitalValue();
-	}        
-
-	if (alg_vectoring == 1 &&
-		alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X &&
-		alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y) {
-
-		/* we're vectoring ... current point is still within limits so
-		 * extend the current vector.
-		 */
-
-		alg_vector_x1 = alg_curr_x;
-		alg_vector_y1 = alg_curr_y;
-	}
-}
-/*
-IRAM_ATTR void vecxSteps (long icycles)
-{
-	for (int c = 0; c < icycles; c++) 
-	{
-		via_sstep0 ();
-		timerDoStep();
-		alg_sstep ();
-		via_sstep1 ();
-		e8910_tick ();
-	}
 }
 
-*/
 DRAM_ATTR static int stepsDone = 0;
 IRAM_ATTR static inline __attribute__((always_inline, hot))  void vecx_intermediateSteps(int count)
 {
@@ -2373,7 +2202,7 @@ IRAM_ATTR static inline __attribute__((always_inline, hot))  void vecx_intermedi
 	 stepsDone++;
      cyclesRunning++;
 
-	}
+	} 
 }
 #include "e6809.i"
 
@@ -2384,6 +2213,7 @@ IRAM_ATTR void vecx_emu (long cycles)
 {
 	extern unsigned reg_pc;
 	unsigned icycles;
+	intensityDrift+=cycles;
 
 	while (cycles > 0) 
 	{

@@ -1295,7 +1295,10 @@ op_85: /* 0x85 */
 
 op_95: /* 0x95 */
 		ea = ea_direct ();
-		vecx_intermediateSteps(3); // MUST KEEEP FOR BEDLAM
+        if (isBedlam)
+        {
+    		vecx_intermediateSteps(3); // MUST KEEEP FOR BEDLAM
+        }
 		inst_and (reg_a, read8 (ea));
 //		vecx_intermediateSteps(1);
 		icycles += 4;
@@ -1942,7 +1945,7 @@ op_d0: /* 0xD0 */
     goto end;
 
 op_e0: /* 0xE0 */
-    ea = ea_indexed (&icycles);
+    ea = ea_indexed (&icycles); 
     reg_b = inst_sub8 (reg_b, read8 (ea)) & 0xff;
     icycles += 4;
     goto end;
