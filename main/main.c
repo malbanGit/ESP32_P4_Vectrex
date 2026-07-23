@@ -1,3 +1,5 @@
+
+
 // karl on LCD demo 1 46 !!!!
 // spike is now very VERY slow???? -> Spike IS so slow!!!
 #include "defines.h"
@@ -316,8 +318,8 @@ DRAM_ATTR int      s_ov_h     = 0;             /* active region height     */
 // ----------------------------------------------------
 
 /* Task stacks pinned to internal SRAM so function calls never touch PSRAM. */
-#define EMU_STACK_SIZE  8192
-#define REND_STACK_SIZE 8192
+#define EMU_STACK_SIZE  (8192+4096)
+#define REND_STACK_SIZE (8192+4096)
 static /*DRAM_ATTR*/ StackType_t  s_emu_stack[EMU_STACK_SIZE];
 static DRAM_ATTR StaticTask_t s_emu_tcb;
 static /*DRAM_ATTR*/ StackType_t  s_rend_stack[REND_STACK_SIZE];
@@ -389,32 +391,40 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 // if RGS stays stable I will drop the YUV
 
 
+IRAM_ATTR static inline void undrawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry)
+{
+    undraw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
+}
 IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry)
 {
-    if (colorPaletteEntry == 0) 
-    {
-        undraw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
-    }
-    else
-    {
-        draw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
-    }
+    draw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
 }
 IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
+#if COLOR_TEST == 1
+    undraw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+    return;
+#endif
+
     if (s_overlay == NULL)
     {
-        undraw_line_yuv422_brightness_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+        undraw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
     }
     else        
     {
-        undraw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
+        undraw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
     }
 
 }
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
     if (brightness == 0)  return;
+
+#if COLOR_TEST == 1
+    draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+    return;
+#endif
+
     if (x0==x1 && y0==y1) 
     {
         int b = brightness*4+brightnessAdjust;
@@ -422,11 +432,11 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
         {
             if (s_overlay == NULL)
             {
-                draw_line_yuv422_brightness_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+                draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
             }
             else
             {
-                draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+                draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
             }
         }
         return;
@@ -436,11 +446,11 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
     {
         if (s_overlay == NULL)
         {
-            draw_line_yuv422_brightness_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+            draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
         }
         else
         {
-            draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
+            draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
         }
     }
 }

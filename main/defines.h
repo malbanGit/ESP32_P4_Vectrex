@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include "esp_attr.h"
 
-
+#define COLOR_TEST 0
 //#define NO_AUDIO 1 just be quiet!
 
 #define VECX_DEBUG 1

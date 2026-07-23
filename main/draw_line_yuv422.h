@@ -22,6 +22,33 @@ extern "C" {
  * and s_overlay_palette[][3] (BGR) from the shared globals.
  */
 
+/* Assembly-optimised versions (RISC-V, ESP32-P4) */
+void draw_line_yuv422_color(uint8_t *fb, int fb_w, int fb_h,
+                            int x0, int y0, int x1, int y1,
+                            int colorPaletteEntry);
+
+void undraw_line_yuv422_color(uint8_t *fb, int fb_w, int fb_h,
+                              int x0, int y0, int x1, int y1,
+                              int colorPaletteEntry);
+
+void draw_line_yuv422_brightness(uint8_t *fb, int fb_w, int fb_h,
+                                 int x0, int y0, int x1, int y1,
+                                 int brightness);
+
+void undraw_line_yuv422_brightness(uint8_t *fb, int fb_w, int fb_h,
+                                   int x0, int y0, int x1, int y1,
+                                   int brightness);
+
+void draw_line_yuv422_overlay(uint8_t *fb, int fb_w, int fb_h,
+                              int x0, int y0, int x1, int y1,
+                              int brightness,
+                              const uint8_t *overlay);
+
+void undraw_line_yuv422_overlay(uint8_t *fb, int fb_w, int fb_h,
+                                int x0, int y0, int x1, int y1,
+                                int brightness,
+                                const uint8_t *overlay);
+
 /* C reference versions */
 void draw_line_yuv422_color_c(uint8_t *fb, int fb_w, int fb_h,
                         int x0, int y0, int x1, int y1,
