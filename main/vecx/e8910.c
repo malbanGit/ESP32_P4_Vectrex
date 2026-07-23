@@ -1,10 +1,11 @@
+#include "defines.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-//#include "SDL.h"
 
-#define SOUND_FREQ   22050
-#define SOUND_SAMPLE  1024
+#include "../libayemu/ayemu.h"
+ayemu_ay_t ay;
 
 /***************************************************************************
 
@@ -31,22 +32,21 @@ typedef unsigned int  UINT32;
 typedef signed char          INT8;
 typedef unsigned char UINT8;
 
-struct AY8910 {
+DRAM_ATTR struct AY8910 {
 	int index;
 	int ready;
-	unsigned *Regs;
-	INT32 lastEnable;
-	INT32 PeriodA,PeriodB,PeriodC,PeriodN,PeriodE;
-	INT32 CountA,CountB,CountC,CountN,CountE;
-	UINT32 VolA,VolB,VolC,VolE;
-	UINT8 EnvelopeA,EnvelopeB,EnvelopeC;
-	UINT8 OutputA,OutputB,OutputC,OutputN;
-	INT8 CountEnv;
-	UINT8 Hold,Alternate,Attack,Holding;
-	INT32 RNG;
-	unsigned int VolTable[32];
-
+	int lastEnable;
+	int PeriodA,PeriodB,PeriodC,PeriodN,PeriodE;
+	int CountA,CountB,CountC,CountN,CountE;
+	int RNG;
+	unsigned VolA,VolB,VolC,VolE;
+	signed char CountEnv;
+	unsigned char EnvelopeA,EnvelopeB,EnvelopeC;
+	unsigned char OutputA,OutputB,OutputC,OutputN;
+	unsigned char Hold,Alternate,Attack,Holding;
+	unsigned VolTable[32];
 } PSG;
+
 
 /* register id's */
 #define AY_AFINE	(0)
@@ -67,20 +67,126 @@ struct AY8910 {
 #define AY_PORTA	(14)
 #define AY_PORTB	(15)
 
-int reg14In = 0xff;
-int reg14Out = 0xff;
-static int SAMPLE_THRESHOLD = 25;
-static int digitByteCounter =0;       
+DRAM_ATTR int reg14In = 0xff;
+DRAM_ATTR int reg14Out = 0xff;
+DRAM_ATTR static int SAMPLE_THRESHOLD = 25;
+DRAM_ATTR static int digitByteCounter =0;       
 
-extern unsigned snd_regs[16];
+#define MAX_DIGIT_BUFFER 2000
+extern long cyclesRunning;
+
+//
+EXT_RAM_BSS_ATTR static int digitByte[MAX_DIGIT_BUFFER];
+
+DRAM_ATTR int tickpos=0;
+DRAM_ATTR int tickdiv=68;
+DRAM_ATTR int curdac=0;
+DRAM_ATTR int dacto;
+
+void initAY(int freq, int chans, int bits)
+{
+	memset (&ay, 0, sizeof(ay));
+
+	ayemu_init(&ay);
+//	ayemu_set_chip_type(&ay, AYEMU_YM, NULL);
+	ayemu_set_sound_format(&ay, freq, chans, bits);
+	ayemu_set_chip_freq(&ay, 1500000);  // Vectrex PSG clock
+	if (chans==2) 
+		ayemu_set_stereo(&ay, AYEMU_ABC, NULL);
+	else
+		ayemu_set_stereo(&ay, AYEMU_MONO, NULL);
+//	ayemu_set_stereo(&ay, AYEMU_MONO, NULL);
+}
+
+void ayemu_set_regs(ayemu_ay_t *ay, unsigned *regs);
+
+// length in byte!
+IRAM_ATTR void callbackAY(void *userdata, uint8_t *stream, int length)
+{
+	(void) userdata;
+
+	/* hack to prevent us from hanging when starting filtered outputs */
+	if (!PSG.ready)
+	{
+		memset(stream, 0, length * sizeof(*stream));
+		return;
+	}
+
+	// small sample counts are ignored!
+	if ((digitByteCounter>SAMPLE_THRESHOLD) ) // are there any samples?
+	{
+
+		// 30000 cycles = 1/50 second
+		// we are called every 1/50th second 
+/*
+		int sampleCounter = 0;
+
+		// AY_FREQUENCY * AY_CHANNEL * AY_BITS / 50 Hz / 4 bytes  -> 882 "frames" per call
+		// that means 882 frames equal 300000cycles equals 1/50th of a second
+		// len is in byte which mewans it is 3528 = 4*882 -> each frame is 2 words (2 channels a 16bit)
+
+		// that means each sample "length is 882/cyclesPerSample"
+*/
+		if (digitByteCounter > SAMPLE_THRESHOLD)
+		{
+			int out_samples = length / (AY_CHANNEL * (AY_BITS >> 3));
+
+			for (int i = 0; i < out_samples; i++) {
+				int idx = (int)(i * (double)digitByteCounter / out_samples);
+				if (idx >= digitByteCounter) idx = digitByteCounter - 1;
+				int8_t raw = (int8_t)digitByte[idx];
+
+		#if AY_BITS == 16
+				int16_t sample = (int16_t)raw * 64;
+				int16_t *out   = (int16_t *)stream;
+		#  if AY_CHANNEL == 2
+				out[i * 2]     = sample;
+				out[i * 2 + 1] = sample;
+		#  else
+				out[i] = sample;
+		#  endif
+
+		#else  /* AY_BITS == 8 */
+				uint8_t sample = (uint8_t)(raw + 128);
+				uint8_t *out   = (uint8_t *)stream;
+		#  if AY_CHANNEL == 2
+				out[i * 2]     = sample;
+				out[i * 2 + 1] = sample;
+		#  else
+				out[i] = sample;
+		#  endif
+		#endif
+			}
+
+			digitByteCounter = -1;
+			return;
+		}
+	}
+	else
+	{
+		// the set reg as a batch - is buggy
+		// some noises do not fade if  regs are set with the batch!
+		//	ayemu_set_regs(&ay, snd_regs);
+		ayemu_gen_sound(&ay, stream, length / (AY_CHANNEL *(AY_BITS>>3)));
+	}
+	digitByteCounter = -1;
+
+}
 
 
-// TODO
-#define MAX_DIGIT_BUFFER 1 // 10000
-static int digitByte[MAX_DIGIT_BUFFER];
 
+
+
+
+
+
+
+
+IRAM_ATTR einline 
 int e8910_read(int reg)
 {
+	return snd_regs[reg];
+	/* TODO 
 	if (reg != 14) return snd_regs[reg];
 	// readDataToPSGFromPortA();
 
@@ -91,9 +197,10 @@ int e8910_read(int reg)
 	}
 	// output mode
     return reg14In;//snd_regs[14];
-	
+	*/
 }
 
+IRAM_ATTR einline 
 void e8910_write(int r, int v)
 {
     int old;
@@ -108,11 +215,13 @@ void e8910_write(int r, int v)
 		// sound sample is active
 		if (digitByteCounter>=MAX_DIGIT_BUFFER) return;
 		if (digitByteCounter==-1) digitByteCounter =0; // -1 means digitizing active, but buffer was reset
-		digitByte[digitByteCounter++] = v;
+		digitByte[digitByteCounter] = v;
+		digitByteCounter++;
 		return;
 	}
 
     snd_regs[r] = v;
+ 	ayemu_set_reg(&ay, r, v);
 
 	/* A note about the period of tones, noise and envelope: for speed reasons,*/
 	/* we count down from the period to 0, but careful studies of the chip     */
@@ -243,51 +352,27 @@ void e8910_write(int r, int v)
 	}
 }
 
-int volsA[SOUND_SAMPLE];
-int volsB[SOUND_SAMPLE];
-int volsC[SOUND_SAMPLE];
-int dacval[SOUND_SAMPLE];
-int tickpos=0;
-int tickdiv=68;
-int curdac=0;
-int dacto;
-
-
-void e8910_setdac(int val) {
-	if (val&0x80) val=val-256;
-	curdac=val;
-//	printf("%i  \n", val);
-	dacto=0;
-}
-
-void e8910_tick() {
-	int samppos=tickpos/68.027;
-	if (samppos>=SOUND_SAMPLE) samppos=SOUND_SAMPLE-1;
-	volsA[samppos]=PSG.VolA;
-	volsB[samppos]=PSG.VolB;
-	volsC[samppos]=PSG.VolC;
-	dacval[samppos]=curdac;
-	dacto++; 
-//	if (dacto>200) curdac=curdac*0.90;
-	tickpos++;
-}
-
-static void e8910_callback(void *userdata, uint16_t *stream, int length)
+// NOT USED!
+// length is the "frame length"
+// meaning one "unit" of sound samples 16bit stereo - > 1 frame (4 byte!)
+IRAM_ATTR 
+void e8910_callback(void *userdata, uint8_t *stream, int length)
 {
-	(void) userdata;
 
 	int outn;
-	int sp=0;
-	uint16_t* buf1 = stream;
+    int lengthOrg = length;
+	uint8_t* buf1 = stream;
+
+	(void) userdata;
 
 	/* hack to prevent us from hanging when starting filtered outputs */
 	if (!PSG.ready)
 	{
-		memset(stream, 0, length * sizeof(*stream));
+		memset(stream, 0, length*4 * sizeof(*stream));
 		return;
 	}
 
-//  length = length * 2;
+  length = length * 2;
 
 	/* The 8910 has three outputs, each output is the mix of one of the three */
 	/* tone generators and of the (single) noise generator. The two are mixed */
@@ -302,49 +387,49 @@ static void e8910_callback(void *userdata, uint16_t *stream, int length)
 	/* Setting the output to 1 is necessary because a disabled channel is locked */
 	/* into the ON state (see above); and it has no effect if the volume is 0. */
 	/* If the volume is 0, increase the counter, but don't touch the output. */
-	if (PSG.Regs[AY_ENABLE] & 0x01)
+	if (snd_regs[AY_ENABLE] & 0x01)
 	{
 		if (PSG.CountA <= STEP2) PSG.CountA += STEP2;
 		PSG.OutputA = 1;
 	}
-	else if (PSG.Regs[AY_AVOL] == 0)
+	else if (snd_regs[AY_AVOL] == 0)
 	{
 		/* note that I do count += length, NOT count = length + 1. You might think */
 		/* it's the same since the volume is 0, but doing the latter could cause */
 		/* interferencies when the program is rapidly modulating the volume. */
 		if (PSG.CountA <= STEP2) PSG.CountA += STEP2;
 	}
-	if (PSG.Regs[AY_ENABLE] & 0x02)
+	if (snd_regs[AY_ENABLE] & 0x02)
 	{
 		if (PSG.CountB <= STEP2) PSG.CountB += STEP2;
 		PSG.OutputB = 1;
 	}
-	else if (PSG.Regs[AY_BVOL] == 0)
+	else if (snd_regs[AY_BVOL] == 0)
 	{
 		if (PSG.CountB <= STEP2) PSG.CountB += STEP2;
 	}
-	if (PSG.Regs[AY_ENABLE] & 0x04)
+	if (snd_regs[AY_ENABLE] & 0x04)
 	{
 		if (PSG.CountC <= STEP2) PSG.CountC += STEP2;
 		PSG.OutputC = 1;
 	}
-	else if (PSG.Regs[AY_CVOL] == 0)
+	else if (snd_regs[AY_CVOL] == 0)
 	{
 		if (PSG.CountC <= STEP2) PSG.CountC += STEP2;
 	}
 
 	/* for the noise channel we must not touch OutputN - it's also not necessary */
 	/* since we use outn. */
-	if ((PSG.Regs[AY_ENABLE] & 0x38) == 0x38)	/* all off */
+	if ((snd_regs[AY_ENABLE] & 0x38) == 0x38)	/* all off */
 		if (PSG.CountN <= STEP2) PSG.CountN += STEP2;
 
-	outn = (PSG.OutputN | PSG.Regs[AY_ENABLE]);
+	outn = (PSG.OutputN | snd_regs[AY_ENABLE]);
 
 	/* buffering loop */
 	while (length > 0)
 	{
-        int vol;
-    int left  = 2;
+        unsigned vol;
+	    int left  = 2;
 		/* vola, volb and volc keep track of how long each square wave stays */
 		/* in the 1 position during the sample period. */
 
@@ -472,7 +557,7 @@ static void e8910_callback(void *userdata, uint16_t *stream, int length)
 				if ((PSG.RNG + 1) & 2)	/* (bit0^bit1)? */
 				{
 					PSG.OutputN = ~PSG.OutputN;
-					outn = (PSG.OutputN | PSG.Regs[AY_ENABLE]);
+					outn = (PSG.OutputN | snd_regs[AY_ENABLE]);
 				}
 
 				/* The Random Number Generator of the 8910 is a 17-bit shift */
@@ -533,84 +618,75 @@ static void e8910_callback(void *userdata, uint16_t *stream, int length)
 			}
 		}
 
-		vol = (vola * volsA[sp] + volb * volsB[sp] + volc * volsC[sp]) / (3 * STEP);
-//		printf("Vol %d\n", vol);
-		if (--length & 1) {
-			*(buf1++) = (vol+(dacval[sp]*128))+32767; //guessed mixing rate
-			sp++;
+		vol = (vola * PSG.VolA + volb * PSG.VolB + volc * PSG.VolC) / (3 * STEP);
+		if (--length & 1) 
+			*(buf1++) = vol >> 8;
+	}
+
+	// small sample counts are ignored!
+	if ((digitByteCounter>SAMPLE_THRESHOLD) ) // are there any samples?
+	{
+		double sampleScale = ((double)digitByteCounter) / ((double) lengthOrg);
+		int i=0;
+		// we fill the needed sample buffer
+		// with as many samples as we have
+		// each sample may be "stretched" to fill the buffer
+		// it is NOT considered how long (in cycles) a sample "stayed" for digital output
+		// all samples are considered to have the same "length"
+		double sampleCounter = 0;
+
+		// samples come from the DAC (more or less)
+		// therefor samples are signed 8bit samples, -128 - +127
+		// output line is done in signed 8bit samples (PSG has signed output) [although the output is allways positive]
+		// and our data here is ORer with
+		// PSG out
+		double volDigital = 0.1;
+		while (i<lengthOrg) 
+		{
+			double signed8BitSampleVolumne = digitByte[(int)sampleCounter]*volDigital;
+			unsigned char sampleValueVolumne8BitSigned = (unsigned char)(( ((unsigned char ) signed8BitSampleVolumne)) & 0xff); // UNSIGNED
+			sampleCounter += sampleScale;
+			
+			// for now a sample just overwrites PSG
+			stream[i] = sampleValueVolumne8BitSigned;
+			i++;
 		}
 	}
-	tickdiv=tickpos/sp;
-//	printf("sp %d tickpos %d tickdiv %d\n", sp, tickpos, tickdiv);
-	tickpos=0;
+	digitByteCounter = -1;
+
 }
-
-
-static void
-e8910_build_mixer_table()
+/*
+static void e8910_build_mixer_table(void)
 {
 	int i;
 	double out;
 
-	/* calculate the volume->voltage conversion table */
-	/* The AY-3-8910 has 16 levels, in a logarithmic scale (3dB per STEP) */
-	/* The YM2149 still has 16 levels for the tone generators, but 32 for */
-	/* the envelope generator (1.5dB per STEP). */
+	// calculate the volume->voltage conversion table 
+	// The AY-3-8910 has 16 levels, in a logarithmic scale (3dB per STEP) 
+	// The YM2149 still has 16 levels for the tone generators, but 32 for 
+	// the envelope generator (1.5dB per STEP). 
 	out = MAX_OUTPUT;
 	for (i = 31;i > 0;i--)
 	{
-		PSG.VolTable[i] = (unsigned)(out + 0.5);	/* round to nearest */
-		out /= 1.188502227;	/* = 10 ^ (1.5/20) = 1.5dB */
+		PSG.VolTable[i] = (unsigned)(out + 0.5);	// round to nearest 
+		out /= 1.188502227;	// = 10 ^ (1.5/20) = 1.5dB 
 	}
 	PSG.VolTable[0] = 0;
 }
-
-
-
-void e8910_init_sound()
+*/
+void e8910_init_sound(void)
 {
-	int x;
-	// SDL audio stuff
-//	SDL_AudioSpec reqSpec;
-	//SDL_AudioSpec givenSpec;
-
-	PSG.Regs = snd_regs;
-	PSG.RNG  = 1;
+	PSG.RNG     = 1;
 	PSG.OutputA = 0;
 	PSG.OutputB = 0;
 	PSG.OutputC = 0;
 	PSG.OutputN = 0xff;
-	e8910_build_mixer_table();
-	PSG.ready = 1;
-
-	for (x=0; x<SOUND_SAMPLE; x++) {
-		dacval[x]=0;
-	}
-
-/*
-	// set up audio buffering
-	reqSpec.freq = SOUND_FREQ;            // Audio frequency in samples per second
-	reqSpec.format = AUDIO_U16;          // Audio data format
-	reqSpec.channels = 1;            // Number of channels: 1 mono, 2 stereo
-	reqSpec.samples = SOUND_SAMPLE;            // Audio buffer size in samples
-	reqSpec.callback = e8910_callback;      // Callback function for filling the audio buffer
-	reqSpec.userdata = NULL;
-	// Open the audio device 
-	if ( SDL_OpenAudio(&reqSpec, &givenSpec) < 0 ){
-		fprintf(stderr, "Couldn't open audio: %s\n", SDL_GetError());
-		exit(-1);
-	}
-*/
-# if 0
-	fprintf(stdout, "samples:%d format=%x freq=%d\n", givenSpec.samples, givenSpec.format, givenSpec.freq);
-# endif
-
-	// Start playing audio
-//	SDL_PauseAudio(0);
+//	e8910_build_mixer_table();
+	PSG.ready   = 1;
 }
+
 
 void e8910_done_sound()
 {
-//	SDL_CloseAudio();
 }
 

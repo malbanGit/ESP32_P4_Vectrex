@@ -1,9 +1,12 @@
 #ifndef __VECX_H
 #define __VECX_H
+#include "defines.h"
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 
 
 enum {
@@ -39,6 +42,7 @@ extern vector_t *vectors_erse;
 
 void vecx_reset (void);
 void vecx_emu (long cycles);
+int vecx_init(void);
 
 
 #ifdef __cplusplus

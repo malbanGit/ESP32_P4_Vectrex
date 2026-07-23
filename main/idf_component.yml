@@ -1,4 +1,7 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  esp32_p4_nano_custom:
-    path: "../components/esp32_p4_nano_custom"
+  espressif/usb_host_hid: "^1.0.4"
+  espressif/esp_lcd_lt8912b: "==0.2.0"
+  espressif/esp_codec_dev: "^1.3.1"
+  espressif/es8311:
+    version: "^1.0.0"  
