@@ -635,28 +635,34 @@ IRAM_ATTR static einline void readevents()
 		printf("brightnessAdjust: %d\n", brightnessAdjust);
 	}
 
+void changeGlobalLineValues(int w, int g);
    
 	if (isKeyDown(HID_KEY_F1))
 	{
 		g_line_width = g_line_width - 1;
 		if (g_line_width<0) g_line_width = 0;
 		printf("g_line_width: %d\n", g_line_width);
+		changeGlobalLineValues(g_line_width, g_line_glow);
+
 	}
 	if (isKeyDown(HID_KEY_F2))
 	{
 		g_line_width = g_line_width + 1;
 		printf("g_line_width: %d\n", g_line_width);
+		changeGlobalLineValues(g_line_width, g_line_glow);
 	}
 	if (isKeyDown(HID_KEY_F3))
 	{
 		g_line_glow = g_line_glow - 1;
 		if (g_line_glow<0) g_line_glow = 0;
 		printf("g_line_glow: %d\n", g_line_glow);
+		changeGlobalLineValues(g_line_width, g_line_glow);
 	}
 	if (isKeyDown(HID_KEY_F4))
 	{
 		g_line_glow = g_line_glow + 1;
 		printf("g_line_glow: %d\n", g_line_glow);
+		changeGlobalLineValues(g_line_width, g_line_glow);
 	}
 	
 	if (isKeyDown(HID_KEY_1))

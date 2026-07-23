@@ -34,6 +34,8 @@
 //   0 = native RGB888 (24 bpp): sharpest colors, full scanout (~166 MB/s @720p).
 //   1 = YUV422 (16 bpp): halves scanout, lossless for black & white content
 //       (full-res luma); the P4 DPI converts YUV422->RGB888 in hardware.
+
+// only YUV is supported, I dropped RGB
 #define VIDEO_FB_YUV422          1
 #define VIDEO_FB_BPP             (VIDEO_FB_YUV422 ? 2 : 3)
 #define NUM_FBS 2

@@ -54,11 +54,6 @@
 // #define MOVIE_SUPPORT - not tested
 
 
-// following is defined in board.h
-// #define VIDEO_FB_YUV422          0 // YUV only supported when overlays are disabled
-
-
-
 // globals
 extern int mode;          // defined in main.c
 extern int overlayEnabled;
@@ -67,6 +62,12 @@ extern int LCD_V_RES;
 
 extern int  g_line_width;
 extern int  g_line_glow;
-
 extern int  brightnessAdjust;
+extern long unsigned int g_beam_r2_q16;
+
+extern int g_line_Rb;
+extern int g_beam_r;
+extern long unsigned int g_gs;
+
+
 extern int  brightnessLCD;

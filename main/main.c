@@ -169,6 +169,7 @@ Should connect to COM 4, flash and play.
 #include "lodepng.h"
 
 #include "vecx\vecx.h"
+#include "draw_line_yuv422.h"
 
 
 
@@ -180,51 +181,36 @@ char cartName[MAX_ROM_NAME];
 HUGE_DATA_LOCATION unsigned char cartData[MAX_CART_SIZE];
 long cartSize = 0;
 
+DRAM_ATTR uint32_t g_beam_r2_q16;
+DRAM_ATTR int g_line_Rb = (((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH) > 0) ? ((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH - 1) : 0;
+DRAM_ATTR int g_beam_r = LINE_WIDTH >> 1;
+DRAM_ATTR uint32_t g_gs;
 
-// ASM H
-void draw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
-                            int x0, int y0, int x1, int y1,
-                            int brightness);
-void undraw_line_asm_rgb888(uint8_t *fb, int fw, int fh,
-                            int x0, int y0, int x1, int y1,
-                            int brightness);
+static inline uint32_t cap_d2_q16(int apx, int apy)
+{
+    uint32_t ax = (uint32_t)(apx << 8);
+    uint32_t ay = (uint32_t)(apy << 8);
+    return ax * ax + ay * ay;
+}
+static inline uint32_t gs_for_glow(int glow_r)
+{
+    int gr2 = glow_r * glow_r;
+    return (gr2 == 0) ? 0u : (uint32_t)((177u << 14) / (uint32_t)gr2);
+}
 
-void draw_line_rgb888_overlay(
-                            uint8_t *fb, int fb_w, int fb_h,
-                            int x0, int y0, int x1, int y1,
-                            int brightness,
-                            const uint8_t *overlay);
-void undraw_line_rgb888_overlay(
-                            uint8_t *fb, int fb_w, int fb_h,
-                            int x0, int y0, int x1, int y1,
-                            int brightness,
-                            const uint8_t *overlay);
+void changeGlobalLineValues(int w, int g)
+{
+    g_line_width = w;
+    g_line_glow = g;
 
+    // Precomputed bounding-box radius shared by all draw/undraw functions and ASM.
+    // Must be updated if g_line_width or g_line_glow ever change at runtime.     
+    g_line_Rb = (((g_line_width >> 1) + g_line_glow) > 0) ? ((g_line_width >> 1) + g_line_glow - 1) : 0;
+    g_beam_r = g_line_width >> 1;
+    g_beam_r2_q16  = cap_d2_q16(g_beam_r, 0);
+    g_gs = gs_for_glow(g_line_glow);
+}
 
-void draw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
-                            int x0, int y0, int x1, int y1,
-                            int brightness);
-void undraw_line_asm_yuv422(uint8_t *fb, int fw, int fh,
-                            int x0, int y0, int x1, int y1,
-                            int brightness);
-void draw_line_yuv422_overlay(
-                            uint8_t *fb, int fb_w, int fb_h,
-                            int x0, int y0, int x1, int y1,
-                            int brightness,
-                            const uint8_t *overlay);
-void undraw_line_yuv422_overlay(
-                            uint8_t *fb, int fb_w, int fb_h,
-                            int x0, int y0, int x1, int y1,
-                            int brightness,
-                            const uint8_t *overlay);
-
-// color lines
-void draw_line_yuv422(uint8_t *fb, int fb_w, int fb_h,
-                      int x0, int y0, int x1, int y1,
-                      int colorPaletteEntry);
-
-void undraw_line_yuv422(uint8_t *fb, int fb_w, int fb_h,
-                        int x0, int y0, int x1, int y1);                            
 
 esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
 
@@ -255,10 +241,6 @@ DRAM_ATTR int LCD_V_RES = 720;
 //hdmi 1280x720
 //vdsl 480x800
 
-/* Precomputed bounding-box radius shared by all draw/undraw functions and ASM.
- * Must be updated if g_line_width or g_line_glow ever change at runtime.     */
-DRAM_ATTR int g_line_Rb = (((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH) > 0)
-                           ? ((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH - 1) : 0;
 
 
 static const char *TAG = "main";
@@ -422,22 +404,21 @@ IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, 
 #if VIDEO_FB_YUV422 == 1
     if (colorPaletteEntry == 0) 
     {
-        undraw_line_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1);
+        undraw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
     }
     else
     {
-        draw_line_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
+        draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
     }
 #endif
 }
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
-#if VIDEO_FB_YUV422 == 1
     if (brightness == 0) 
     {
         if (s_overlay == NULL)
         {
-            undraw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+            undraw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
         }
         else        
         {
@@ -453,7 +434,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
             {
                 if (s_overlay == NULL)
                 {
-                    draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+                    draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
                 }
                 else
                 {
@@ -467,7 +448,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
         {
             if (s_overlay == NULL)
             {
-                draw_line_asm_yuv422(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+                draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
             }
             else
             {
@@ -475,50 +456,6 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
             }
         }
     }
-#else
-    if (brightness == 0) 
-    {
-        if (s_overlay == NULL)
-        {
-            undraw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
-        }
-        else        
-        {
-            undraw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
-        }
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-            {
-                if (s_overlay == NULL)
-                {
-                    draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-                }
-                else
-                {
-                    draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-                }
-            }
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
-        if (b>0)
-        {
-            if (s_overlay == NULL)
-            {
-                draw_line_asm_rgb888(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-            }
-            else
-            {
-                draw_line_rgb888_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-            }
-        }
-    }
-    #endif
 }
 
 // ----------------------------------------------------
@@ -1740,6 +1677,7 @@ void initGlobals()
 {
     overlayEnabled =  ENABLE_OVERLAYS;
     mode = VIDEO_OUT_SELECTED;          // default at boot
+    changeGlobalLineValues( LINE_WIDTH, LINE_GLOW_WIDTH);
 }
 
 
