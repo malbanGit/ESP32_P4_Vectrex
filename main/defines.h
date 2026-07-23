@@ -1,4 +1,8 @@
 #pragma once
+#include <stdint.h>
+#include <stddef.h>
+#include "esp_attr.h"
+
 
 //#define NO_AUDIO 1 just be quiet!
 
@@ -71,3 +75,5 @@ extern long unsigned int g_gs;
 
 
 extern int  brightnessLCD;
+extern const uint8_t gauss_lut[];
+extern uint8_t s_overlay_palette[128][3];
