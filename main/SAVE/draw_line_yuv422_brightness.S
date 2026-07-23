@@ -1,4 +1,4 @@
-/* draw_line_yuv422_brightness.S 
+/* draw_line_yuv422_brightness.S
  *
  * RV32IMAFC IRAM-resident assembly for white (brightness-only) YUV422 line
  * renderers.  Algorithm matches draw_line_yuv422_brightness.c /
@@ -280,7 +280,7 @@ draw_line_yuv422_brightness:
     j     .Lbyl_beam
 
 .Lbyl_beam:
-    bgtu  a0, a7, .Lbyl_glow
+    bgt   a0, a7, .Lbyl_glow
 .Lbyl_in_beam:
     mv    a0, s6
     j     .Lbyl_write
@@ -335,7 +335,7 @@ draw_line_yuv422_brightness:
     sub   a4, t4, a2; sub a5, s11, a3
     slli  a4, a4, 8; mul a4, a4, a4
     slli  a5, a5, 8; mul a5, a5, a5; add a0, a4, a5   /* d2_q16 */
-    bgtu  a0, a7, .Lbyl_d_glow
+    bgt   a0, a7, .Lbyl_d_glow
     mv    a0, s6
     j     .Lbyl_d_write
 .Lbyl_d_glow:
@@ -600,7 +600,7 @@ undraw_line_yuv422_brightness:
     j     .Lubyl_beam
 
 .Lubyl_beam:                        /* a0=d2_q16, a5=beam_r2_q16 */
-    bgtu  a0, a5, .Lubyl_glow
+    bgt   a0, a5, .Lubyl_glow
 .Lubyl_in_beam:
     /* Always erase Y in beam core */
     sb    zero, 0(t1)
@@ -646,7 +646,7 @@ undraw_line_yuv422_brightness:
     sub   a2, t4, a0; sub a3, s11, a1
     slli  a0, a2, 8; mul a0, a0, a0
     slli  a1, a3, 8; mul a1, a1, a1; add a0, a0, a1   /* d2_q16 */
-    bgtu  a0, a5, .Lubyl_d_glow
+    bgt   a0, a5, .Lubyl_d_glow
     /* in beam: always erase Y */
     sb    zero, 0(t1)
     j     .Lubyl_d_px_next

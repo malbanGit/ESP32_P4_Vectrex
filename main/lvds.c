@@ -42,8 +42,10 @@ static const char *TAG = "lvds";
 // and 26.667 (240/9) exist. We request 26 -> 240/9 = 26.667 MHz actual, with
 // htotal 896 (panel 808-896) and vtotal 496 (panel 488-504):
 // 26.667e6 / (896 x 496) = 60.00 Hz.
-#define ST7262_DPI_CLK_MHZ      26//20    // requested; 240/9 = 26.667 MHz actual
-#define ST7262_DECLARE_PCLK_MHZ 27//20    // bridge-declared integer pclk (nearest)
+//#define ST7262_DPI_CLK_MHZ      26//20    // requested; 240/9 = 26.667 MHz actual
+//#define ST7262_DECLARE_PCLK_MHZ 27//20    // bridge-declared integer pclk (nearest)
+#define ST7262_DPI_CLK_MHZ      21    // requested; 240/9 = 26.667 MHz actual
+#define ST7262_DECLARE_PCLK_MHZ 21    // bridge-declared integer pclk (nearest)
 #define ST7262_HTOTAL           896
 #define ST7262_VTOTAL           496
 #define ST7262_VIDEO_TIMING() {                   \

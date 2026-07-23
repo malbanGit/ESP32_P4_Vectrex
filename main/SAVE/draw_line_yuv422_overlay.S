@@ -1,7 +1,7 @@
 /* draw_line_yuv422.S
  *
  * RV32IMAC hand-optimised assembly for all YUV422 (YUYV) line renderers:
- *
+ * 
  *   undraw_line_yuv422_overlay  — overlay-palette undraw (distance-field)
  *   draw_line_yuv422_overlay    — overlay-palette draw   (distance-field)
  *   undraw_line_yuv422_color    — fixed-palette erase to black

@@ -1151,10 +1151,11 @@ void e6809_reset (void)
 // the second might be needed for imager or lightpen
 //IRAM_ATTR unsigned e6809_sstep (unsigned irq_i, unsigned irq_f)
 //IRAM_ATTR unsigned e6809_sstep (unsigned irq_i)
-
+/*
 IRAM_ATTR static  unsigned e6809_sstep ()
 {
 	unsigned icycles;
 #include "6809Step.i"
     return icycles;
 }
+*/

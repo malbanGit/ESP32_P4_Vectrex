@@ -3,11 +3,10 @@
 #include <stddef.h>
 #include "esp_attr.h"
 
-#define COLOR_TEST 1
 //#define NO_AUDIO 1 just be quiet!
 
 #define VECX_DEBUG 1
-#define MAX_EMU_FPS 150
+#define MAX_EMU_FPS 50
 #define ENABLE_OVERLAYS 1
 
 #define LINE_WIDTH 1
@@ -41,17 +40,31 @@
 #define MAX_CART_SIZE   32768*2*4 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
 #define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
 
-#define HDMI_VECX_WIDTH 500		
-#define HDMI_VECX_HEIGHT 700	
-
-#define LCD_VECX_WIDTH 410 // 410		
-#define LCD_VECX_HEIGHT 730		
-
+// the overlay
 #define HDMI_OVERLAY_WIDTH 564		
 #define HDMI_OVERLAY_HEIGHT 720		
 
+// the vecterx output inside an overlay
+#define HDMI_IN_OVERLAY_VECX_WIDTH 500		
+#define HDMI_IN_OVERLAY_VECX_HEIGHT 700	
+
+#define HDMI_VECX_WIDTH 500		
+#define HDMI_VECX_HEIGHT 720
+
+// the overlay
 #define LCD_OVERLAY_WIDTH 800		
 #define LCD_OVERLAY_HEIGHT 480		
+
+// the vecterx output inside an overlay
+#define LCD_IN_OVERLAY_VECX_WIDTH 400 // 410		
+#define LCD_IN_OVERLAY_VECX_HEIGHT 700		
+
+// if now overlay - vectrex fills the screen
+#define LCD_VECX_WIDTH 480 // 410		
+#define LCD_VECX_HEIGHT 800		
+
+
+
 
 
 // #define FLASH_SUPPORT - not tested

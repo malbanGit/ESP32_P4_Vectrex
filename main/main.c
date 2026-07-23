@@ -11,7 +11,32 @@ extern int SCREEN_HEIGHT;
 
 /*
 Bug:
-- release end of game explosion verzerrt (color ok)
+- release end of game explosion verzerrt (color_c ok, color_asm nok, overlay asm nok, overlay c ok, brightness asm nok, )
+
+
+crash overlay asm
+Guru Meditation Error: Core  0 panic'ed (Load access fault). Exception was unhandled.
+
+Core  0 register dump:
+MEPC    : 0x4ff21c1a  RA      : 0x4ff023dc  SP      : 0x4ff63300  GP      : 0x4ff23100  
+--- 0x4ff21c1a: draw_line_yuv422_overlay at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/draw_line_yuv422_overlay.S:719
+--- 0x4ff023dc: drawLine_raw at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/main.c:444
+--- (inlined by) renderer_task at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/main.c:1158
+TP      : 0x4ff63410  T0      : 0x00000000  T1      : 0x00000000  T2      : 0xfffffff2  
+S0/FP   : 0x48185400  S1      : 0x00000320  A0      : 0x00000143  A1      : 0x00000143  
+A2      : 0x000001e0  A3      : 0x00000000  A4      : 0x00000000  A5      : 0x482036c0  
+A6      : 0x00000000  A7      : 0x000000c2  S2      : 0x00000254  S3      : 0x00000256  
+S4      : 0x00000143  S5      : 0x00000145  S6      : 0x000000c2  S7      : 0x00000255  
+S8      : 0x00000144  S9      : 0x00000255  S10     : 0x00000144  S11     : 0x00000001  
+T3      : 0x00000038  T4      : 0x00000254  T5      : 0xffffffff  T6      : 0x00000254  
+MSTATUS : 0x00011880  MTVEC   : 0x4ff00003  MCAUSE  : 0x00000005  MTVAL   : 0x00000254  
+--- 0x4ff00003: _vector_table at ??:?
+MHARTID : 0x00000000  
+
+Stack memory:
+4ff63300: 0x4ff023dc 0x4ff40000 0xaaaaaaab 0x4ff58000 0x4ff40000 0x4ff58000 0xffffffff 0x000003e8
+--- 0x4ff023dc: drawLine_raw at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/main.c:444
+--- (inlined by) renderer_task at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/main.c:1158
 
 
 
@@ -405,10 +430,6 @@ IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, 
 }
 IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
-#if COLOR_TEST == 1
-    undraw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
-    return;
-#endif
 
     if (s_overlay == NULL)
     {
@@ -423,13 +444,6 @@ IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
     if (brightness == 0)  return;
-
-#if COLOR_TEST == 1
-    draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
-    
-    return;
-#endif
-
     if (x0==x1 && y0==y1) 
     {
         int b = brightness*4+brightnessAdjust;
@@ -686,7 +700,7 @@ static void lcd_init(void)
     esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
     esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG();
     if (mode == VIDEO_OUT_LVDS)
-        dsi_bus_cfg.lane_bit_rate_mbps = BOARD_DSI_LANE_MBPS;   // single source: board.h
+        dsi_bus_cfg.lane_bit_rate_mbps = 1500;//BOARD_DSI_LANE_MBPS;   // single source: board.h
     else
         dsi_bus_cfg.lane_bit_rate_mbps = 1200;   // single source: board.h
 
@@ -1680,7 +1694,25 @@ void initGlobals()
     mode = VIDEO_OUT_SELECTED;          // default at boot
     changeGlobalLineValues( LINE_WIDTH, LINE_GLOW_WIDTH);
 }
-
+void resizeVectrex()
+{
+    // Vecx
+    void resize(int width, int height);//
+    if (mode == VIDEO_OUT_HDMI)
+    {
+        if (overlayEnabled)
+    		resize( HDMI_IN_OVERLAY_VECX_WIDTH, HDMI_IN_OVERLAY_VECX_HEIGHT);
+        else
+            resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
+    }
+    else
+    {
+        if (overlayEnabled)
+    		resize( LCD_IN_OVERLAY_VECX_WIDTH, LCD_IN_OVERLAY_VECX_HEIGHT);
+        else
+            resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
+    }
+}
 
 // ----------------------------------------------------
 // app_main
@@ -1819,6 +1851,7 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
     );
 
     vecx_init();
+    resizeVectrex();
 
     // Emulator task (core 1) — static stack in internal SRAM
     xTaskCreateStaticPinnedToCore(
@@ -1863,10 +1896,12 @@ void toggleOverlayRequest()
 void toggleOverlay()
 {
 	if (overlayEnabled) overlayEnabled=0; else overlayEnabled = 1; 
+
     if (mode == VIDEO_OUT_HDMI)
         loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
     else
         loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+    resizeVectrex();
 }
 
 void toggleVideoMode()
@@ -1880,8 +1915,6 @@ void toggleVideoMode()
     else   mode = VIDEO_OUT_HDMI;
 
     lcd_init();
-    // Vecx
-    void resize(int width, int height);//
 
     // audio is simply a switch 
     if (mode == VIDEO_OUT_HDMI)
@@ -1892,9 +1925,9 @@ void toggleVideoMode()
         esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
 
         // Vecx
-        SCREEN_HEIGHT = LCD_V_RES;
+		SCREEN_HEIGHT = LCD_V_RES;
 		SCREEN_WIDTH = LCD_H_RES;
-		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
+        resizeVectrex();
         loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
     }
     else
@@ -1907,8 +1940,8 @@ void toggleVideoMode()
         // Vecx
 		SCREEN_HEIGHT = LCD_H_RES;
 		SCREEN_WIDTH = LCD_V_RES;
-		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
+        resizeVectrex();
         loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
     }
-
 }
+

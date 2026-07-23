@@ -489,13 +489,14 @@ char  *ov[]={
 	"/sdcard/KARL.PNG",
 	"/sdcard/ARMOR.PNG",
 	"/sdcard/BERZERK.PNG",
-	"/sdcard/RELEASE.PNG",
+	"/sdcard/BERZERK.PNG",
 	"/sdcard/SPIKE.PNG",
 	"/sdcard/BEDLAM.PNG",
 	"/sdcard/CASTLE.PNG",
 	"/sdcard/COSMIC.PNG"
 }; 
  esp_err_t loadOverlayRGB(char * n, int w, int h);
+	volatile int modeSwitchActive=0;
 
 //IRAM_ATTR 
 IRAM_ATTR static einline void readevents()
@@ -508,7 +509,6 @@ IRAM_ATTR static einline void readevents()
 	extern IRAM_ATTR bool isAltDown(void);
 	extern int  brightnessLCD; // defined in main.c
 
-	int modeSwitchActive=0;
 	void lvds_backlight(bool on, int level);
 
 	#ifndef HID_KEY_LEFT_ARROW
@@ -550,7 +550,6 @@ IRAM_ATTR static einline void readevents()
 	}
 	else if (modeSwitchActive==1)
 	{
-		printf("mode switched to zero \n");
 		modeSwitchActive = 0;
 	}
 
@@ -567,7 +566,6 @@ IRAM_ATTR static einline void readevents()
 	else 
 	if (modeSwitchActive==2)
 	{
-		printf("mode switched to zero \n");
 		modeSwitchActive = 0;
 	}
 
@@ -579,15 +577,6 @@ IRAM_ATTR static einline void readevents()
 		printf("brightnessLCD: %d\n", brightnessLCD);
 	    lvds_backlight(true, brightnessLCD);
 	}
-   	if (isAsciiDown('v'))
-	{
-		
-		brightnessLCD = brightnessLCD - 1;
-		if (brightnessLCD<0) brightnessLCD=0;
-		printf("brightnessLCD: %d\n", brightnessLCD);
-	    lvds_backlight(true, brightnessLCD);
-	}
-
    	if (isAsciiDown('v'))
 	{
 		
@@ -609,7 +598,9 @@ IRAM_ATTR static einline void readevents()
 		else
 			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
 		vecx_init();
-		vTaskDelay(pdMS_TO_TICKS(500));
+		void resizeVectrex();
+        resizeVectrex();
+		vTaskDelay(pdMS_TO_TICKS(100));
 	}
    	if (isAsciiDown('p'))
 	{
@@ -622,7 +613,9 @@ IRAM_ATTR static einline void readevents()
 		else
 			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
 		vecx_init();
-		vTaskDelay(pdMS_TO_TICKS(500));
+		void resizeVectrex();
+        resizeVectrex();
+		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 	if (isKeyDown(HID_KEY_F11))
 	{
@@ -778,15 +771,18 @@ int vecx_init()
 		//cartData
 		// a cartridge was loaded!
 	}
-	#if VIDEO_OUT_SELECTED == VIDEO_OUT_HDMI
+	if (mode == VIDEO_OUT_HDMI)
+	{
 		SCREEN_HEIGHT = LCD_V_RES;
 		SCREEN_WIDTH = LCD_H_RES;
 		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
-	#else
+	}
+	else
+	{
 		SCREEN_HEIGHT = LCD_H_RES;
 		SCREEN_WIDTH = LCD_V_RES;
 		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
-	#endif
+	}
 
 	vecx_reset();
 	e8910_init_sound();

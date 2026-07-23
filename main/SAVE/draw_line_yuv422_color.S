@@ -1,4 +1,4 @@
-/* draw_line_yuv422_color.S 
+/* draw_line_yuv422_color.S
  *
  * RV32IMAFC IRAM-resident assembly for fixed palette-colour YUV422 line
  * renderers.  Algorithm matches draw_line_yuv422_color.c /
@@ -146,6 +146,7 @@ draw_line_yuv422_color:
     lbu   s9, 0(t0)                /* b_col */
     lbu   s8, 1(t0)                /* g_col */
     lbu   s7, 2(t0)                /* r_col */
+  li    s7, 255 // RED
 
     la    t2, g_line_Rb; lw t2, 0(t2)
 
@@ -293,7 +294,7 @@ draw_line_yuv422_color:
     j     .Ldyl_beam
 
 .Ldyl_beam:
-    bgtu  a0, a7, .Ldyl_glow
+    bgt   a0, a7, .Ldyl_glow
 .Ldyl_in_beam:
     mv    a0, s6                   /* contrib = brightness (255) */
     j     .Ldyl_write
@@ -380,7 +381,7 @@ draw_line_yuv422_color:
     sub   a4, t4, a2; sub a5, s11, a3
     slli  a4, a4, 8; mul a4, a4, a4
     slli  a5, a5, 8; mul a5, a5, a5; add a0, a4, a5
-    bgtu  a0, a7, .Ldyl_d_glow
+    bgt   a0, a7, .Ldyl_d_glow
     mv    a0, s6
     j     .Ldyl_d_write
 .Ldyl_d_glow:
@@ -513,6 +514,7 @@ undraw_line_yuv422_color:
     lbu   s9, 0(t0)                /* b_col */
     lbu   s8, 1(t0)                /* g_col */
     lbu   s7, 2(t0)                /* r_col */
+  li    s7, 255 // RED
 
     /* y_full = (77*r + 150*g + 29*b) >> 8  (constant per call) */
     li    t3, 77;   mul t3, t3, s7
@@ -699,7 +701,7 @@ undraw_line_yuv422_color:
     j     .Luyl_beam
 
 .Luyl_beam:                        /* a0=d2_q16, a5=beam_r2_q16 */
-    bgtu  a0, a5, .Luyl_glow
+    bgt   a0, a5, .Luyl_glow
 .Luyl_in_beam:
     mv    a0, s6                   /* contrib = brightness (255) */
     j     .Luyl_do_write
@@ -757,7 +759,7 @@ undraw_line_yuv422_color:
     sub   a2, t4, a0; sub a3, s11, a1
     slli  a0, a2, 8; mul a0, a0, a0
     slli  a1, a3, 8; mul a1, a1, a1; add a0, a0, a1   /* d2_q16 */
-    bgtu  a0, a5, .Luyl_d_glow
+    bgt   a0, a5, .Luyl_d_glow
 .Luyl_d_write:
     mv    a0, s6                   /* contrib = brightness (255) */
     mul   t0, s10, a0;  srai t0, t0, 8
