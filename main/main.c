@@ -388,6 +388,7 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 // at the moment a few different line-draws are possible
 // if RGS stays stable I will drop the YUV
 
+
 IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry)
 {
     if (colorPaletteEntry == 0) 
@@ -399,38 +400,24 @@ IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, 
         draw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
     }
 }
+IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
+{
+    if (s_overlay == NULL)
+    {
+        undraw_line_yuv422_brightness_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+    }
+    else        
+    {
+        undraw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
+    }
+
+}
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
-    if (brightness == 0) 
+    if (brightness == 0)  return;
+    if (x0==x1 && y0==y1) 
     {
-        if (s_overlay == NULL)
-        {
-            undraw_line_yuv422_brightness_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
-        }
-        else        
-        {
-            undraw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
-        }
-    }
-    else
-    {
-        if (x0==x1 && y0==y1) 
-        {
-            int b = brightness*4+brightnessAdjust;
-            if (b>0)
-            {
-                if (s_overlay == NULL)
-                {
-                    draw_line_yuv422_brightness_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-                }
-                else
-                {
-                    draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-                }
-            }
-            return;
-        }
-        int b = brightness*4/3+brightnessAdjust;
+        int b = brightness*4+brightnessAdjust;
         if (b>0)
         {
             if (s_overlay == NULL)
@@ -441,6 +428,19 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
             {
                 draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
             }
+        }
+        return;
+    }
+    int b = brightness*4/3+brightnessAdjust;
+    if (b>0)
+    {
+        if (s_overlay == NULL)
+        {
+            draw_line_yuv422_brightness_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+        }
+        else
+        {
+            draw_line_yuv422_overlay_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
         }
     }
 }
@@ -798,7 +798,7 @@ IRAM_ATTR void mini_end_frame(void)
     frame_slot_t *cur = &s_frames[idx];
     if (now - emu_last_time >= 1000000) // has one second passed?
     {
-//        printf("EMU FPS = %d (Lines: %i )\n", emu_frame_count, cur->line_count);
+    //        printf("EMU FPS = %d (Lines: %i )\n", emu_frame_count, cur->line_count);
         printf("EMU FPS = %d\n", emu_frame_count);
         emu_frame_count = 0;
         emu_last_time   = now;
@@ -856,8 +856,7 @@ IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 
     for (int i = 0; i < count; ++i) {
         vectrex_line_t *l = &s_fb_lines[fb_index][i];
-        // Erase the line (brightness 0)
-        drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+        undrawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
     }
 
     s_fb_line_count[fb_index] = 0;
@@ -1123,7 +1122,7 @@ IRAM_ATTR static void renderer_task(void *arg)
             for (int i = 0; i < old_count; i++) {
                 if (!s_diff_old_matched[i] || s_diff_damaged[i]) {
                     vectrex_line_t *l = &old_lines[i];
-                    drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+                    undrawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
                 }
             }
 

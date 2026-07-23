@@ -164,7 +164,6 @@ IRAM_ATTR void draw_line_yuv422_color_c(
     } else {
         /* ady == 0: full x-range every row */
         for (int py = by0; py <= by1; py++) {
-            int dd    = bx0 - bx0; /* 0 */
             int cross = cross_row;
             int dot   = dot_row;
             uint8_t *row_fb = fb + (size_t)py * fb_w * 2;

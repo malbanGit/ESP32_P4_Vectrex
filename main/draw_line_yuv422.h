@@ -23,34 +23,34 @@ extern "C" {
  */
 
 /* C reference versions */
-IRAM_ATTR void draw_line_yuv422_color_c(uint8_t *fb, int fb_w, int fb_h,
+void draw_line_yuv422_color_c(uint8_t *fb, int fb_w, int fb_h,
                         int x0, int y0, int x1, int y1,
                         int colorPaletteEntry);
 
-IRAM_ATTR void undraw_line_yuv422_color_c(uint8_t *fb, int fb_w, int fb_h,
+void undraw_line_yuv422_color_c(uint8_t *fb, int fb_w, int fb_h,
                           int x0, int y0, int x1, int y1,
                           int colorPaletteEntry);
 
 /* Brightness (white) variants — UV never written (delta always 0 for white) */
-IRAM_ATTR void draw_line_yuv422_brightness_c(uint8_t *fb, int fb_w, int fb_h,
+void draw_line_yuv422_brightness_c(uint8_t *fb, int fb_w, int fb_h,
                                    int x0, int y0, int x1, int y1,
                                    int brightness);
 
-IRAM_ATTR void undraw_line_yuv422_brightness_c(uint8_t *fb, int fb_w, int fb_h,
+void undraw_line_yuv422_brightness_c(uint8_t *fb, int fb_w, int fb_h,
                                      int x0, int y0, int x1, int y1,
                                      int brightness);
 
-IRAM_ATTR void draw_line_yuv422_overlay_c(
-        uint8_t *fb, int fb_w, int fb_h,
-        int x0, int y0, int x1, int y1,
-        int brightness,
-        const uint8_t *overlay);
+void draw_line_yuv422_overlay_c(
+                                uint8_t *fb, int fb_w, int fb_h,
+                                int x0, int y0, int x1, int y1,
+                                int brightness,
+                                const uint8_t *overlay);
 
-IRAM_ATTR void undraw_line_yuv422_overlay_c(
-        uint8_t *fb, int fb_w, int fb_h,
-        int x0, int y0, int x1, int y1,
-        int brightness,
-        const uint8_t *overlay);
+void undraw_line_yuv422_overlay_c(
+                                uint8_t *fb, int fb_w, int fb_h,
+                                int x0, int y0, int x1, int y1,
+                                int brightness,
+                                const uint8_t *overlay);
 
 #define GAUSS_LUT_SIZE 178
 
