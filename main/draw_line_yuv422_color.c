@@ -33,7 +33,11 @@ IRAM_ATTR void draw_line_yuv422_color_c(
 
     /* Fixed colour for the whole line — looked up once */
     const uint8_t *c = s_overlay_palette[colorPaletteEntry & 0x7F];
+#if COLOR_TEST == 1
+    int b_col = c[0], g_col = c[1], r_col = 255;
+#else
     int b_col = c[0], g_col = c[1], r_col = c[2];
+#endif
     int u_full = bgr_to_u(b_col, g_col, r_col);   /* constant per call */
     int v_full = bgr_to_v(b_col, g_col, r_col);
 
@@ -249,7 +253,12 @@ IRAM_ATTR void undraw_line_yuv422_color_c(
 
     /* Fixed colour — same lookup as draw */
     const uint8_t *c = s_overlay_palette[colorPaletteEntry & 0x7F];
+#if COLOR_TEST == 1
+    int b_col = c[0], g_col = c[1], r_col = 255;
+#else
     int b_col = c[0], g_col = c[1], r_col = c[2];
+#endif
+
     int u_full = bgr_to_u(b_col, g_col, r_col);
     int v_full = bgr_to_v(b_col, g_col, r_col);
 

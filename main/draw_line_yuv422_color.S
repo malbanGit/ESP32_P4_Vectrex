@@ -31,7 +31,7 @@
     .extern gauss_lut
     .extern s_overlay_palette
 
-    .section .iram.text,"ax",@progbits
+    .section .iram0.text,"ax",@progbits
     .align 2
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -146,6 +146,8 @@ draw_line_yuv422_color:
     lbu   s9, 0(t0)                /* b_col */
     lbu   s8, 1(t0)                /* g_col */
     lbu   s7, 2(t0)                /* r_col */
+ li    s7, 255 // RED
+
 
     la    t2, g_line_Rb; lw t2, 0(t2)
 
@@ -513,7 +515,8 @@ undraw_line_yuv422_color:
     lbu   s9, 0(t0)                /* b_col */
     lbu   s8, 1(t0)                /* g_col */
     lbu   s7, 2(t0)                /* r_col */
-
+  li    s7, 255 // RED
+ 
     /* y_full = (77*r + 150*g + 29*b) >> 8  (constant per call) */
     li    t3, 77;   mul t3, t3, s7
     li    t4, 150;  mul t4, t4, s8; add t3, t3, t4

@@ -10,6 +10,10 @@ extern int SCREEN_HEIGHT;
 
 
 /*
+Bug:
+- release end of game explosion verzerrt (color ok)
+
+
 
 #define JOYSTICK_VERTICAL 1
 #define JOYSTICK_HORIZONTAL 1
@@ -127,7 +131,7 @@ To start the current version connect USB POW/UART to computer (directly)
 Connect USB (mid /down) to keyboard - the keyboard can be used to control the vectrex
 Start
 Should connect to COM 4, flash and play.
-
+ 
 
   BUG - no!
   FCYCLES_INIT = 50000
@@ -279,12 +283,12 @@ typedef struct {
 typedef struct { int bx0, by0, bx1, by1; } line_bbox_t;
 
 // Diese beschreiben, was aktuell in jedem Hardware-Framebuffer gezeichnet ist
-DRAM_ATTR  static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
+DRAM_ATTR static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
 DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
 DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
 DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
-DRAM_ATTR  static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
+DRAM_ATTR static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
 
 // ----------------------------------------------------
 // Emulator frame storage (independent of framebuffers)
@@ -393,11 +397,11 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 
 IRAM_ATTR static inline void undrawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry)
 {
-    undraw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
+    undraw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
 }
 IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry)
 {
-    draw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
+    draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
 }
 IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
@@ -422,6 +426,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
 
 #if COLOR_TEST == 1
     draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+    
     return;
 #endif
 

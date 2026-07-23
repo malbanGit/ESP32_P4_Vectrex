@@ -27,7 +27,7 @@
     .extern g_gs
     .extern gauss_lut
 
-    .section .iram.text,"ax",@progbits
+    .section .iram0.text,"ax",@progbits
     .align 2
 
 /* ════════════════════════════════════════════════════════════════════════════
