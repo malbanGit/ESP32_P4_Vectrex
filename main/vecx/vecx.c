@@ -288,10 +288,10 @@ IRAM_ATTR static einline void readevents()
 	// plaqyer       22221111
 	// bit = zero -> button pressed, bit = one, button released 
 
-	alg_jch0 = g_inputState.j0_x;
-	alg_jch1 = g_inputState.j0_y;
-	alg_jch2 = g_inputState.j1_x;
-	alg_jch3 = g_inputState.j1_y;
+	alg_jch0 = g_inputState.j0_x+128;
+	alg_jch1 = g_inputState.j0_y+128;
+	alg_jch2 = g_inputState.j1_x+128;
+	alg_jch3 = g_inputState.j1_y+128;
 	snd_regs[14] = g_inputState.buttonState;
 }
 
@@ -344,7 +344,6 @@ IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, 
 		if (degradePercent<0) degradePercent = 0;
 		color = (int)(((float)color)*degradePercent);
 	}
-
 	mini_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
 	return;
 }

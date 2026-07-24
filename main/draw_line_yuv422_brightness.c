@@ -194,6 +194,7 @@ IRAM_ATTR void draw_line_yuv422_brightness_c(
         }
     }
 }
+#include <stdio.h>
 
 /* ════════════════════════════════════════════════════════════════════════
  * undraw_line_yuv422_brightness_c
@@ -207,6 +208,7 @@ IRAM_ATTR void undraw_line_yuv422_brightness_c(
 {
     if (!fb || fb_w <= 0 || fb_h <= 0) return;
     if (brightness <= 0) return;
+
 
     uint32_t beam_r2_q16 = g_beam_r2_q16;
     uint32_t gs          = g_gs;

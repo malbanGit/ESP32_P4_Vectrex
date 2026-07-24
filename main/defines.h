@@ -6,7 +6,7 @@
 //#define NO_AUDIO 1 just be quiet!
 
 #define VECX_DEBUG 1
-#define MAX_EMU_FPS 150
+#define MAX_EMU_FPS 50
 #define ENABLE_OVERLAYS 0
 
 #define LINE_WIDTH 1
@@ -96,10 +96,10 @@ extern uint8_t s_overlay_palette[128][3];
 extern int g_fpsToReach;
 
 typedef struct {
-    int j0_x;
-    int j0_y;
-    int j1_x;
-    int j1_y;
+    int8_t j0_x;
+    int8_t j0_y;
+    int8_t j1_x;
+    int8_t j1_y;
     int buttonState;
 } input_state_t;
 extern input_state_t g_inputState; 

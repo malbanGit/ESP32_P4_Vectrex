@@ -298,13 +298,13 @@ typedef struct {
 } vectrex_line_t;
 */
 typedef struct {
-    uint16_t x0;
-    uint16_t y0;
-    uint16_t x1;
-    uint16_t y1;
+    int16_t x0;
+    int16_t y0;
+    int16_t x1;
+    int16_t y1;
     uint8_t brightness;
     uint32_t color; // 
-    uint8_t  _pad[4];
+    uint8_t  _pad[2];
 } vectrex_line_t; // power of 2 length
 
 typedef struct {
@@ -431,56 +431,39 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 
 IRAM_ATTR static inline void undrawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry, uint8_t brightness)
 {
-    undraw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, brightness);
+    int b = brightness+brightnessAdjust;
+    undraw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, b);
 }
 IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry, uint8_t brightness)
 {
 //printf("Mini Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,colorPaletteEntry, brightness);
-    draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, brightness);
+    int b = brightness+brightnessAdjust;
+    draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, b);
 }
 IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
-
+    int b = brightness+brightnessAdjust;
     if (s_overlay == NULL)
     {
-        undraw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness);
+        undraw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
     }
     else        
     {
-        undraw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, brightness, s_overlay);
+        undraw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
     }
 
 }
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
     if (brightness == 0)  return;
-    if (x0==x1 && y0==y1) 
+    int b = brightness+brightnessAdjust;
+    if (s_overlay == NULL)
     {
-        int b = brightness*4+brightnessAdjust;
-        if (b>0)
-        {
-            if (s_overlay == NULL)
-            {
-                draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-            }
-            else
-            {
-                draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-            }
-        }
-        return;
+        draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
     }
-    int b = brightness*4/3+brightnessAdjust;
-    if (b>0)
+    else
     {
-        if (s_overlay == NULL)
-        {
-            draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-        }
-        else
-        {
-            draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
-        }
+        draw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
     }
 }
 
@@ -951,7 +934,7 @@ IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 
     for (int i = 0; i < count; ++i) {
         vectrex_line_t *l = &s_fb_lines[fb_index][i];
-        undrawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+        undrawLine_raw((int16_t)l->x0, (int16_t)l->y0, (int16_t)l->x1,(int16_t)l->y1, l->brightness);
     }
 
     s_fb_line_count[fb_index] = 0;
@@ -963,7 +946,7 @@ IRAM_ATTR static inline void undraw_previous_fb_color(int fb_index)
 
     for (int i = 0; i < count; ++i) {
         vectrex_line_t *l = &s_fb_lines[fb_index][i];
-        undrawLine_raw_color(l->x0, l->y0, l->x1, l->y1, l->color, l->brightness);
+        undrawLine_raw_color((int16_t)l->x0,(int16_t) l->y0, (int16_t)l->x1, (int16_t)l->y1, l->color, l->brightness);
     }
 
     s_fb_line_count[fb_index] = 0;
@@ -1274,7 +1257,7 @@ IRAM_ATTR static void renderer_task(void *arg)
                 for (int i = 0; i < line_count; ++i) {
                     vectrex_line_t *src = &fs->lines[i];
 
-                    drawLine_raw(src->x0, src->y0, src->x1, src->y1, src->brightness);
+                    drawLine_raw((int16_t)src->x0, (int16_t)src->y0, (int16_t)src->x1, (int16_t)src->y1, src->brightness);
 
                     if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
                         s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
@@ -1412,7 +1395,7 @@ IRAM_ATTR static void renderer_task(void *arg)
                 for (int i = 0; i < old_count; i++) {
                     if (!s_diff_old_matched[i] || s_diff_damaged[i]) {
                         vectrex_line_t *l = &old_lines[i];
-                        undrawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+                        undrawLine_raw((int16_t)l->x0, (int16_t)l->y0, (int16_t)l->x1, (int16_t)l->y1, l->brightness);
                     }
                 }
 
@@ -1421,7 +1404,7 @@ IRAM_ATTR static void renderer_task(void *arg)
                 for (int i = 0; i < old_count; i++) {
                     if (s_diff_old_matched[i] && s_diff_damaged[i]) {
                         vectrex_line_t *l = &old_lines[i];
-                        drawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+                        drawLine_raw((int16_t)l->x0, (int16_t)l->y0, (int16_t)l->x1, (int16_t)l->y1, l->brightness);
                     }
                 }
 
@@ -1430,7 +1413,7 @@ IRAM_ATTR static void renderer_task(void *arg)
                 for (int j = 0; j < line_count; j++) {
                     vectrex_line_t *src = &fs->lines[j];
                     if (!s_diff_new_matched[j])
-                        drawLine_raw(src->x0, src->y0, src->x1, src->y1, src->brightness);
+                        drawLine_raw((int16_t)src->x0, (int16_t)src->y0, (int16_t)src->x1, (int16_t)src->y1, src->brightness);
                     if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
                         s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
                     } else {
@@ -2446,7 +2429,7 @@ char  *name[]={
 	"COSMIC.BIN"
 };
 char  *ov[]={
-	"/sdcard/POLE.PNG", 
+	"/sdcard/SWEEP.PNG", 
 	"/sdcard/SWEEP.PNG", 
 	"/sdcard/KARL.PNG",
 	"/sdcard/ARMOR.PNG",
@@ -2461,24 +2444,24 @@ char  *ov[]={
 IRAM_ATTR void readevents()
 {
 	// center is default unless pressed!
-	g_inputState.j0_x=127;
-	g_inputState.j0_y=127;
-	g_inputState.j1_x=127;
-	g_inputState.j1_y=127;
+	g_inputState.j0_x=0;
+	g_inputState.j0_y=0;
+	g_inputState.j1_x=0;
+	g_inputState.j1_y=0;
 
     // attached keyboard (slow due to pulls!)
     // mapping as in Vide
     /* Player 1 */
- 	if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = 0;
- 	if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 255;
- 	if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 255;
- 	if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = 0;
+ 	if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = -128;
+ 	if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 127;
+ 	if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 127;
+ 	if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = -128;
 
     /* Player 2 */
- 	if (isKeyDown('h')) g_inputState.j1_x = 0;
- 	if (isKeyDown('j')) g_inputState.j1_x = 255;
- 	if (isKeyDown('u')) g_inputState.j1_y = 255;
- 	if (isKeyDown('n')) g_inputState.j1_y = 0;
+ 	if (isKeyDown('h')) g_inputState.j1_x = -128;
+ 	if (isKeyDown('j')) g_inputState.j1_x = 127;
+ 	if (isKeyDown('u')) g_inputState.j1_y = 127;
+ 	if (isKeyDown('n')) g_inputState.j1_y = -128;
 
     /* Player 1 */
     if (isAsciiDown('a'))
@@ -2540,7 +2523,11 @@ IRAM_ATTR void readevents()
 		{
 			modeSwitchActive = 3;
             vecsimGame++;
-            if (vecsimGame==MAX_VECSIM_GAME) vecsimGame=0;
+            if (vecsimGame==MAX_VECSIM_GAME) 
+            {
+                setAppFPS(MAX_EMU_FPS);
+                vecsimGame=0;
+            }
             vecsimSigDone=1;
             clearFramebuffers();
             redraw = 3;
@@ -2708,9 +2695,6 @@ IRAM_ATTR void readevents()
 		rampOffFractionValue = rampOffFractionValue + 1;
 		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
 	}
-
-
-
     #endif
 }
 
