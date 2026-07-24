@@ -101,41 +101,35 @@ void (*customInputHandler) (void) = 0;
 
 void handle_input (void) // call once per frame
 {
-/*
-  if (customInputHandler != 0)
-  {
-    customInputHandler();
-    return;
-  }
 #define JOYSTICK_CENTER_MARGIN 20
   if (uses_analog_joystick(game))
   {
 	// build a "0" zone
 
-    joystick.x = currentJoy1X;  // 0x80   0  0x7f
-    if ((currentJoy1X>0) && (currentJoy1X<JOYSTICK_CENTER_MARGIN)) joystick.x= 0;
-    if ((currentJoy1X<0) && (currentJoy1X>-JOYSTICK_CENTER_MARGIN)) joystick.x=  0;
-    joystick.y = currentJoy1Y;  // 0x80   0  0x7f
-    if ((currentJoy1Y>0) && (currentJoy1Y<JOYSTICK_CENTER_MARGIN)) joystick.y=  0;
-    if ((currentJoy1Y<0) && (currentJoy1Y>-JOYSTICK_CENTER_MARGIN)) joystick.y=  0;
+    joystick.x = g_inputState.j0_x;  // 0x80   0  0x7f
+    if ((g_inputState.j0_x>0) && (g_inputState.j0_x<JOYSTICK_CENTER_MARGIN)) joystick.x= 0;
+    if ((g_inputState.j0_x<0) && (g_inputState.j0_x>-JOYSTICK_CENTER_MARGIN)) joystick.x=  0;
+    joystick.y = g_inputState.j0_y;  // 0x80   0  0x7f
+    if ((g_inputState.j0_y>0) && (g_inputState.j0_y<JOYSTICK_CENTER_MARGIN)) joystick.y=  0;
+    if ((g_inputState.j0_y<0) && (g_inputState.j0_y>-JOYSTICK_CENTER_MARGIN)) joystick.y=  0;
 
   }
   else
   {
 	// build a "0" zone
 
-    joystick.x = currentJoy1X;  // 0x80   0  0x7f
-    if ((currentJoy1X>0) && (currentJoy1X<JOYSTICK_CENTER_MARGIN)) joystick.x= 0;
-    if ((currentJoy1X<0) && (currentJoy1X>-JOYSTICK_CENTER_MARGIN)) joystick.x=  0;
-    joystick.y = currentJoy1Y;  // 0x80   0  0x7f
-    if ((currentJoy1Y>0) && (currentJoy1Y<JOYSTICK_CENTER_MARGIN)) joystick.y=  0;
-    if ((currentJoy1Y<0) && (currentJoy1Y>-JOYSTICK_CENTER_MARGIN)) joystick.y=  0;
+    joystick.x = g_inputState.j0_x;  // 0x80   0  0x7f
+    if ((g_inputState.j0_x>0) && (g_inputState.j0_x<JOYSTICK_CENTER_MARGIN)) joystick.x= 0;
+    if ((g_inputState.j0_x<0) && (g_inputState.j0_x>-JOYSTICK_CENTER_MARGIN)) joystick.x=  0;
+    joystick.y = g_inputState.j0_y;  // 0x80   0  0x7f
+    if ((g_inputState.j0_y>0) && (g_inputState.j0_y<JOYSTICK_CENTER_MARGIN)) joystick.y=  0;
+    if ((g_inputState.j0_y<0) && (g_inputState.j0_y>-JOYSTICK_CENTER_MARGIN)) joystick.y=  0;
   }
 
-  start1 = currentButtonState & 0x01;  // button 1 on port 1
-  start2 = currentButtonState & 0x02;  // button 2 on port 1
+  start1 = ((g_inputState.buttonState&1)==0);  // button 1 on port 1
+  start2 = (g_inputState.buttonState&2)==0;  // button 2 on port 1
 
-  if ((currentButtonState & 0x06) == 0x06) // button 2+3 together
+  if ((g_inputState.buttonState & 0x06) == 0x00) // button 2+3 together
   {
     cslot_left=1;
 //    cslot_right=1;
@@ -154,61 +148,61 @@ void handle_input (void) // call once per frame
     {
       if (stramash_config1)
       {
-        switches [0].leftfwd = (currentJoy1Y>JOYSTICK_CENTER_MARGIN);
-        switches [0].leftrev = (currentJoy1Y<-JOYSTICK_CENTER_MARGIN);
-        switches [0].rightfwd = (currentButtonState & 0x01)?1:0; // button 1 port 1
-        switches [0].rightrev = (currentButtonState & 0x02)?1:0; // button 2 port 1
-        switches [0].fire = (currentButtonState & 0x04)?1:0; // button 3 port 1
-        switches [0].fire = (currentButtonState & 0x08)?1:0; // button 4 port 1
+        switches [0].leftfwd = (g_inputState.j0_y>JOYSTICK_CENTER_MARGIN);
+        switches [0].leftrev = (g_inputState.j0_y<-JOYSTICK_CENTER_MARGIN);
+        switches [0].rightfwd = ((g_inputState.buttonState&0x01)==0)?1:0; // button 1 port 1
+        switches [0].rightrev = ((g_inputState.buttonState&0x02)==0)?1:0; // button 2 port 1
+        switches [0].fire = ((g_inputState.buttonState&0x04)==0)?1:0; // button 3 port 1
+        switches [0].fire = ((g_inputState.buttonState&0x08)==0)?1:0; // button 4 port 1
       }
       else if (stramash_config2)
       {
-        switches [0].leftfwd = (currentJoy2Y>JOYSTICK_CENTER_MARGIN);
-        switches [0].leftrev = (currentJoy2Y<-JOYSTICK_CENTER_MARGIN);
-        switches [0].rightfwd = (currentButtonState & 0x10)?1:0; // button 1 port 1
-        switches [0].rightrev = (currentButtonState & 0x20)?1:0; // button 2 port 1
-        switches [0].fire = (currentButtonState & 0x40)?1:0; // button 3 port 1
-        switches [0].fire = (currentButtonState & 0x80)?1:0; // button 4 port 1
+        switches [0].leftfwd = (g_inputState.j1_y>JOYSTICK_CENTER_MARGIN);
+        switches [0].leftrev = (g_inputState.j1_y<-JOYSTICK_CENTER_MARGIN);
+        switches [0].rightfwd = ((g_inputState.buttonState&0x10)==0)?1:0; // button 1 port 1
+        switches [0].rightrev = ((g_inputState.buttonState&0x20)==0)?1:0; // button 2 port 1
+        switches [0].fire = ((g_inputState.buttonState&0x40)==0)?1:0; // button 3 port 1
+        switches [0].fire = ((g_inputState.buttonState&0x80)==0)?1:0; // button 4 port 1
       }
       else if (yates_config)
       {
-        switches [0].leftfwd = (currentButtonState & 0x10)?1:0; // button 1 port 2
-        switches [0].leftrev = (currentButtonState & 0x20)?1:0; // button 2 port 2
-        switches [0].rightfwd = (currentButtonState & 0x40)?1:0; // button 3 port 2
-        switches [0].rightrev = (currentButtonState & 0x80)?1:0; // button 4 port 2
-        switches [0].fire = currentJoy2X>JOYSTICK_CENTER_MARGIN;  //Joy2 analog x axis pulled high      
+        switches [0].leftfwd = ((g_inputState.buttonState&0x10)==0)?1:0; // button 1 port 2
+        switches [0].leftrev = ((g_inputState.buttonState&0x20)==0)?1:0; // button 2 port 2
+        switches [0].rightfwd = ((g_inputState.buttonState&0x40)==0)?1:0; // button 3 port 2
+        switches [0].rightrev = ((g_inputState.buttonState&0x80)==0)?1:0; // button 4 port 2
+        switches [0].fire = g_inputState.j1_x>JOYSTICK_CENTER_MARGIN;  //Joy2 analog x axis pulled high      
       }
       else if (onlyOnejoystick)
       {
-        switches [0].fire = (currentButtonState & 0x08)?1:0; // button 4 port 1
-        switches [0].leftfwd = (currentJoy1Y>JOYSTICK_CENTER_MARGIN) || (currentJoy1X>JOYSTICK_CENTER_MARGIN);
-        switches [0].leftrev = (currentJoy1Y<-JOYSTICK_CENTER_MARGIN) || (currentJoy1X<-JOYSTICK_CENTER_MARGIN);
-        switches [0].rightfwd = (currentJoy1Y>JOYSTICK_CENTER_MARGIN) || (currentJoy1X<-JOYSTICK_CENTER_MARGIN);
-        switches [0].rightrev = currentJoy1Y<-JOYSTICK_CENTER_MARGIN  || (currentJoy1X>JOYSTICK_CENTER_MARGIN);
+        switches [0].fire = ((g_inputState.buttonState&0x08)==0)?1:0; // button 4 port 1
+        switches [0].leftfwd = (g_inputState.j0_y>JOYSTICK_CENTER_MARGIN) || (g_inputState.j0_x>JOYSTICK_CENTER_MARGIN);
+        switches [0].leftrev = (g_inputState.j0_y<-JOYSTICK_CENTER_MARGIN) || (g_inputState.j0_x<-JOYSTICK_CENTER_MARGIN);
+        switches [0].rightfwd = (g_inputState.j0_y>JOYSTICK_CENTER_MARGIN) || (g_inputState.j0_x<-JOYSTICK_CENTER_MARGIN);
+        switches [0].rightrev = g_inputState.j0_y<-JOYSTICK_CENTER_MARGIN  || (g_inputState.j0_x>JOYSTICK_CENTER_MARGIN);
 
 
-          if ((currentJoy1X>JOYSTICK_CENTER_MARGIN) && (currentJoy1Y>JOYSTICK_CENTER_MARGIN))
+          if ((g_inputState.j0_x>JOYSTICK_CENTER_MARGIN) && (g_inputState.j0_y>JOYSTICK_CENTER_MARGIN))
           {
               switches [0].leftfwd = 1;
               switches [0].leftrev = 0;
               switches [0].rightfwd = 0;
               switches [0].rightrev = 0;
           }
-          if ((currentJoy1X>JOYSTICK_CENTER_MARGIN) && (currentJoy1Y<JOYSTICK_CENTER_MARGIN))
+          if ((g_inputState.j0_x>JOYSTICK_CENTER_MARGIN) && (g_inputState.j0_y<JOYSTICK_CENTER_MARGIN))
           {
               switches [0].leftfwd = 0;
               switches [0].leftrev = 0;
               switches [0].rightfwd = 0;
               switches [0].rightrev = 1;
           }
-          if ((currentJoy1X<-JOYSTICK_CENTER_MARGIN) && (currentJoy1Y>JOYSTICK_CENTER_MARGIN))
+          if ((g_inputState.j0_x<-JOYSTICK_CENTER_MARGIN) && (g_inputState.j0_y>JOYSTICK_CENTER_MARGIN))
           {
               switches [0].leftfwd = 0;
               switches [0].leftrev = 0;
               switches [0].rightfwd = 1;
               switches [0].rightrev = 0;
           }
-          if ((currentJoy1X<-JOYSTICK_CENTER_MARGIN) && (currentJoy1Y<JOYSTICK_CENTER_MARGIN))
+          if ((g_inputState.j0_x<-JOYSTICK_CENTER_MARGIN) && (g_inputState.j0_y<JOYSTICK_CENTER_MARGIN))
           {
               switches [0].leftfwd = 0;
               switches [0].leftrev = 1;
@@ -219,11 +213,11 @@ void handle_input (void) // call once per frame
       }
       else
       {
-        switches [0].leftfwd = currentJoy1Y>JOYSTICK_CENTER_MARGIN;
-        switches [0].leftrev = currentJoy1Y<-JOYSTICK_CENTER_MARGIN;
-        switches [0].rightfwd = currentJoy2Y>JOYSTICK_CENTER_MARGIN;
-        switches [0].rightrev = currentJoy2Y<-JOYSTICK_CENTER_MARGIN;
-        switches [0].fire = (currentButtonState & 0x08)?1:0; // button 4 port 1
+        switches [0].leftfwd = g_inputState.j0_y>JOYSTICK_CENTER_MARGIN;
+        switches [0].leftrev = g_inputState.j0_y<-JOYSTICK_CENTER_MARGIN;
+        switches [0].rightfwd = g_inputState.j1_y>JOYSTICK_CENTER_MARGIN;
+        switches [0].rightrev = g_inputState.j1_y<-JOYSTICK_CENTER_MARGIN;
+        switches [0].fire = ((g_inputState.buttonState&0x08)==0)?1:0; // button 4 port 1
       }
       
     }
@@ -237,12 +231,12 @@ void handle_input (void) // call once per frame
       joystick.y = 128 + y;
       joystick.x = 128 + x;
     
-      switches [0].fire = (currentButtonState & 0x08)?1:0; // button 4 port 1
+      switches [0].fire = ((g_inputState.buttonState&0x08)==0)?1:0; // button 4 port 1
   }
   else if (game == LUNAR_LANDER)
   {
-      switches [0].left = currentJoy1X<-JOYSTICK_CENTER_MARGIN;
-      switches [0].right = currentJoy1X>JOYSTICK_CENTER_MARGIN;
+      switches [0].left = g_inputState.j0_x<-JOYSTICK_CENTER_MARGIN;
+      switches [0].right = g_inputState.j0_x>JOYSTICK_CENTER_MARGIN;
       if (((signed char)joystick.y)<0) joystick.y = 0;
 
       
@@ -251,7 +245,7 @@ void handle_input (void) // call once per frame
       // since Lunar Lander "samples" the button state for five rounds
       // only if button is pressed long enough
       // the coin counter will accept it
-      if ((currentButtonState & 0x04) == 0x04) 
+      if ((g_inputState.buttonState&0x06)==0)
         {
           cslot_right=1;
         }
@@ -267,21 +261,21 @@ void handle_input (void) // call once per frame
 #define bw_left  shield
 #define bw_right fire
       // MOVE
-      switches [0].bw_up = currentJoy1Y>30; // UP
-      switches [0].bw_down = currentJoy1Y<-30; // DOWN
-      switches [0].bw_right =  currentJoy1X<-30;// RIGHT
-      switches [0].thrust = (currentButtonState & 0x04)?1:0; // not used
-      switches [0].hyper = (currentButtonState & 0x02)?1:0; //not used
-      switches [0].bw_left = currentJoy1X>30; // LEFT for BW
+      switches [0].bw_up = g_inputState.j0_y>30; // UP
+      switches [0].bw_down = g_inputState.j0_y<-30; // DOWN
+      switches [0].bw_right =  g_inputState.j0_x<-30;// RIGHT
+      switches [0].thrust = (((g_inputState.buttonState&4)==0))?1:0; // not used
+      switches [0].hyper = (((g_inputState.buttonState&2)==0))?1:0; //not used
+      switches [0].bw_left = g_inputState.j0_x>30; // LEFT for BW
       switches [0].abort = 0; // no input
 
       // FIRE
-      switches [1].bw_up = currentJoy2Y>30;
-      switches [1].bw_down = currentJoy2Y<-30;
-      switches [1].bw_right = currentJoy2X<-30; 
-      switches [1].thrust = (currentButtonState & 0x40)?1:0; // not used
-      switches [1].hyper = (currentButtonState & 0x20)?1:0; // not used
-      switches [1].bw_left = currentJoy2X>30;
+      switches [1].bw_up = g_inputState.j1_y>30;
+      switches [1].bw_down = g_inputState.j1_y<-30;
+      switches [1].bw_right = g_inputState.j1_x<-30; 
+      switches [1].thrust = (((g_inputState.buttonState&0x40)==0))?1:0; // not used
+      switches [1].hyper = (((g_inputState.buttonState&0x20)==0))?1:0; // not used
+      switches [1].bw_left = g_inputState.j1_x>30;
       switches [1].abort = 0; // no input
  
       // also uses 
@@ -291,24 +285,28 @@ void handle_input (void) // call once per frame
     }
     else
     {
-      switches [0].left = currentJoy1X<-JOYSTICK_CENTER_MARGIN;
-      switches [0].right = currentJoy1X>JOYSTICK_CENTER_MARGIN;
-      switches [0].fire = (currentButtonState & 0x08)?1:0; // button 4 port 1
-      switches [0].thrust = (currentButtonState & 0x04)?1:0; // button 3 port 1
-      switches [0].hyper = (currentButtonState & 0x02)?1:0; // button 2 port 1
-      switches [0].shield = (currentButtonState & 0x01)?1:0; // button 1 port 1
+      switches [0].left = g_inputState.j0_x<-JOYSTICK_CENTER_MARGIN;
+      switches [0].right = g_inputState.j0_x>JOYSTICK_CENTER_MARGIN;
+      switches [0].fire = (((g_inputState.buttonState&0x08)==0))?1:0; // button 4 port 1
+      switches [0].thrust = (((g_inputState.buttonState&0x04)==0))?1:0; // button 3 port 1
+      switches [0].hyper = (((g_inputState.buttonState&0x02)==0))?1:0; // button 2 port 1
+      switches [0].shield = (((g_inputState.buttonState&0x01)==0))?1:0; // button 1 port 1
       switches [0].abort = 0; // no input
       
-      switches [1].left = currentJoy2X<-JOYSTICK_CENTER_MARGIN;
-      switches [1].right = currentJoy2X>JOYSTICK_CENTER_MARGIN;
-      switches [1].fire = (currentButtonState & 0x80)?1:0; // button 4 port 2
-      switches [1].thrust = (currentButtonState & 0x40)?1:0; // button 3 port 2
-      switches [1].hyper = (currentButtonState & 0x20)?1:0; // button 2 port 2
-      switches [1].shield = (currentButtonState & 0x10)?1:0; // button 1 port 2
+      switches [1].left = g_inputState.j1_x<-JOYSTICK_CENTER_MARGIN;
+      switches [1].right = g_inputState.j1_x>JOYSTICK_CENTER_MARGIN;
+      switches [1].fire = (((g_inputState.buttonState&0x80)==0))?1:0; // button 4 port 2
+      switches [1].thrust = (((g_inputState.buttonState&0x40)==0))?1:0; // button 3 port 2
+      switches [1].hyper = (((g_inputState.buttonState&0x20)==0))?1:0; // button 2 port 2
+      switches [1].shield = (((g_inputState.buttonState&0x10)==0))?1:0; // button 1 port 2
       switches [1].abort = 0; // no input
     }
-*/
 }
+
+
+
+  
+
 
 void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, uint8_t brightness); // brightness or color - depending on mode, 0 is always undraw
 void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // brightness or color - depending on mode, 0 is always undraw
@@ -325,92 +323,86 @@ DRAM_ATTR int ALG_MAX_Y=750;
 
 DRAM_ATTR int POS_ADDER_X = 0;
 DRAM_ATTR int POS_ADDER_Y = 0;
+DRAM_ATTR int FLIP_Y = 0;
+DRAM_ATTR int FLIP_X = 0;
+DRAM_ATTR int SCREEN_TYPE = GAME_LANDSCAPE;
+
+
+
 DRAM_ATTR static float scl_factorx; // for some unkown reason these cannot be uint32_t, if it is uint32_t then lines are sometimes out of bounds
 DRAM_ATTR static float scl_factory; // inspite the fact, that the scale factor is NEVER negative!!!
 DRAM_ATTR static long offx;
 DRAM_ATTR static long offy;
 
 
+DRAM_ATTR int displayWidth = 0;
+DRAM_ATTR int displayHeight = 0;
 
-void init_graphics (int type)
+void init_graphics ()
 {
-    int getDisplayWidth();
-    int getDisplayHeight();
-    int getScreenWidth();
-    int getScreenHeight();
-
-    int dw = getDisplayWidth();
-    int dh = getDisplayHeight();
+    displayWidth = getDisplayWidth();
+    displayHeight = getDisplayHeight();
     int sw = getScreenWidth();
     int sh = getScreenHeight();
 
-    if (type == GAME_PORTRAIT)
+    if (SCREEN_TYPE == GAME_PORTRAIT)
     {
-      if (sh>sw)
+      if (sh>sw) // display portait
       {
-        scl_factorx = ((float)ALG_MAX_X) / ((float)dw);
-        scl_factory = ((float)ALG_MAX_Y) / ((float)dh);
-        offx = (sw-dw)/2;
-        offy = (sh-dh)/2;
+          // sw is the factor that stays
+          displayHeight =(int) (((float)sw)*4.0f/3.0f);
+          displayWidth = sw;
+
+          scl_factorx = ((float)ALG_MAX_X) / ((float)displayWidth);
+          scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
+          offx = (sw-displayWidth)/2;
+          offy = (sh-displayHeight)/2;
+          printf("Portrait portait correction\n");
       }
-      else
+      else // display is Landscape
       {
-        float factor = ((float)sh)/((float)sw);
-        dw = ((float)dw)*factor;
-        scl_factorx = ((float)ALG_MAX_X) / ((float)dw);
-        scl_factory = ((float)ALG_MAX_Y) / ((float)dh);
-        offx = (sw-dw)/2;
-        offy = (sh-dh)/2;
-        printf("Landscape correction\n");
+          // sh is the factor that stays
+          displayWidth =(int) (((float)sh)*3.0f/4.0f);
+          displayHeight = sh;
+          scl_factorx = ((float)ALG_MAX_X) / ((float)displayWidth);
+          scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
+          offx = (sw-displayWidth)/2;
+          if (FLIP_Y)
+            offy = +100; // I don't know - this is fucking tempest
+          else
+            offy = (sh-displayHeight)/2;
+          printf("Portrait Landscape correction\n");
       }
     }
     else // LANDCSAPE
     {
       if (sw>sh)
       {
-        scl_factorx = ((float)ALG_MAX_X) / ((float)dw);
-        scl_factory = ((float)ALG_MAX_Y) / ((float)dh);
-        offx = (sw-dw)/2;
-        offy = (sh-dh)/2;
+          displayWidth =(int) (((float)sh)*4.0f/3.0f);
+          displayHeight = sh;
+          scl_factorx = ((float)ALG_MAX_X) / ((float)displayWidth);
+          scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
+          offx = (sw-displayWidth)/2;
+          offy = (sh-displayHeight)/2;
+
+          printf("Landscape landscape correction\n");
+
       }
       else
       {
-        float factor = ((float)sw)/((float)sh);
-        dh = ((float)dh)*factor;
-        scl_factorx = ((float)ALG_MAX_X) / ((float)dw);
-        scl_factory = ((float)ALG_MAX_Y) / ((float)dh);
-        offx = (sw-dw)/2;
-        offy = (sh-dh)/2;
-        printf("Landscape correction\n");
+          // sw is the factor that stays
+          displayHeight =(int) (((float)sw)*3.0f/4.0f);
+          displayWidth = sw;
+
+          scl_factorx = ((float)ALG_MAX_X) / ((float)displayWidth);
+          scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
+          offx = (sw-displayWidth)/2;
+          offy = (sh-displayHeight)/2;
+        printf("Landscape portait correction\n");
       }
     }
 
     printf("scl_factorx:%f, scl_factory: %f, ",scl_factorx, scl_factory);
-}
-
-void draw_line(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
-{
-  if (z == 0) return; // MOVE, possibly to realign at 0,0
-//printf("Sim Line:x0:%i, y0:%i, x1:%i, y1:%i, b:%i\n",x0,y0,x1,y1, z);
-/*
-mini_draw_line(
-		  (FromX - OFFSET_X)*MUL_X, 
-		  (FromY - OFFSET_Y)*MUL_Y, 
-		  (ToX- OFFSET_X)*MUL_X,
-		  (ToY- OFFSET_Y)*MUL_Y, 
-		  z*4+Colour15*8);
-
-    mini_draw_line( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                    offy + (y0+POS_ADDER_Y) / scl_factory, 
-                    offx + (x1+POS_ADDER_X) / scl_factorx, 
-                    offy + (y1+POS_ADDER_Y) / scl_factory, 
-                    255); // For ESP32
-      */      
-    mini_draw_line( offx + (int) ((x0+POS_ADDER_X) / scl_factorx), 
-                    offy + (int) ((y0+POS_ADDER_X) / scl_factory), 
-                    offx + (int) ((x1+POS_ADDER_X) / scl_factorx), 
-                    offy + (int) ((y1+POS_ADDER_X) / scl_factory), 
-                    z<<4); // For ESP32
 }
 /* Tempest 4-bit colour → YUV palette index
  *
@@ -438,6 +430,45 @@ static const uint8_t tempest_color_lut[16] = {
     YUV_PALETTE_WHITE,         /* 15: 1111  R=255, G=255, B=255 */
 };
 
+
+void draw_line(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
+{
+  if (z == 0) return; // MOVE, possibly to realign at 0,0
+//printf("Sim Line:x0:%i, y0:%i, x1:%i, y1:%i, color:%i, b:%i\n",x0,y0,x1,y1, Colour15,z);
+/*
+mini_draw_line(
+		  (FromX - OFFSET_X)*MUL_X, 
+		  (FromY - OFFSET_Y)*MUL_Y, 
+		  (ToX- OFFSET_X)*MUL_X,
+		  (ToY- OFFSET_Y)*MUL_Y, 
+		  z*4+Colour15*8);
+
+    mini_draw_line( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                    offy + (y0+POS_ADDER_Y) / scl_factory, 
+                    offx + (x1+POS_ADDER_X) / scl_factorx, 
+                    offy + (y1+POS_ADDER_Y) / scl_factory, 
+                    255); // For ESP32
+      */      
+  if (g_color_mode)
+  {
+      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                      offy + (y0+POS_ADDER_Y) / scl_factory, 
+                      offx + (x1+POS_ADDER_X) / scl_factorx, 
+                      offy + (y1+POS_ADDER_Y) / scl_factory, 
+                      tempest_color_lut[Colour15],
+                      z<<4); // For ESP32
+  }
+  else
+  {
+    mini_draw_line( offx + (int) ((x0+POS_ADDER_X) / scl_factorx), 
+                    offy + (int) ((y0+POS_ADDER_Y) / scl_factory), 
+                    offx + (int) ((x1+POS_ADDER_X) / scl_factorx), 
+                    offy + (int) ((y1+POS_ADDER_Y) / scl_factory), 
+                    z<<4); // For ESP32
+  }
+
+
+}
 // from addpoint AVG (Tempest)
 // in color is a 4 bit rgb value
 // %0000rrgb
@@ -447,28 +478,52 @@ void draw_line2(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:1
   if (z == 0) return; // MOVE, possibly to realign at 0,0
   
   {
-//printf("Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
    if (z>=12) 
    {
 //      mini_draw_line(FromX, FromY, ToX,ToY, Colour15);
-    mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                    offy + (y0+POS_ADDER_X) / scl_factory, 
-                    offx + (x1+POS_ADDER_X) / scl_factorx, 
-                    offy + (y1+POS_ADDER_X) / scl_factory, 
-                    tempest_color_lut[Colour15],
-                    z<<4); // For ESP32
-
-
-                  }
+    if (FLIP_Y)
+    {
+      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                      displayHeight-(offy + (y0+POS_ADDER_Y) / scl_factory), 
+                      offx + (x1+POS_ADDER_X) / scl_factorx, 
+                      displayHeight-(offy + (y1+POS_ADDER_Y) / scl_factory), 
+                      tempest_color_lut[Colour15],
+                      z<<4); // For ESP32
+    }
+    else
+    {
+//printf("A Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
+      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                      offy + (y0+POS_ADDER_Y) / scl_factory, 
+                      offx + (x1+POS_ADDER_X) / scl_factorx, 
+                      offy + (y1+POS_ADDER_Y) / scl_factory, 
+                      tempest_color_lut[Colour15],
+                      z<<4); // For ESP32
+    }
+    }
    else
    {
 //      mini_draw_line(x0, y0, x1,y1, (int)( ((float)Colour15)*(((float)z)/(15.0) )));
-    mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                    offy + (y0+POS_ADDER_X) / scl_factory, 
-                    offx + (x1+POS_ADDER_X) / scl_factorx, 
-                    offy + (y1+POS_ADDER_X) / scl_factory, 
-                    tempest_color_lut[Colour15],
-                    z<<4); // For ESP32
+    if (FLIP_Y)
+    {
+      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                      displayHeight-(offy + (y0+POS_ADDER_X) / scl_factory), 
+                      offx + (x1+POS_ADDER_X) / scl_factorx, 
+                      displayHeight-(offy + (y1+POS_ADDER_X) / scl_factory), 
+                      tempest_color_lut[Colour15],
+                      z<<4); // For ESP32
+    }
+    else
+    {
+printf("B Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
+      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                      offy + (y0+POS_ADDER_X) / scl_factory, 
+                      offx + (x1+POS_ADDER_X) / scl_factorx, 
+                      offy + (y1+POS_ADDER_X) / scl_factory, 
+                      tempest_color_lut[Colour15],
+                      z<<4); // For ESP32
+    }
+
    }
    
   }

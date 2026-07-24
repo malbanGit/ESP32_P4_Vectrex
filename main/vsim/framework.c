@@ -122,6 +122,7 @@ char *getFlagString(int CC)
 int nextDraw = 30000;
 extern int frame;
 long long cyclesAll;
+int vecsimSigDone = 0;
 void sim_6502 (void)
 {
   register int PC;
@@ -135,7 +136,7 @@ void sim_6502 (void)
   int oldaddr;
 #endif
   DECLARE_CC;
-
+  vecsimSigDone = 0;
   A = save_A;
   X = save_X;
   Y = save_Y;
@@ -144,7 +145,7 @@ void sim_6502 (void)
   totcycles = save_totcycles;
   
   stepflag = 0;
-  
+  printf("Starting VecSim\n");
   //int currentIRQCycles = 6144;
   while(1) 
   {
@@ -232,7 +233,7 @@ void sim_6502 (void)
 // this interferes with landing platforms
 //  they are sometimes drawn WITHIN the lander!
 trans_ok = 0;
-
+	if (vecsimSigDone) return;
     if ((!stepflag) && trans_ok)
     {
 //restart_sbt: // due to branching

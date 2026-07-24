@@ -11,7 +11,7 @@
 
 #include "defines.h"
 #include "draw_line_yuv422.h"
-extern uint8_t  s_overlay_palette_yuv[128][3];    /* {Y, U, V} full-range for YUV draw */
+#include <stdio.h>
 
 /* ════════════════════════════════════════════════════════════════════════
  * draw_line_yuv422_c
@@ -30,11 +30,13 @@ IRAM_ATTR void draw_line_yuv422_color_c(
     uint32_t gs          = g_gs;
     int      Rb          = g_line_Rb;
 
-    /* Fixed colour for the whole line — looked up once (pre-converted YUV) */
-    const uint8_t *c = s_overlay_palette_yuv[colorPaletteEntry & 0x7F];
-    int y_full = c[0];
-    int u_full = c[1];
-    int v_full = c[2];
+    /* Fixed colour for the whole line — looked up once */
+    const uint8_t *c = s_overlay_palette[colorPaletteEntry & 0x7F];
+    int b_col = c[0], g_col = c[1], r_col = c[2];
+    int u_full = bgr_to_u(b_col, g_col, r_col);   /* constant per call */
+    int v_full = bgr_to_v(b_col, g_col, r_col);
+
+printf("[%i]->: Y: %i, U:%i,V%i\n",colorPaletteEntry,bgr_to_y(b_col, g_col, r_col), u_full, v_full);
 
     int bx0 = iclamp((x0 < x1 ? x0 : x1) - Rb, 0, fb_w - 1);
     int bx1 = iclamp((x0 > x1 ? x0 : x1) + Rb, 0, fb_w - 1);
@@ -64,7 +66,7 @@ IRAM_ATTR void draw_line_yuv422_color_c(
                     if (contrib == 0) continue;
                 }
                 uint8_t *dst    = row_fb + px * 2;
-                int y_contrib   = (y_full * contrib) >> 8;
+                int y_contrib   = (bgr_to_y(b_col, g_col, r_col) * contrib) >> 8;
                 if (y_contrib) {
                     int yv      = dst[0] + y_contrib;
                     dst[0]      = (uint8_t)(yv > 255 ? 255 : yv);
@@ -140,7 +142,7 @@ IRAM_ATTR void draw_line_yuv422_color_c(
                 }
                 {
                     uint8_t *dst    = row_fb + px * 2;
-                    int y_contrib   = (y_full * contrib) >> 8;
+                    int y_contrib   = (bgr_to_y(b_col, g_col, r_col) * contrib) >> 8;
                     if (y_contrib) {
                         int yv      = dst[0] + y_contrib;
                         dst[0]      = (uint8_t)(yv > 255 ? 255 : yv);
@@ -200,7 +202,7 @@ IRAM_ATTR void draw_line_yuv422_color_c(
                 }
                 {
                     uint8_t *dst    = row_fb + px * 2;
-                    int y_contrib   = (y_full * contrib) >> 8;
+                    int y_contrib   = (bgr_to_y(b_col, g_col, r_col) * contrib) >> 8;
                     if (y_contrib) {
                         int yv      = dst[0] + y_contrib;
                         dst[0]      = (uint8_t)(yv > 255 ? 255 : yv);
@@ -244,11 +246,12 @@ IRAM_ATTR void undraw_line_yuv422_color_c(
     uint32_t gs          = g_gs;
     int      Rb          = g_line_Rb;
 
-    /* Fixed colour — same lookup as draw (pre-converted YUV) */
-    const uint8_t *c = s_overlay_palette_yuv[colorPaletteEntry & 0x7F];
-    int y_full = c[0];
-    int u_full = c[1];
-    int v_full = c[2];
+    /* Fixed colour — same lookup as draw */
+    const uint8_t *c = s_overlay_palette[colorPaletteEntry & 0x7F];
+    int b_col = c[0], g_col = c[1], r_col = c[2];
+
+    int u_full = bgr_to_u(b_col, g_col, r_col);
+    int v_full = bgr_to_v(b_col, g_col, r_col);
 
     int bx0 = iclamp((x0 < x1 ? x0 : x1) - Rb, 0, fb_w - 1);
     int bx1 = iclamp((x0 > x1 ? x0 : x1) + Rb, 0, fb_w - 1);
@@ -278,7 +281,7 @@ IRAM_ATTR void undraw_line_yuv422_color_c(
                     if (contrib == 0) continue;
                 }
                 uint8_t *dst    = row_fb + px * 2;
-                int y_contrib   = (y_full * contrib) >> 8;
+                int y_contrib   = (bgr_to_y(b_col, g_col, r_col) * contrib) >> 8;
                 if (y_contrib) dst[0] = 0;
                 int u_delta     = ((u_full - 128) * contrib) >> 8;
                 int v_delta     = ((v_full - 128) * contrib) >> 8;
@@ -349,7 +352,7 @@ IRAM_ATTR void undraw_line_yuv422_color_c(
                 }
                 {
                     uint8_t *dst    = row_fb + px * 2;
-                    int y_contrib   = (y_full * contrib) >> 8;
+                    int y_contrib   = (bgr_to_y(b_col, g_col, r_col) * contrib) >> 8;
                     if (y_contrib) dst[0] = 0;
                     int u_delta     = ((u_full - 128) * contrib) >> 8;
                     int v_delta     = ((v_full - 128) * contrib) >> 8;
@@ -404,7 +407,7 @@ IRAM_ATTR void undraw_line_yuv422_color_c(
                 }
                 {
                     uint8_t *dst    = row_fb + px * 2;
-                    int y_contrib   = (y_full * contrib) >> 8;
+                    int y_contrib   = (bgr_to_y(b_col, g_col, r_col) * contrib) >> 8;
                     if (y_contrib) dst[0] = 0;
                     int u_delta     = ((u_full - 128) * contrib) >> 8;
                     int v_delta     = ((v_full - 128) * contrib) >> 8;

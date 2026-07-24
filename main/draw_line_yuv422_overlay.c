@@ -27,17 +27,18 @@
       1,   1,
 };
 
+extern uint8_t  s_overlay_palette_yuv[128][3];    /* {Y, U, V} full-range for YUV draw */
 
 
-/* shared pixel write for draw */
-#define WRITE_YUV_DRAW(dst, px, b_col, g_col, r_col, contrib) do { \
-    int y_contrib = (bgr_to_y(b_col, g_col, r_col) * (contrib)) >> 8; \
+/* shared pixel write for draw — palette already in YUV */
+#define WRITE_YUV_DRAW(dst, px, y_col, u_col, v_col, contrib) do { \
+    int y_contrib = ((y_col) * (contrib)) >> 8; \
     if (y_contrib) { \
         int yv = (dst)[0] + y_contrib; \
         (dst)[0] = (uint8_t)(yv > 255 ? 255 : yv); \
     } \
-    int u_delta = ((bgr_to_u(b_col, g_col, r_col) - 128) * (contrib)) >> 8; \
-    int v_delta = ((bgr_to_v(b_col, g_col, r_col) - 128) * (contrib)) >> 8; \
+    int u_delta = (((u_col) - 128) * (contrib)) >> 8; \
+    int v_delta = (((v_col) - 128) * (contrib)) >> 8; \
     if (u_delta | v_delta) { \
         int u_off = ((px) & 1) ? -1 : 1; \
         int uv    = (int)(dst)[u_off]     + u_delta; \
@@ -47,15 +48,12 @@
     } \
 } while(0)
 
-/* shared pixel write for undraw — mirrors draw: compute deltas, gate on them, write */
-#define WRITE_YUV_UNDRAW(dst, px, b_col, g_col, r_col, ea) do { \
-    int b_sc    = ((b_col) * (ea)) >> 8; \
-    int g_sc    = ((g_col) * (ea)) >> 8; \
-    int r_sc    = ((r_col) * (ea)) >> 8; \
-    int y_val   = bgr_to_y(b_sc, g_sc, r_sc); \
+/* shared pixel write for undraw — palette already in YUV */
+#define WRITE_YUV_UNDRAW(dst, px, y_col, u_col, v_col, ea) do { \
+    int y_val   = ((y_col) * (ea)) >> 8; \
     if (y_val) (dst)[0] = (uint8_t)y_val; \
-    int u_delta = ((bgr_to_u(b_col, g_col, r_col) - 128) * (ea)) >> 8; \
-    int v_delta = ((bgr_to_v(b_col, g_col, r_col) - 128) * (ea)) >> 8; \
+    int u_delta = (((u_col) - 128) * (ea)) >> 8; \
+    int v_delta = (((v_col) - 128) * (ea)) >> 8; \
     if (u_delta | v_delta) { \
         int u_off = ((px) & 1) ? -1 : 1; \
         (dst)[u_off]     = (uint8_t)(128 + u_delta); \
@@ -104,8 +102,8 @@
             for (int px = px_lo_g; px <= px_hi_g; px++) {
                 uint8_t pidx = row_pal[px];
                 if (!(pidx & 0x80)) continue;
-                const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-                int b_col = c[0], g_col = c[1], r_col = c[2];
+                const uint8_t *c = s_overlay_palette_yuv[pidx & 0x7F];
+                int y_col = c[0], u_col = c[1], v_col = c[2];
                 uint32_t d2_q16 = cap_d2_q16(px - x0, py - y0);
                 int contrib;
                 if (d2_q16 <= beam_r2_q16) {
@@ -120,7 +118,7 @@
                     if (contrib == 0) continue;
                 }
                 uint8_t *dst = row_fb + px * 2;
-                WRITE_YUV_DRAW(dst, px, b_col, g_col, r_col, contrib);
+                WRITE_YUV_DRAW(dst, px, y_col, u_col, v_col, contrib);
             }
         }
         return;
@@ -160,8 +158,8 @@
                 uint8_t pidx = row_pal[px];
                 if (!(pidx & 0x80)) goto ov_px_next_n;
                 {
-                    const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-                    int b_col = c[0], g_col = c[1], r_col = c[2];
+                    const uint8_t *c = s_overlay_palette_yuv[pidx & 0x7F];
+                    int y_col = c[0], u_col = c[1], v_col = c[2];
                     uint32_t d2_q16 = 0;
                     int in_beam = 0;
                     if (dot <= 0) {
@@ -194,7 +192,7 @@
                     }
                     {
                         uint8_t *dst = row_fb + px * 2;
-                        WRITE_YUV_DRAW(dst, px, b_col, g_col, r_col, contrib);
+                        WRITE_YUV_DRAW(dst, px, y_col, u_col, v_col, contrib);
                     }
                 }
             ov_px_next_n:
@@ -222,8 +220,8 @@
                 uint8_t pidx = row_pal[px];
                 if (!(pidx & 0x80)) goto ov_px_next_f;
                 {
-                    const uint8_t *c = s_overlay_palette[pidx & 0x7F];
-                    int b_col = c[0], g_col = c[1], r_col = c[2];
+                    const uint8_t *c = s_overlay_palette_yuv[pidx & 0x7F];
+                    int y_col = c[0], u_col = c[1], v_col = c[2];
                     uint32_t d2_q16 = 0;
                     int in_beam = 0;
                     if (dot <= 0) {
@@ -256,7 +254,7 @@
                     }
                     {
                         uint8_t *dst = row_fb + px * 2;
-                        WRITE_YUV_DRAW(dst, px, b_col, g_col, r_col, contrib);
+                        WRITE_YUV_DRAW(dst, px, y_col, u_col, v_col, contrib);
                     }
                 }
             ov_px_next_f:
@@ -317,7 +315,7 @@ IRAM_ATTR void undraw_line_yuv422_overlay_c(
                 }
                 uint8_t pidx = row_pal[px];
                 if (pidx & 0x80) {
-                    const uint8_t *c = s_overlay_palette[pidx & 0x7F];
+                    const uint8_t *c = s_overlay_palette_yuv[pidx & 0x7F];
                     uint8_t *dst = row_fb + px * 2;
                     WRITE_YUV_UNDRAW(dst, px, c[0], c[1], c[2], ea);
                 }
@@ -385,7 +383,7 @@ IRAM_ATTR void undraw_line_yuv422_overlay_c(
                 {
                     uint8_t pidx = row_pal[px];
                     if (pidx & 0x80) {
-                        const uint8_t *c = s_overlay_palette[pidx & 0x7F];
+                        const uint8_t *c = s_overlay_palette_yuv[pidx & 0x7F];
                         uint8_t *dst = row_fb + px * 2;
                         WRITE_YUV_UNDRAW(dst, px, c[0], c[1], c[2], ea);
                     }
@@ -440,7 +438,7 @@ IRAM_ATTR void undraw_line_yuv422_overlay_c(
                 {
                     uint8_t pidx = row_pal[px];
                     if (pidx & 0x80) {
-                        const uint8_t *c = s_overlay_palette[pidx & 0x7F];
+                        const uint8_t *c = s_overlay_palette_yuv[pidx & 0x7F];
                         uint8_t *dst = row_fb + px * 2;
                         WRITE_YUV_UNDRAW(dst, px, c[0], c[1], c[2], ea);
                     }

@@ -26,6 +26,9 @@
 
 #include "memory.h"
 #include "pokey.h"
+#include "game.h"
+static int oldSpinner = 0;
+static int spinnerSum = 0;
 
 
 #define MAX_REG 16
@@ -81,9 +84,9 @@ FLASH_ROM_ATTR char *pokey_wreg_name [] =
 };
 
 
-byte pokey_rreg [MAX_POKEY][MAX_REG];
+DRAM_ATTR byte pokey_rreg [MAX_POKEY][MAX_REG];
 
-byte pokey_wreg [MAX_POKEY][MAX_REG];
+DRAM_ATTR byte pokey_wreg [MAX_POKEY][MAX_REG];
 
 #ifdef POKEY_DEBUG
 byte pokey_wreg_inited [MAX_POKEY][MAX_REG] = { { 0 } };
@@ -96,8 +99,87 @@ byte pokey_read (int pokeynum, int reg, int PC, unsigned long cyc)
     {
     case RANDOM:
       if ((pokey_wreg [pokeynum] [SKCTL] & 0x03) != 0x00)
-    pokey_rreg [pokeynum] [RANDOM] = (rand () >> 12) & 0xff;
+        pokey_rreg [pokeynum] [RANDOM] = (rand () >> 12) & 0xff;
+      if ((game == TEMPEST) && (pokeynum==1)) return 0xff;
       return (pokey_rreg [pokeynum] [RANDOM]);
+    case ALLPOT:
+      if ((game == TEMPEST) && (pokeynum==0)) 
+      {
+        // joystick.x = 30 - 127
+        // joystick.x = -30 - -127
+        signed char spin = (signed char)joystick.x;
+//printf("PokeyRead\n");
+        if (spin >0)
+          spin = (spin-30)/30;
+        else if (spin <0)
+          spin = (spin+30)/30;
+        
+        // spin something like -3 -> +3
+        
+        spinnerSum += spin;
+        if (spinnerSum>7)
+        {
+          oldSpinner+=spin;
+          spinnerSum-=7;
+        }
+        if (spinnerSum<-7)
+        {
+          oldSpinner+=spin;
+          spinnerSum+=7;
+        }
+/*        
+    joystick.x = currentJoy1X;  // 0x80   0  0x7f
+
+
+                     ; BITS 0-3: Encoder Wheel
+                     ; BIT  4  : Cocktail detection
+                     ; BIT  5  : Switch #1 at D/E2
+                     ; BITS 6-7: Unused.
+
+*/                     
+        int ret = 0;
+        ret = oldSpinner & 0x0f;
+        return ret;
+      }
+      else if ((game == TEMPEST) && (pokeynum==1)) 
+      {
+/*        
+
+
+    GAME OPTIONS:
+    (4-position switch at D/E2 on Math Box PCB)
+
+    1   2   3   4                   Meaning
+    -------------------------------------------------------------------------
+        Off                         Minimum rating range: 1, 3, 5, 7, 9
+        On                          Minimum rating range tied to high score
+            Off Off                 Medium difficulty (see notes)
+            Off On                  Easy difficulty (see notes)
+            On  Off                 Hard difficulty (see notes)
+            On  On                  Medium difficulty (see notes)
+            
+            
+                     ; BIT 0: D/E2 switch #2
+                     ; BIT 1: D/E2 switch #3
+                     ; BIT 2: D/E2 switch #4
+                     ; BIT 3: Fire Button
+                     ; BIT 4: Zapper Button
+                     ; BIT 5: Start Player 1 Button
+                     ; BIT 6: Start Player 2 Button
+                     ; BIT 7: Unused.
+*/                     
+        int ret = 0;
+        if (switches [0].fire) ret = ret | 0x04; // EASY
+        if (switches [0].fire) ret = ret | 0x08;
+        if (switches [0].thrust) ret = ret | 0x10;
+        if (start1) ret = ret | 0x20;
+        if (start2) ret = ret | 0x40;
+
+        return ret;
+      }
+      else if (pokeynum==0)
+        return 0xf;
+      else return 0;
     default:
 #ifdef POKEY_DEBUG
       printf ("pokey %d read reg %1x (%s)\n", pokeynum, reg, pokey_rreg_name [reg]);

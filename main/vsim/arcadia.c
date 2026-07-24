@@ -1,4 +1,7 @@
 #include "../defines.h"
+extern int vecsimSigDone;
+  void avg_reset_really();
+
 /*
 https://github.com/historicalsource/tempest
 https://arcarc.xmission.com/Web%20Archives/ionpool.net%20(Dec-31-2020)/arcade/tempest_code_project/tempest_code_project.html
@@ -329,17 +332,20 @@ int tempest(void)
   mem = (elem *) gameMemory;
   game = pick_game (ProgName);
 
- ALG_XMIN=-20000;
- ALG_XMAX=20000;
- ALG_YMIN=-20000;
- ALG_YMAX=20000;
- ALG_MAX_X=40000; // wid
- ALG_MAX_Y=40000;
+  ALG_XMIN=-16000;
+  ALG_XMAX=16000;
+  ALG_YMIN=-16000;
+  ALG_YMAX=16000;
+  
+  ALG_MAX_X=30000; // wid
+  ALG_MAX_Y=36000;
 
- POS_ADDER_X = 20000;
- POS_ADDER_Y = 20000;
+  POS_ADDER_X = 15000;
+  POS_ADDER_Y = 14000;
+  FLIP_Y=1;
+  SCREEN_TYPE = GAME_PORTRAIT;
 
-  init_graphics (GAME_PORTRAIT);
+  init_graphics();
   setAppFPS(60);
   setup_game();
   g_color_mode = 1;
@@ -355,30 +361,31 @@ int tempest(void)
   save_flags = 0;
   save_totcycles = 0;
   irq_cycle = 4173; // tempest 
+  avg_reset_really();
   sim_6502 ();
-  while (1)
-  {
-    ; // do not "return" - never call _libc_fini_array etc...
-  }
   return 0;
 }
+
 int battlezone(void)
 {
   ProgName = "battlezone"; // defined in display.h
   mem = (elem *) gameMemory;
   game = pick_game (ProgName);
 
- ALG_XMIN=0;
- ALG_XMAX=1000;
- ALG_YMIN=0;
- ALG_YMAX=750;
- ALG_MAX_X=1000; // wid
- ALG_MAX_Y=750;
+  ALG_XMIN=0;
+  ALG_XMAX=1000;
+  ALG_YMIN=0;
+  ALG_YMAX=750;
+  ALG_MAX_X=1000; // wid
+  ALG_MAX_Y=750;
 
- POS_ADDER_X = 0;
- POS_ADDER_Y = 0;
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
 
-  init_graphics (GAME_LANDSCAPE);
+
+  init_graphics ();
   setAppFPS(41);
   printf("Game picked: %i\n", game);
   setup_game();
@@ -392,10 +399,251 @@ int battlezone(void)
   save_totcycles = 0;
   irq_cycle = 8192; // battlezone
 
+  avg_reset_really();
   sim_6502 ();
-  while (1)
-  {
-    ; // do not "return" - never call _libc_fini_array etc...
-  }
+  return 0;
+}
+
+int blackwidow(void)
+{
+  ProgName = "blackwidow"; // defined in display.h
+  
+  mem = (elem *) gameMemory;
+  game = pick_game (ProgName);
+
+  ALG_XMIN=0;
+  ALG_XMAX=1100;
+  ALG_YMIN=0;
+  ALG_YMAX=850;
+  ALG_MAX_X=1100; // wid
+  ALG_MAX_Y=850;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+  init_graphics ();
+  setAppFPS(60);
+  setup_game();
+  g_color_mode = 1;
+  yuv_palette_init();
+  // from pokey.c
+  //  void enablePokeyOutput(int e);
+  //  enablePokeyOutput(0); // false
+  
+  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  save_A = 0;
+  save_X = 0;
+  save_Y = 0;
+  save_flags = 0;
+  save_totcycles = 0;
+  irq_cycle = 8192; // blackwidow
+
+  avg_reset_really();
+  sim_6502 ();
+  return 0;
+}
+
+
+int deluxe(void)
+{
+  ProgName = "deluxe"; // defined in display.h
+  mem = (elem *) gameMemory;
+  game = pick_game (ProgName);
+
+  ALG_XMIN=0;
+  ALG_XMAX=1000;
+  ALG_YMIN=0;
+  ALG_YMAX=750;
+  ALG_MAX_X=1000; // wid
+  ALG_MAX_Y=750;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+
+  init_graphics ();
+  setAppFPS(41);
+  printf("Game picked: %i\n", game);
+  setup_game();
+  g_color_mode = 0;
+ 
+  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  save_A = 0;
+  save_X = 0;
+  save_Y = 0;
+  save_flags = 0;
+  save_totcycles = 0;
+  irq_cycle = 8192; // battlezone
+
+  avg_reset_really();
+  sim_6502 ();
+  return 0;
+}
+
+
+int gravitar(void)
+{
+  ProgName = "gravitar"; // defined in display.h
+  
+  mem = (elem *) gameMemory;
+  game = pick_game (ProgName);
+
+  ALG_XMIN=0;
+  ALG_XMAX=1100;
+  ALG_YMIN=0;
+  ALG_YMAX=850;
+  ALG_MAX_X=1100; // wid
+  ALG_MAX_Y=850;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+  init_graphics ();
+  setAppFPS(60);
+  setup_game();
+  g_color_mode = 1;
+  yuv_palette_init();
+  // from pokey.c
+  //  void enablePokeyOutput(int e);
+  //  enablePokeyOutput(0); // false
+  
+  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  save_A = 0;
+  save_X = 0;
+  save_Y = 0;
+  save_flags = 0;
+  save_totcycles = 0;
+  irq_cycle = 8192; // blackwidow
+
+  avg_reset_really();
+  sim_6502 ();
+  return 0;
+}
+
+
+int lunar(void)
+{
+  ProgName = "lunar"; // defined in display.h
+  mem = (elem *) gameMemory;
+  game = pick_game (ProgName);
+
+  ALG_XMIN=0;
+  ALG_XMAX=1000;
+  ALG_YMIN=0;
+  ALG_YMAX=750;
+  ALG_MAX_X=1000; // wid
+  ALG_MAX_Y=750;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+
+  init_graphics ();
+  setAppFPS(41);
+  printf("Game picked: %i\n", game);
+  setup_game();
+  g_color_mode = 0;
+ 
+  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  save_A = 0;
+  save_X = 0;
+  save_Y = 0;
+  save_flags = 0;
+  save_totcycles = 0;
+  irq_cycle = 6136; // battlezone
+
+  avg_reset_really();
+  sim_6502 ();
+  return 0;
+}
+
+
+int redbaron(void)
+{
+  ProgName = "redbaron"; // defined in display.h
+  mem = (elem *) gameMemory;
+  game = pick_game (ProgName);
+
+  ALG_XMIN=0;
+  ALG_XMAX=1000;
+  ALG_YMIN=0;
+  ALG_YMAX=750;
+  ALG_MAX_X=1000; // wid
+  ALG_MAX_Y=750;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+
+  init_graphics ();
+  setAppFPS(62);
+  printf("Game picked: %i\n", game);
+  setup_game();
+  g_color_mode = 0;
+ 
+  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  save_A = 0;
+  save_X = 0;
+  save_Y = 0;
+  save_flags = 0;
+  save_totcycles = 0;
+  irq_cycle = 8192; // battlezone
+
+  avg_reset_really();
+  sim_6502 ();
+  return 0;
+}
+
+
+
+
+int spaceDuel(void)
+{
+  ProgName = "spaceduel"; // defined in display.h
+  
+  mem = (elem *) gameMemory;
+  game = pick_game (ProgName);
+
+  ALG_XMIN=0;
+  ALG_XMAX=1100;
+  ALG_YMIN=0;
+  ALG_YMAX=850;
+  ALG_MAX_X=1100; // wid
+  ALG_MAX_Y=850;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+  init_graphics ();
+  setAppFPS(60);
+  setup_game();
+  g_color_mode = 1;
+  yuv_palette_init();
+  // from pokey.c
+  //  void enablePokeyOutput(int e);
+  //  enablePokeyOutput(0); // false
+  
+  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  save_A = 0;
+  save_X = 0;
+  save_Y = 0;
+  save_flags = 0;
+  save_totcycles = 0;
+  irq_cycle = 8192; // blackwidow
+
+  avg_reset_really();
+  sim_6502 ();
   return 0;
 }

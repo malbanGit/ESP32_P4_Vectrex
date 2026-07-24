@@ -6,7 +6,7 @@
 //#define NO_AUDIO 1 just be quiet!
 
 #define VECX_DEBUG 1
-#define MAX_EMU_FPS 50
+#define MAX_EMU_FPS 150
 #define ENABLE_OVERLAYS 0
 
 #define LINE_WIDTH 1
@@ -80,9 +80,9 @@ extern int LCD_H_RES;
 extern int LCD_V_RES;
 
 extern int g_color_mode; // 0 = not color, 1 = color
-extern int  g_line_width;
-extern int  g_line_glow;
-extern int  brightnessAdjust;
+extern int g_line_width;
+extern int g_line_glow;
+extern int brightnessAdjust;
 extern long unsigned int g_beam_r2_q16;
 
 extern int g_line_Rb;
@@ -90,13 +90,30 @@ extern int g_beam_r;
 extern long unsigned int g_gs;
 
 
-extern int  brightnessLCD;
+extern int brightnessLCD;
 extern const uint8_t gauss_lut[];
 extern uint8_t s_overlay_palette[128][3];
 extern int g_fpsToReach;
 
+typedef struct {
+    int j0_x;
+    int j0_y;
+    int j1_x;
+    int j1_y;
+    int buttonState;
+} input_state_t;
+extern input_state_t g_inputState; 
 
 
+//void emu_begin_frame(void);
+void mini_end_frame(void);
+void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // brightness or color - depending on mode, 0 is always undraw
+void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, uint8_t brightness);
+//void vecx_emu (long cycles);
+int getDisplayWidth();
+int getDisplayHeight();
+int getScreenWidth();
+int getScreenHeight();
 
 
 

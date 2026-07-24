@@ -14,7 +14,11 @@ Bug:
    "Battlezone" - wenn lines außerhalb starten - oder aufhören, dsann werden sie abgschitenn=?
    line asm
 
+    pole position "same"? bei start x  <0?
 
+    pole position flimmert bei game over und hat emu fps von 43?
+
+color hat keine brightness
 
 crash overlay asm
 Guru Meditation Error: Core  0 panic'ed (Load access fault). Exception was unhandled.
@@ -220,6 +224,7 @@ DRAM_ATTR int g_beam_r = LINE_WIDTH >> 1;
 DRAM_ATTR uint32_t g_gs;
 DRAM_ATTR int g_color_mode; // 0 = not color, 1 = color
 DRAM_ATTR int g_fpsToReach=  1000000/MAX_EMU_FPS;
+DRAM_ATTR input_state_t g_inputState={127,127,127,127,255}; 
 
 void changeGlobalLineValues(int w, int g)
 {
@@ -426,12 +431,12 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 
 IRAM_ATTR static inline void undrawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry, uint8_t brightness)
 {
-    undraw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, brightness);
+    undraw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, brightness);
 }
 IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry, uint8_t brightness)
 {
 //printf("Mini Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,colorPaletteEntry, brightness);
-    draw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, brightness);
+    draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, brightness);
 }
 IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
@@ -831,7 +836,7 @@ IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness
     else {
         // Buffer voll – zusätzliche Linien werden verworfen
         // Optional: Debug-Ausgabe
-        printf("Emulation Exceeded line Count!!! (%d)\n", fs->line_count);
+        //printf("Emulation Exceeded line Count!!! (%d)\n", fs->line_count);
     }
 }
 
@@ -892,6 +897,8 @@ IRAM_ATTR void mini_end_frame(void)
         }
         start = esp_timer_get_time();
     }
+    void readevents();
+    readevents();
 
     // Aktuellen Slot als READY markieren
     cur->state = FRAME_READY;
@@ -1136,6 +1143,8 @@ void yuv_palette_init(void)
 // Tasks
 // ----------------------------------------------------
 void mini_taskloop(int cycles);
+int vecsimGame=0;
+#define MAX_VECSIM_GAME 6
 IRAM_ATTR static void application_task(void *arg)
 {
     while (1) 
@@ -1144,7 +1153,20 @@ IRAM_ATTR static void application_task(void *arg)
         //  sim_6502 ();
         int tempest(void);
         int battlezone(void);
-        tempest();
+        int blackwidow(void);
+        int deluxe(void); // nw
+        int asteroids(void); // bad roms
+        int gravitar(void);
+        int lunar(void); // Nw?
+        int redbaron(void); // Nw?
+        int spaceDuel(void); // Nw?
+        
+        //tempest();
+        if (vecsimGame==1) gravitar();
+        if (vecsimGame==2) blackwidow();
+        if (vecsimGame==3) spaceDuel();
+        if (vecsimGame==4) redbaron();
+        if (vecsimGame==5) battlezone();
 
 
         mini_taskloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
@@ -1843,6 +1865,26 @@ static int build_palette_freq(
 }
 void clearFramebuffers()
 {
+
+DRAM_ATTR static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
+DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
+DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
+DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
+DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
+DRAM_ATTR static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
+
+// ----------------------------------------------------
+// Emulator frame storage (independent of framebuffers)
+// ----------------------------------------------------
+
+// Drei logische Frames als Ringpuffer
+DRAM_ATTR static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
+
+//    for (int i=0;i<NUM_FRAME_SLOTS;i++;) s_frames[i].linecount=0;
+    frames_init();
+    for (int i=0;i<NUM_FB;i++) s_fb_line_count[i]=0;
+
+
     #if VIDEO_FB_YUV422
         init_yuv422_framebuffer(s_fb_front, LCD_H_RES, LCD_V_RES);
         init_yuv422_framebuffer(s_fb_back, LCD_H_RES, LCD_V_RES);
@@ -1850,6 +1892,9 @@ void clearFramebuffers()
         memset(s_fb_front, 0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
         memset(s_fb_back,  0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
     #endif
+
+
+
 
 }
 
@@ -2324,6 +2369,9 @@ void toggleVideoMode()
 		SCREEN_HEIGHT = LCD_V_RES;
 		SCREEN_WIDTH = LCD_H_RES;
         resizeVectrex();
+
+void init_graphics ();
+init_graphics(); // ONLY WHEN VSIM IS LOADED
         loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
     }
     else
@@ -2337,6 +2385,9 @@ void toggleVideoMode()
 		SCREEN_HEIGHT = LCD_H_RES;
 		SCREEN_WIDTH = LCD_V_RES;
         resizeVectrex();
+
+void init_graphics ();
+init_graphics(); // ONLY WHEN VSIM IS LOADED
         loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
     }
 }
@@ -2378,3 +2429,289 @@ int getDisplayHeight()
         return LCD_IN_OVERLAY_VECX_HEIGHT;
     return LCD_VECX_HEIGHT;
 }
+
+static int loadNum = -1;
+int vecx_init();
+char  *name[]={
+	"VECTERX/POLE.BIN", 
+	"POLE.BIN", 
+	"SWEEP.BIN", 
+	"KARL.BIN",
+	"ARMOR.BIN",
+	"BERZERK.BIN",
+	"RELEASE.BIN",
+	"SPIKE.BIN",
+	"BEDLAM.BIN",
+	"CASTLE.BIN",
+	"COSMIC.BIN"
+};
+char  *ov[]={
+	"/sdcard/POLE.PNG", 
+	"/sdcard/SWEEP.PNG", 
+	"/sdcard/KARL.PNG",
+	"/sdcard/ARMOR.PNG",
+	"/sdcard/BERZERK.PNG",
+	"",
+	"/sdcard/SPIKE.PNG",
+	"/sdcard/BEDLAM.PNG",
+	"/sdcard/CASTLE.PNG",
+	"/sdcard/COSMIC.PNG"
+}; 
+
+IRAM_ATTR void readevents()
+{
+	// center is default unless pressed!
+	g_inputState.j0_x=127;
+	g_inputState.j0_y=127;
+	g_inputState.j1_x=127;
+	g_inputState.j1_y=127;
+
+    // attached keyboard (slow due to pulls!)
+    // mapping as in Vide
+    /* Player 1 */
+ 	if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = 0;
+ 	if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 255;
+ 	if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 255;
+ 	if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = 0;
+
+    /* Player 2 */
+ 	if (isKeyDown('h')) g_inputState.j1_x = 0;
+ 	if (isKeyDown('j')) g_inputState.j1_x = 255;
+ 	if (isKeyDown('u')) g_inputState.j1_y = 255;
+ 	if (isKeyDown('n')) g_inputState.j1_y = 0;
+
+    /* Player 1 */
+    if (isAsciiDown('a'))
+        g_inputState.buttonState &= ~1;
+    else
+        g_inputState.buttonState |= 1;
+
+    if (isAsciiDown('s'))
+        g_inputState.buttonState &= ~2;
+    else
+        g_inputState.buttonState |= 2;
+
+    if (isAsciiDown('d'))
+        g_inputState.buttonState &= ~4;
+    else
+        g_inputState.buttonState |= 4;
+
+    if (isAsciiDown('f'))
+        g_inputState.buttonState &= ~8;
+    else
+        g_inputState.buttonState |= 8;
+        
+    /* Player 2 */
+    if (isAsciiDown('q'))
+        g_inputState.buttonState &= ~16;
+    else
+        g_inputState.buttonState |= 16;
+
+    if (isAsciiDown('w'))
+        g_inputState.buttonState &= ~32;
+    else
+        g_inputState.buttonState |= 32;
+
+    if (isAsciiDown('e'))
+        g_inputState.buttonState &= ~64;
+    else
+        g_inputState.buttonState |= 64;
+
+    if (isAsciiDown('r'))
+        g_inputState.buttonState &= ~128;
+    else
+        g_inputState.buttonState |= 128;
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+
+
+    #if VECX_DEBUG == 1
+    static volatile int modeSwitchActive=0;
+    extern int rampOnFractionValue;
+    extern int rampOffFractionValue;
+    extern int blankOnDelay;
+    extern int blankOffDelay;
+    extern int vecsimSigDone;
+    if (isAsciiDown('m'))
+	{
+		if (modeSwitchActive==0)
+		{
+			modeSwitchActive = 3;
+            vecsimGame++;
+            if (vecsimGame==MAX_VECSIM_GAME) vecsimGame=0;
+            vecsimSigDone=1;
+            clearFramebuffers();
+            redraw = 3;
+		}
+	}
+	else if (modeSwitchActive==3)
+	{
+		modeSwitchActive = 0;
+	}
+
+    if (isAsciiDown('y'))
+	{
+		if (modeSwitchActive==0)
+		{
+			modeSwitchActive = 1;
+			void toggleVideoModeRequest();
+			toggleVideoModeRequest();
+		}
+	}
+	else if (modeSwitchActive==1)
+	{
+		modeSwitchActive = 0;
+	}
+	
+	if (isKeyDown(HID_KEY_SPACE))
+	{
+		if (modeSwitchActive==0)
+		{
+			modeSwitchActive = 2;
+			void toggleOverlayRequest();
+			toggleOverlayRequest();
+		}
+	}
+	else 
+	if (modeSwitchActive==2)
+	{
+		modeSwitchActive = 0;
+	}
+
+   	if (isAsciiDown('b'))
+	{
+		brightnessLCD = brightnessLCD + 1;
+		if (brightnessLCD>1022) brightnessLCD=1022;
+		printf("brightnessLCD: %d\n", brightnessLCD);
+	    lvds_backlight(true, brightnessLCD);
+	}
+   	if (isAsciiDown('v'))
+	{
+		brightnessLCD = brightnessLCD - 1;
+		if (brightnessLCD<0) brightnessLCD=0;
+		printf("toggleOverlay: %d\n", brightnessLCD);
+	    lvds_backlight(true, brightnessLCD);
+	}
+
+   	if (isAsciiDown('o'))
+	{
+		loadNum--;
+		if (loadNum<0) loadNum = 8;
+		printf("Loading rom: %s\n", name[loadNum]);
+        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+
+		if (mode == VIDEO_OUT_HDMI)
+			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+		else
+			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+		vecx_init();
+        resizeVectrex();
+		vTaskDelay(pdMS_TO_TICKS(100));
+	}
+   	if (isAsciiDown('p'))
+	{
+		loadNum++;
+		if (loadNum>8) loadNum = 0;
+		printf("Loading rom: %s\n", name[loadNum]);
+        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+		if (mode == VIDEO_OUT_HDMI)
+			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+		else
+			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+		vecx_init();
+        resizeVectrex();
+		vTaskDelay(pdMS_TO_TICKS(100));
+	}
+	if (isKeyDown(HID_KEY_F11))
+	{
+		brightnessAdjust = brightnessAdjust - 1;
+        redraw=3;
+		printf("brightnessAdjust: %d\n", brightnessAdjust);
+	}
+	if (isKeyDown(HID_KEY_F12))
+	{
+		brightnessAdjust = brightnessAdjust + 1;
+        redraw=3;
+		printf("brightnessAdjust: %d\n", brightnessAdjust);
+	}
+
+	if (isKeyDown(HID_KEY_F1))
+	{
+		g_line_width = g_line_width - 1;
+        redraw=3;
+		if (g_line_width<0) g_line_width = 0;
+		printf("g_line_width: %d\n", g_line_width);
+		changeGlobalLineValues(g_line_width, g_line_glow);
+	}
+	if (isKeyDown(HID_KEY_F2))
+	{
+		g_line_width = g_line_width + 1;
+        redraw=3;
+		printf("g_line_width: %d\n", g_line_width);
+		changeGlobalLineValues(g_line_width, g_line_glow);
+	}
+	if (isKeyDown(HID_KEY_F3))
+	{
+		g_line_glow = g_line_glow - 1;
+        redraw=3;
+		if (g_line_glow<0) g_line_glow = 0;
+		printf("g_line_glow: %d\n", g_line_glow);
+		changeGlobalLineValues(g_line_width, g_line_glow);
+	}
+	if (isKeyDown(HID_KEY_F4))
+	{
+		g_line_glow = g_line_glow + 1;
+        redraw=3;
+		printf("g_line_glow: %d\n", g_line_glow);
+		changeGlobalLineValues(g_line_width, g_line_glow);
+	}
+	if (isKeyDown(HID_KEY_1))
+	{
+		blankOnDelay = blankOnDelay - 1;
+		printf("blankOnDelay: %d\n", blankOnDelay);
+	}
+	if (isKeyDown(HID_KEY_2))
+	{
+		blankOnDelay = blankOnDelay + 1;
+		printf("blankOnDelay: %d\n", blankOnDelay);
+	}
+
+	if (isKeyDown(HID_KEY_3))
+	{
+		blankOffDelay = blankOffDelay - 1;
+		printf("blankOffDelay: %d\n", blankOffDelay);
+	}
+	if (isKeyDown(HID_KEY_4))
+	{
+		blankOffDelay = blankOffDelay + 1;
+		printf("blankOffDelay: %d\n", blankOffDelay);
+	}
+	if (isKeyDown(HID_KEY_5))
+	{
+		rampOnFractionValue = rampOnFractionValue - 1;
+		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
+	}
+	if (isKeyDown(HID_KEY_6))
+	{
+		rampOnFractionValue = rampOnFractionValue + 1;
+		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
+	}
+	if (isKeyDown(HID_KEY_7))
+	{
+		rampOffFractionValue = rampOffFractionValue - 1;
+		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
+	}
+	if (isKeyDown(HID_KEY_8))
+	{
+		rampOffFractionValue = rampOffFractionValue + 1;
+		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
+	}
+
+
+
+    #endif
+}
+
+

@@ -12,12 +12,9 @@
  * YUV422 (YUYV) pixel layout: [Y0][U][Y1][V] per 4-byte pair, 2 bytes/pixel.
  *   Y for pixel px : row_fb[px*2 + 0]
  *   U (pair)  : even→dst[+1], odd→dst[-1]
- *   V (pair)  : even→dst[+3], odd→dst[+1]
+ *   V (pair)  : even→dst[+3], odd→dst[+1] 
  *
- * BT.601 full-range (palette is BGR):
- *   Y = (77*R + 150*G + 29*B) >> 8
- *   U = 128 + ((128*B - 43*R - 85*G) >> 8)  clamped [0,255]
- *   V = 128 + ((128*R - 107*G - 21*B) >> 8) clamped [0,255]
+ * Palette is pre-converted YUV (s_overlay_palette_yuv); no BT.601 conversion needed.
  */
 
     .extern g_line_Rb
@@ -39,7 +36,7 @@
  *  Register map:
  *    s0  fb          s6  ea (s_overlay_alpha_val)
  *    s1  fb_w        s7  s_overlay_pal
- *    s2  px_lo       s8  &s_overlay_palette[0]
+ *    s2  px_lo       s8  &s_overlay_palette_yuv[0]
  *    s3  px_hi       s9  s_ov_off_x
  *    s4  by0         s10 s_ov_w
  *    s5  by1         s11 py
@@ -156,7 +153,7 @@ undraw_line_yuv422_overlay:
 1:  mv    s5, a4
 
     la    t0, s_overlay_pal; lw s7, 0(t0)
-    la    s8, s_overlay_palette
+    la    s8, s_overlay_palette_yuv
     la    t0, s_overlay_alpha_val; lbu s6, 0(t0)
     la    t0, s_ov_off_x; lw s9, 0(t0)
     la    t0, s_ov_w;     lw s10, 0(t0)
@@ -324,28 +321,19 @@ undraw_line_yuv422_overlay:
     lbu   a0, 0(t6)
     andi  a1, a0, 0x80; beqz a1, .Luydf_pxskip
     andi  a0, a0, 0x7f
-    slli  a1, a0, 1; add a1, a1, a0; add a1, s8, a1
+    slli  a1, a0, 1; add a1, a1, a0; add a1, s8, a1  /* a1 = palette_yuv entry */
 
-    lbu   a2, 2(a1); mul a2, a2, s6; srli a2, a2, 8
-    lbu   a3, 1(a1); mul a3, a3, s6; srli a3, a3, 8
-    lbu   a4, 0(a1); mul a4, a4, s6; srli a4, a4, 8
+    lbu   a2, 0(a1)                /* Y */
+    lbu   a3, 1(a1)                /* U */
+    lbu   a4, 2(a1)                /* V */
 
-    li    a0, 77;   mul a0, a0, a2
-    li    a1, 150;  mul a1, a1, a3;  add a0, a0, a1
-    li    a1, 29;   mul a1, a1, a4;  add a0, a0, a1
-    srli  a0, a0, 8
+    mul   a0, a2, s6; srli a0, a0, 8   /* y_val = Y * ea >> 8 */
     beqz  a0, .Luydf_y_skip
     sb    a0, 0(t1)
 .Luydf_y_skip:
 
-    slli  a0, a4, 7
-    li    a1, 43;   mul a1, a1, a2;  sub a0, a0, a1
-    li    a1, 85;   mul a1, a1, a3;  sub a0, a0, a1
-    srai  a0, a0, 8
-    slli  a1, a2, 7
-    li    t0, 107;  mul t0, t0, a3;  sub a1, a1, t0
-    li    t0, 21;   mul t0, t0, a4;  sub a1, a1, t0
-    srai  a1, a1, 8
+    addi  a0, a3, -128; mul a0, a0, s6; srai a0, a0, 8   /* u_delta = (U-128)*ea>>8 */
+    addi  a1, a4, -128; mul a1, a1, s6; srai a1, a1, 8   /* v_delta = (V-128)*ea>>8 */
     or    t0, a0, a1
     beqz  t0, .Luydf_uv_skip
     andi  a2, t4, 1;  slli a2, a2, 1;  li a3, 1;  sub a2, a3, a2;  add a2, a2, t1
@@ -390,25 +378,18 @@ undraw_line_yuv422_overlay:
     slli  a1, a3, 8; mul a1, a1, a1; add a0, a0, a1
     bgtu  a0, a5, .Luydf_d_glow
 .Luydf_d_restore:
-    slli  a1, t0, 1; add a1, a1, t0; add a1, s8, a1
-    lbu   a2, 2(a1); mul a2, a2, s6; srli a2, a2, 8
-    lbu   a3, 1(a1); mul a3, a3, s6; srli a3, a3, 8
-    lbu   a4, 0(a1); mul a4, a4, s6; srli a4, a4, 8
-    li    a0, 77; mul a0, a0, a2
-    li    a1, 150; mul a1, a1, a3; add a0, a0, a1
-    li    a1, 29;  mul a1, a1, a4; add a0, a0, a1
-    srli  a0, a0, 8
+    slli  a1, t0, 1; add a1, a1, t0; add a1, s8, a1  /* a1 = palette_yuv entry */
+
+    lbu   a2, 0(a1)                /* Y */
+    lbu   a3, 1(a1)                /* U */
+    lbu   a4, 2(a1)                /* V */
+
+    mul   a0, a2, s6; srli a0, a0, 8   /* y_val = Y * ea >> 8 */
     beqz  a0, .Luydf_d_y_skip
     sb    a0, 0(t1)
 .Luydf_d_y_skip:
-    slli  a0, a4, 7
-    li    a1, 43;  mul a1, a1, a2;  sub a0, a0, a1
-    li    a1, 85;  mul a1, a1, a3;  sub a0, a0, a1
-    srai  a0, a0, 8
-    slli  a1, a2, 7
-    li    t0, 107; mul t0, t0, a3;  sub a1, a1, t0
-    li    t0, 21;  mul t0, t0, a4;  sub a1, a1, t0
-    srai  a1, a1, 8
+    addi  a0, a3, -128; mul a0, a0, s6; srai a0, a0, 8   /* u_delta = (U-128)*ea>>8 */
+    addi  a1, a4, -128; mul a1, a1, s6; srai a1, a1, 8   /* v_delta = (V-128)*ea>>8 */
     or    t0, a0, a1
     beqz  t0, .Luydf_d_uv_skip
     andi  a2, t4, 1;  slli a2, a2, 1;  li a3, 1;  sub a2, a3, a2;  add a2, a2, t1
@@ -462,7 +443,7 @@ undraw_line_yuv422_overlay:
  *  Register map:
  *    s0  fb          s6  brightness
  *    s1  fb_w        s7  s_overlay_pal
- *    s2  px_lo       s8  &s_overlay_palette[0]
+ *    s2  px_lo       s8  &s_overlay_palette_yuv[0]
  *    s3  px_hi       s9  s_ov_off_x
  *    s4  by0         s10 s_ov_w
  *    s5  by1         s11 py
@@ -536,7 +517,7 @@ draw_line_yuv422_overlay:
     mv    s6, a7
 
     la    t0, s_overlay_pal; lw s7, 0(t0)
-    la    s8, s_overlay_palette
+    la    s8, s_overlay_palette_yuv
     la    t0, s_ov_off_x;  lw s9,  0(t0)
     la    t0, s_ov_w;      lw s10, 0(t0)
     la    t0, s_ov_off_y;  lw t1, 0(t0);  sw t1, DF_OFFSY(sp)
@@ -724,18 +705,13 @@ draw_line_yuv422_overlay:
     beqz  a0, .Ldyv_pal_skip
 
 .Ldyv_pal_write:
-    slli  a1, t0, 1; add a1, a1, t0; add a1, s8, a1
-    lbu   a2, 2(a1)
-    lbu   a3, 1(a1)
-    lbu   a4, 0(a1)
+    slli  a1, t0, 1; add a1, a1, t0; add a1, s8, a1  /* a1 = palette_yuv entry */
+    lbu   a2, 0(a1)   /* Y */
+    lbu   a3, 1(a1)   /* U */
+    lbu   a4, 2(a1)   /* V */
 
-    li    a5, 77;   mul a5, a5, a2
-    li    t0, 150;  mul t0, t0, a3;  add a5, a5, t0
-    li    t0, 29;   mul t0, t0, a4;  add a5, a5, t0
-    srli  a5, a5, 8
-    mul   a5, a5, a0
-    srli  a5, a5, 8
-
+    /* y_contrib = Y * contrib >> 8  (a0 = contrib) */
+    mul   a5, a2, a0; srli a5, a5, 8
     beqz  a5, .Ldyv_y_skip
     lbu   t0, 0(t1)
     add   a5, a5, t0
@@ -743,14 +719,10 @@ draw_line_yuv422_overlay:
 1:  sb    a5, 0(t1)
 .Ldyv_y_skip:
 
-    slli  t0, a4, 7
-    li    a1, 43;  mul a1, a1, a2;  sub t0, t0, a1
-    li    a1, 85;  mul a1, a1, a3;  sub t0, t0, a1
-    mul   t0, t0, a0;  srai t0, t0, 16
-    slli  a5, a2, 7
-    li    a1, 107; mul a1, a1, a3;  sub a5, a5, a1
-    li    a1, 21;  mul a1, a1, a4;  sub a5, a5, a1
-    mul   a5, a5, a0;  srai a5, a5, 16
+    /* u_delta = (U-128) * contrib >> 8 */
+    addi  t0, a3, -128; mul t0, t0, a0; srai t0, t0, 8
+    /* v_delta = (V-128) * contrib >> 8 */
+    addi  a5, a4, -128; mul a5, a5, a0; srai a5, a5, 8
     or    a1, t0, a5
     beqz  a1, .Ldyv_uv_skip
     andi  a1, t4, 1;  slli a1, a1, 1;  li a2, 1;  sub a2, a2, a1;  add a2, a2, t1
@@ -813,29 +785,22 @@ draw_line_yuv422_overlay:
     beqz  a1, .Ldyv_dpx_next
     lw    a3, DF_Y0(sp)
 .Ldyv_dwrite:
-    slli  a5, t0, 1; add a5, a5, t0; add a5, s8, a5
-    lbu   a2, 2(a5)
-    lbu   a3, 1(a5)
-    lbu   a4, 0(a5)
-    li    a5, 77;  mul a5, a5, a2
-    li    t0, 150; mul t0, t0, a3; add a5, a5, t0
-    li    t0, 29;  mul t0, t0, a4; add a5, a5, t0
-    srli  a5, a5, 8
-    mul   a5, a5, a1; srli a5, a5, 8
+    slli  a5, t0, 1; add a5, a5, t0; add a5, s8, a5  /* a5 = palette_yuv entry */
+    lbu   a2, 0(a5)   /* Y */
+    lbu   a3, 1(a5)   /* U */
+    lbu   a4, 2(a5)   /* V */
+    /* y_contrib = Y * contrib >> 8  (a1 = contrib) */
+    mul   a5, a2, a1; srli a5, a5, 8
     slli  t1, t6, 1; add t1, t5, t1
     beqz  a5, .Ldyv_d_y_skip
     lbu   t0, 0(t1); add a5, a5, t0
     li    t0, 255; blt a5, t0, 1f; mv a5, t0
 1:  sb    a5, 0(t1)
 .Ldyv_d_y_skip:
-    slli  t0, a4, 7
-    li    t2, 43;  mul t2, t2, a2;  sub t0, t0, t2
-    li    t2, 85;  mul t2, t2, a3;  sub t0, t0, t2
-    mul   t0, t0, a1;  srai t0, t0, 16
-    slli  a5, a2, 7
-    li    t2, 107; mul t2, t2, a3;  sub a5, a5, t2
-    li    t2, 21;  mul t2, t2, a4;  sub a5, a5, t2
-    mul   a5, a5, a1;  srai a5, a5, 16
+    /* u_delta = (U-128) * contrib >> 8 */
+    addi  t0, a3, -128; mul t0, t0, a1; srai t0, t0, 8
+    /* v_delta = (V-128) * contrib >> 8 */
+    addi  a5, a4, -128; mul a5, a5, a1; srai a5, a5, 8
     or    t2, t0, a5
     beqz  t2, .Ldyv_d_uv_skip
     andi  t2, t6, 1;  slli t2, t2, 1;  li a4, 1;  sub a4, a4, t2;  add a4, a4, t1

@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "../defines.h"
 #include "memory.h"
 #include "display.h"
 #include "game.h"

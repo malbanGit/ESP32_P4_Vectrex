@@ -835,6 +835,7 @@ u8 avg_prom[256];
 
 int old_x=0;
 int old_y=0;
+
 extern void draw_line2(int FromX, int FromY, int ToX, int ToY, int Colour15, int z); // z is 0:12 in lunar, colour is always 7
 
 void vg_add_point_buf(int x, int y, int color, int intensity)
@@ -1385,5 +1386,27 @@ void avg_reset (unsigned long cyc)
 {
 	vgrst();
 	avg_halt(1);
+}
+void avg_reset_really()
+{
+
+dvg = 0;
+portrait = 0;
+vg_busy = 0;
+frame = 0;	
+vg_step =0;
+vg_print = 1;
+vgo_count =0;
+trace_vgo = 0;
+
+old_x=0;
+old_y=0;
+
+drop_frames = 0;
+df = 1;
+last_vgo_cyc = 0;
+//void avg_init(u16 vram, u16 cram)
+
+
 }
 

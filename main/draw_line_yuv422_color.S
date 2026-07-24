@@ -29,7 +29,7 @@
     .extern g_beam_r2_q16
     .extern g_gs
     .extern gauss_lut
-    .extern s_overlay_palette
+    .extern s_overlay_palette_yuv
 
     .section .iram0.text,"ax",@progbits
     .align 2
@@ -100,9 +100,9 @@
  *
  *  Register map (saved/callee):
  *    s0  fb          s6  brightness (from parameter)
- *    s1  fb_w        s7  r_col
- *    s2  bx0         s8  g_col
- *    s3  bx1         s9  b_col
+ *    s1  fb_w        s7  y_full
+ *    s2  bx0         s8  u_full
+ *    s3  bx1         s9  v_full
  *    s4  by0         s10 free
  *    s5  by1         s11 py
  *
@@ -143,14 +143,14 @@ draw_line_yuv422_color:
     mv    s1, a1
     lw    s6, DL(sp)               /* brightness from 9th argument (stack) */
 
-    /* colour lookup: s_overlay_palette[colorPaletteEntry & 0x7F] → BGR */
+    /* colour lookup: s_overlay_palette_yuv[colorPaletteEntry & 0x7F] → {Y,U,V} */
     andi  a7, a7, 0x7F
-    la    t0, s_overlay_palette
+    la    t0, s_overlay_palette_yuv
     slli  t1, a7, 1; add t1, t1, a7   /* t1 = idx*3 */
     add   t0, t0, t1
-    lbu   s9, 0(t0)                /* b_col */
-    lbu   s8, 1(t0)                /* g_col */
-    lbu   s7, 2(t0)                /* r_col */
+    lbu   s7, 0(t0)                /* y_full */
+    lbu   s8, 1(t0)                /* u_full */
+    lbu   s9, 2(t0)                /* v_full */
 
     la    t2, g_line_Rb; lw t2, 0(t2)
 
@@ -315,32 +315,22 @@ draw_line_yuv422_color:
 
 /* ── Pixel write (additive colour) ── */
 .Ldyl_write:
-    /* a0=contrib, t1=fb_ptr, t4=px, s7=r_col, s8=g_col, s9=b_col */
+    /* a0=contrib, t1=fb_ptr, t4=px, s7=y_full, s8=u_full, s9=v_full */
 
-    /* Y_full = (77*r + 150*g + 29*b) >> 8 */
-    li    a5, 77;   mul a5, a5, s7
-    li    t0, 150;  mul t0, t0, s8;  add a5, a5, t0
-    li    t0, 29;   mul t0, t0, s9;  add a5, a5, t0
-    srli  a5, a5, 8
-
-    /* y_contrib = Y_full * contrib >> 8; additive write */
-    mul   a5, a5, a0; srli a5, a5, 8
+    /* y_contrib = y_full * contrib >> 8; additive write */
+    mul   a5, s7, a0; srli a5, a5, 8
     beqz  a5, .Ldyl_y_skip
     lbu   t0, 0(t1); add a5, a5, t0
     li    t0, 255;  blt a5, t0, 1f;  mv a5, t0
 1:  sb    a5, 0(t1)
 .Ldyl_y_skip:
 
-    /* u_delta = (128*b - 43*r - 85*g) * contrib >> 16 */
-    slli  t0, s9, 7
-    li    a1, 43;   mul a1, a1, s7;  sub t0, t0, a1
-    li    a1, 85;   mul a1, a1, s8;  sub t0, t0, a1
-    mul   t0, t0, a0;  srai t0, t0, 16              /* t0 = u_delta */
-    /* v_delta = (128*r - 107*g - 21*b) * contrib >> 16 */
-    slli  a5, s7, 7
-    li    a1, 107;  mul a1, a1, s8;  sub a5, a5, a1
-    li    a1, 21;   mul a1, a1, s9;  sub a5, a5, a1
-    mul   a5, a5, a0;  srai a5, a5, 16              /* a5 = v_delta */
+    /* u_delta = (u_full - 128) * contrib >> 8 */
+    addi  t0, s8, -128
+    mul   t0, t0, a0;  srai t0, t0, 8              /* t0 = u_delta */
+    /* v_delta = (v_full - 128) * contrib >> 8 */
+    addi  a5, s9, -128
+    mul   a5, a5, a0;  srai a5, a5, 8              /* a5 = v_delta */
     or    a1, t0, a5
     beqz  a1, .Ldyl_uv_skip
     /* u_ptr: even px → +1, odd px → -1 */
@@ -398,26 +388,16 @@ draw_line_yuv422_color:
     mul   a0, s6, a1; srai a0, a0, 8
     beqz  a0, .Ldyl_d_skip
 .Ldyl_d_write:
-    /* Y additive */
-    li    a5, 77;  mul a5, a5, s7
-    li    t0, 150; mul t0, t0, s8; add a5, a5, t0
-    li    t0, 29;  mul t0, t0, s9; add a5, a5, t0
-    srli  a5, a5, 8
-    mul   a5, a5, a0; srli a5, a5, 8
+    /* Y additive: y_contrib = y_full * contrib >> 8 */
+    mul   a5, s7, a0; srli a5, a5, 8
     beqz  a5, .Ldyl_d_y_skip
     lbu   t0, 0(t1); add a5, a5, t0
     li    t0, 255; blt a5, t0, 1f; mv a5, t0
 1:  sb    a5, 0(t1)
 .Ldyl_d_y_skip:
-    /* UV deltas */
-    slli  t0, s9, 7
-    li    a5, 43;  mul a5, a5, s7;  sub t0, t0, a5
-    li    a5, 85;  mul a5, a5, s8;  sub t0, t0, a5
-    mul   t0, t0, a0;  srai t0, t0, 16
-    slli  a5, s7, 7
-    li    a1, 107; mul a1, a1, s8;  sub a5, a5, a1
-    li    a1, 21;  mul a1, a1, s9;  sub a5, a5, a1
-    mul   a5, a5, a0;  srai a5, a5, 16
+    /* UV deltas from pre-converted palette */
+    addi  t0, s8, -128; mul t0, t0, a0; srai t0, t0, 8   /* u_delta */
+    addi  a5, s9, -128; mul a5, a5, a0; srai a5, a5, 8   /* v_delta */
     or    a1, t0, a5
     beqz  a1, .Ldyl_d_uv_skip
     andi  a1, t4, 1;  slli a1, a1, 1;  li t2, 1;  sub a1, t2, a1;  add a1, a1, t1
@@ -472,10 +452,10 @@ draw_line_yuv422_color:
  *
  *  Register map (saved/callee):
  *    s0  fb          s6  brightness (from parameter)
- *    s1  fb_w        s7  r_col
- *    s2  bx0         s8  g_col
- *    s3  bx1         s9  b_col
- *    s4  by0         s10 y_full (bgr_to_y constant per call)
+ *    s1  fb_w        s7  (free)
+ *    s2  bx0         s8  (free)
+ *    s3  bx1         s9  (free)
+ *    s4  by0         s10 y_full (from YUV palette)
  *    s5  by1         s11 py
  *
  *  a5 = beam_r2_q16 cached throughout inner loop.
@@ -515,39 +495,22 @@ undraw_line_yuv422_color:
     mv    s1, a1
     lw    s6, UL(sp)               /* brightness from 9th argument (stack) */
 
-    /* colour lookup (same as draw) */
+    /* colour lookup from pre-converted YUV palette */
     andi  a7, a7, 0x7F
-    la    t0, s_overlay_palette
+    la    t0, s_overlay_palette_yuv
     slli  t1, a7, 1; add t1, t1, a7
     add   t0, t0, t1
-    lbu   s9, 0(t0)                /* b_col */
-    lbu   s8, 1(t0)                /* g_col */
-    lbu   s7, 2(t0)                /* r_col */
+    lbu   t3, 0(t0)                /* Y */
+    lbu   t4, 1(t0)                /* U */
+    lbu   t5, 2(t0)                /* V */
 
-    /* y_full = (77*r + 150*g + 29*b) >> 8  (constant per call) */
-    li    t3, 77;   mul t3, t3, s7
-    li    t4, 150;  mul t4, t4, s8; add t3, t3, t4
-    li    t4, 29;   mul t4, t4, s9; add t3, t3, t4
-    srai  t3, t3, 8
     mv    s10, t3                  /* s10 = y_full */
 
-    /* u_diff = iclamp((-43r - 85g + 128b) >> 8, -128, 127) */
-    li    t3, -43;  mul t3, t3, s7
-    li    t4, -85;  mul t4, t4, s8; add t3, t3, t4
-    li    t4, 128;  mul t4, t4, s9; add t3, t3, t4
-    srai  t3, t3, 8
-    li    t4, -128; bge t3, t4, 1f; mv t3, t4
-1:  li    t4,  127; ble t3, t4, 2f; mv t3, t4
-2:  sw    t3, UL_UDIFF(sp)
-
-    /* v_diff = iclamp((128r - 107g - 21b) >> 8, -128, 127) */
-    li    t3, 128;  mul t3, t3, s7
-    li    t4, -107; mul t4, t4, s8; add t3, t3, t4
-    li    t4, -21;  mul t4, t4, s9; add t3, t3, t4
-    srai  t3, t3, 8
-    li    t4, -128; bge t3, t4, 3f; mv t3, t4
-3:  li    t4,  127; ble t3, t4, 4f; mv t3, t4
-4:  sw    t3, UL_VDIFF(sp)
+    /* u_diff = U - 128, v_diff = V - 128 */
+    addi  t3, t4, -128
+    sw    t3, UL_UDIFF(sp)
+    addi  t3, t5, -128
+    sw    t3, UL_VDIFF(sp)
 
     la    t2, g_line_Rb; lw t2, 0(t2)
 

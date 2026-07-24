@@ -61,9 +61,11 @@ extern int ALG_MAX_Y;
 
 extern int POS_ADDER_X;
 extern int POS_ADDER_Y;
+extern int FLIP_Y;
+extern int FLIP_X;
+extern int SCREEN_TYPE;
 
-
-void init_graphics (int type);
+void init_graphics ();
 void term_graphics ();
 void draw_line (int x1, int y1, int x2, int y2, int c, int z);
 void open_page (int step);

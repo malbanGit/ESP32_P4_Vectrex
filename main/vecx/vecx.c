@@ -181,6 +181,173 @@ int writeSequenceData = 0;
 #endif
 int flashcartChanged=0;
 
+// we must put following data into PSRAM, the internal RAM is not enough!
+
+// this could be optimized with a linked list!
+// I never encountered more than 10
+// if more timers are needed, core will EXIT!!!
+// this is not dynamic
+#define MAX_TIMER 10 // only ten needed in normal setup, this is trial TODO
+typedef struct TimerItem_s 
+{
+	signed int countDown;
+	unsigned char valueToSet;
+	int *whereToSet;
+	int type;
+} TimerItem;
+DRAM_ATTR TimerItem timerItemArray[MAX_TIMER]; // should be saved
+
+// Doppelt verketteter Listen-Knoten
+typedef struct TimerNode_s {
+    struct TimerNode_s *prev;
+    struct TimerNode_s *next;
+    TimerItem          *item;
+} TimerNode;
+
+// Knotenpuffer (nicht "persistent" nötig)
+DRAM_ATTR static TimerNode timerNodeArray[MAX_TIMER];
+
+// Listen-Köpfe
+DRAM_ATTR static TimerNode *freeListHead = NULL;   // ungenutzte Items
+DRAM_ATTR static TimerNode *usedListHead = NULL;   // genutzte Items
+
+
+// these are types, and Array Index, both!
+enum
+{
+    TIMER_ACTION_NONE = 0,
+    TIMER_ZERO = 1,
+    TIMER_BLANK_ON_CHANGE = 2,
+    TIMER_BLANK_OFF_CHANGE = 3,
+    TIMER_RAMP_CHANGE = 4,
+    TIMER_MUX_Y_CHANGE = 5,
+    TIMER_MUX_S_CHANGE = 6,
+    TIMER_MUX_Z_CHANGE = 7,
+    TIMER_MUX_R_CHANGE = 8,
+    TIMER_XSH_CHANGE = 9,
+    TIMER_LIGHTPEN = 10,
+    TIMER_RAMP_OFF_CHANGE = 11,
+    TIMER_MUX_SEL_CHANGE = 12,
+    TIMER_SHIFT = 13,
+    TIMER_T1 = 14,
+    TIMER_T2 = 15,
+	TIMER_SHIFT_WRITE = 13+1024, // the delay is the normal "SHIFT"
+    TIMER_SHIFT_READ = 13+2048, // the delay is the normal "SHIFT"
+};
+
+DRAM_ATTR static int DELAYS[]={
+	0,  // TIMER_ACTION_NONE = 0,
+	5,  // TIMER_ZERO = 1,
+	0,  // TIMER_BLANK_ON_CHANGE = 2,
+#define TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL 1
+	0,  // TIMER_BLANK_OFF_CHANGE = 3,
+#define TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL 1
+
+	12, // TIMER_RAMP_CHANGE = 4,
+	14, // TIMER_MUX_Y_CHANGE = 5,
+#define TIMER_MUX_S_CHANGE_VALUE_IS_NULL 1	
+	0,  // TIMER_MUX_S_CHANGE = 6,
+#define TIMER_MUX_Z_CHANGE_VALUE_IS_NULL 1	
+	0,  // TIMER_MUX_Z_CHANGE = 7,
+#define TIMER_MUX_R_CHANGE_VALUE_IS_NULL 1
+	0,  // TIMER_MUX_R_CHANGE = 8,
+	12, // TIMER_XSH_CHANGE = 9,					// if this gets too high - then line buffer will explode, since a "fake" middline change is registered, and lines are splitted
+#define TIMER_LIGHTPEN_VALUE_IS_NULL 1
+	0,  // TIMER_LIGHTPEN = 10,
+	15, // TIMER_RAMP_OFF_CHANGE = 11,
+	1,  // TIMER_MUX_SEL_CHANGE = 12, 
+#define TIMER_SHIFT_VALUE_IS_NULL 1	
+	0,  // TIMER_SHIFT = 13, 
+	
+#define TIMER_T1_VALUE_IS_NULL	1
+	0,  // TIMER_T1 = 14, 
+#define TIMER_T2_VALUE_IS_NULL	1
+	0   // TIMER_T2 = 15,
+	}; // no need to be saved
+DRAM_ATTR int rampOnFractionValue = -8;
+DRAM_ATTR int rampOffFractionValue = -13;
+DRAM_ATTR int blankOnDelay = -2; // Karl -2
+DRAM_ATTR int blankOffDelay = -2;
+DRAM_ATTR bool rampOnFraction = false;
+DRAM_ATTR bool rampOffFraction = false;
+
+DRAM_ATTR static long fcycles;
+
+//IRAM_ATTR 
+IRAM_ATTR static einline void readevents()
+{
+	// Joystick
+	// center is default unless pressed!
+	// alg_jch0=127; // player 1 x axis, 0==left, 255=right, 127=middle
+	// alg_jch1=127; // player 1 x axis, 0==down, 255=up, 127=middle
+	// alg_jch2=127; // player 2 x axis, 0==left, 255=right, 127=middle
+	// alg_jch3=127; // player 2 x axis, 0==down, 255=up, 127=middle
+	// button state 
+	// bits          76543210
+	// buttonstate   43214321
+	// plaqyer       22221111
+	// bit = zero -> button pressed, bit = one, button released 
+
+	alg_jch0 = g_inputState.j0_x;
+	alg_jch1 = g_inputState.j0_y;
+	alg_jch2 = g_inputState.j1_x;
+	alg_jch3 = g_inputState.j1_y;
+	snd_regs[14] = g_inputState.buttonState;
+}
+
+IRAM_ATTR void mini_taskloop(int cycles)
+{
+	vecx_emu(cycles);
+	readevents();
+}
+
+// resize and center to given width / height
+void resize(int width, int height){
+
+	scl_factorx = ALG_MAX_X / width;
+	scl_factory = ALG_MAX_Y / height;
+	offx = (SCREEN_WIDTH-width)/2;
+	offy = (SCREEN_HEIGHT-height)/2;
+}
+
+int vecx_init()
+{
+	if (cartSize != 0)
+	{
+		//cartData
+		// a cartridge was loaded!
+	}
+	if (mode == VIDEO_OUT_HDMI)
+	{
+		SCREEN_HEIGHT = LCD_V_RES;
+		SCREEN_WIDTH = LCD_H_RES;
+		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
+	}
+	else
+	{
+		SCREEN_HEIGHT = LCD_H_RES;
+		SCREEN_WIDTH = LCD_V_RES;
+		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
+	}
+
+	vecx_reset();
+	e8910_init_sound();
+//	e8910_done_sound();
+	return 0;
+}
+
+IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
+{
+	if (intensityDrift>200000)
+	{
+		float degradePercent = (180000000.0f-((float)intensityDrift))/180000000.0f; // two minutes
+		if (degradePercent<0) degradePercent = 0;
+		color = (int)(((float)color)*degradePercent);
+	}
+
+	mini_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
+	return;
+}
 // capacitor emulation (one...)
 int getIntVoltageValue()
 {
@@ -345,463 +512,8 @@ void checkWriteSequence()
 	{
 	}
 	else writeSequenceData = 0;
-
-	
 }
 #endif
-
-
-
-
-
-
-
-
-
-
-
-
-
-// we must put following data into PSRAM, the internal RAM is not enough!
-
-// this could be optimized with a linked list!
-// I never encountered more than 10
-// if more timers are needed, core will EXIT!!!
-// this is not dynamic
-#define MAX_TIMER 10 // only ten needed in normal setup, this is trial TODO
-typedef struct TimerItem_s 
-{
-	signed int countDown;
-	unsigned char valueToSet;
-	int *whereToSet;
-	int type;
-} TimerItem;
-DRAM_ATTR TimerItem timerItemArray[MAX_TIMER]; // should be saved
-
-// Doppelt verketteter Listen-Knoten
-typedef struct TimerNode_s {
-    struct TimerNode_s *prev;
-    struct TimerNode_s *next;
-    TimerItem          *item;
-} TimerNode;
-
-// Knotenpuffer (nicht "persistent" nötig)
-DRAM_ATTR static TimerNode timerNodeArray[MAX_TIMER];
-
-// Listen-Köpfe
-DRAM_ATTR static TimerNode *freeListHead = NULL;   // ungenutzte Items
-DRAM_ATTR static TimerNode *usedListHead = NULL;   // genutzte Items
-
-
-// these are types, and Array Index, both!
-enum
-{
-    TIMER_ACTION_NONE = 0,
-    TIMER_ZERO = 1,
-    TIMER_BLANK_ON_CHANGE = 2,
-    TIMER_BLANK_OFF_CHANGE = 3,
-    TIMER_RAMP_CHANGE = 4,
-    TIMER_MUX_Y_CHANGE = 5,
-    TIMER_MUX_S_CHANGE = 6,
-    TIMER_MUX_Z_CHANGE = 7,
-    TIMER_MUX_R_CHANGE = 8,
-    TIMER_XSH_CHANGE = 9,
-    TIMER_LIGHTPEN = 10,
-    TIMER_RAMP_OFF_CHANGE = 11,
-    TIMER_MUX_SEL_CHANGE = 12,
-    TIMER_SHIFT = 13,
-    TIMER_T1 = 14,
-    TIMER_T2 = 15,
-	TIMER_SHIFT_WRITE = 13+1024, // the delay is the normal "SHIFT"
-    TIMER_SHIFT_READ = 13+2048, // the delay is the normal "SHIFT"
-};
-
-DRAM_ATTR static int DELAYS[]={
-	0,  // TIMER_ACTION_NONE = 0,
-	5,  // TIMER_ZERO = 1,
-	0,  // TIMER_BLANK_ON_CHANGE = 2,
-#define TIMER_BLANK_ON_CHANGE_VALUE_IS_NULL 1
-	0,  // TIMER_BLANK_OFF_CHANGE = 3,
-#define TIMER_BLANK_OFF_CHANGE_VALUE_IS_NULL 1
-
-	12, // TIMER_RAMP_CHANGE = 4,
-	14, // TIMER_MUX_Y_CHANGE = 5,
-#define TIMER_MUX_S_CHANGE_VALUE_IS_NULL 1	
-	0,  // TIMER_MUX_S_CHANGE = 6,
-#define TIMER_MUX_Z_CHANGE_VALUE_IS_NULL 1	
-	0,  // TIMER_MUX_Z_CHANGE = 7,
-#define TIMER_MUX_R_CHANGE_VALUE_IS_NULL 1
-	0,  // TIMER_MUX_R_CHANGE = 8,
-	12, // TIMER_XSH_CHANGE = 9,					// if this gets too high - then line buffer will explode, since a "fake" middline change is registered, and lines are splitted
-#define TIMER_LIGHTPEN_VALUE_IS_NULL 1
-	0,  // TIMER_LIGHTPEN = 10,
-	15, // TIMER_RAMP_OFF_CHANGE = 11,
-	1,  // TIMER_MUX_SEL_CHANGE = 12, 
-#define TIMER_SHIFT_VALUE_IS_NULL 1	
-	0,  // TIMER_SHIFT = 13, 
-	
-#define TIMER_T1_VALUE_IS_NULL	1
-	0,  // TIMER_T1 = 14, 
-#define TIMER_T2_VALUE_IS_NULL	1
-	0   // TIMER_T2 = 15,
-	}; // no need to be saved
-DRAM_ATTR int rampOnFractionValue = -8;
-DRAM_ATTR int rampOffFractionValue = -13;
-DRAM_ATTR int blankOnDelay = -2; // Karl -2
-DRAM_ATTR int blankOffDelay = -2;
-DRAM_ATTR bool rampOnFraction = false;
-DRAM_ATTR bool rampOffFraction = false;
-
-
-DRAM_ATTR static long fcycles;
-
-
-//void emu_begin_frame(void);
-void mini_end_frame(void);
-void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // brightness or color - depending on mode, 0 is always undraw
-void vecx_emu (long cycles);
-#include "usb/hid_usage_keyboard.h"
-
-// actual resultion of output screen
-extern int LCD_H_RES;
-extern  int LCD_V_RES;
-
-extern  int  g_line_width;      
-extern  int  g_line_glow;
-extern  int brightnessAdjust;
-
-long load_rom_file(const char *rom_name, uint8_t *buffer, long max_size);
-static int loadNum = 0;
-int vecx_init();
-char  *name[]={
-	"SWEEP.BIN", 
-	"KARL.BIN",
-	"ARMOR.BIN",
-	"BERZERK.BIN",
-	"RELEASE.BIN",
-	"SPIKE.BIN",
-	"BEDLAM.BIN",
-	"CASTLE.BIN",
-	"COSMIC.BIN"
-};
-char  *ov[]={
-	"/sdcard/SWEEP.PNG", 
-	"/sdcard/KARL.PNG",
-	"/sdcard/ARMOR.PNG",
-	"/sdcard/BERZERK.PNG",
-	"/sdcard/BERZERK.PNG",
-	"/sdcard/SPIKE.PNG",
-	"/sdcard/BEDLAM.PNG",
-	"/sdcard/CASTLE.PNG",
-	"/sdcard/COSMIC.PNG"
-}; 
- esp_err_t loadOverlayRGB(char * n, int w, int h);
-	volatile int modeSwitchActive=0;
-
-//IRAM_ATTR 
-IRAM_ATTR static einline void readevents()
-{
-	// Public API:
-	extern IRAM_ATTR bool isKeyDown(uint8_t hid_code);
-	extern IRAM_ATTR bool isAsciiDown(char c);
-	extern IRAM_ATTR bool isShiftDown(void);
-	extern IRAM_ATTR bool isCtrlDown(void);
-	extern IRAM_ATTR bool isAltDown(void);
-	extern int  brightnessLCD; // defined in main.c
-
-	void lvds_backlight(bool on, int level);
-
-	#ifndef HID_KEY_LEFT_ARROW
-	#define HID_KEY_LEFT_ARROW   0x50
-	#endif
-
-	#ifndef HID_KEY_RIGHT_ARROW
-	#define HID_KEY_RIGHT_ARROW  0x4F
-	#endif
-
-	#ifndef HID_KEY_UP_ARROW
-	#define HID_KEY_UP_ARROW     0x52
-	#endif
-
-	#ifndef HID_KEY_DOWN_ARROW
-	#define HID_KEY_DOWN_ARROW   0x51
-	#endif
-
-	// center is default unless pressed!
-	alg_jch0=127;
-	alg_jch1=127;
-	alg_jch2=127;
-	alg_jch3=127;
-   /* Player 1 */
- 	if (isKeyDown(HID_KEY_LEFT_ARROW)) alg_jch0 = 0;
- 	if (isKeyDown(HID_KEY_RIGHT_ARROW)) alg_jch0 = 255;
- 	if (isKeyDown(HID_KEY_UP_ARROW)) alg_jch1 = 255;
- 	if (isKeyDown(HID_KEY_DOWN_ARROW)) alg_jch1 = 0;
-
-   	if (isAsciiDown('y'))
-	{
-		if (modeSwitchActive==0)
-		{
-			modeSwitchActive = 1;
-			void toggleVideoModeRequest();
-			toggleVideoModeRequest();
-		}
-
-	}
-	else if (modeSwitchActive==1)
-	{
-		modeSwitchActive = 0;
-	}
-
-	
-	if (isKeyDown(HID_KEY_SPACE))
-	{
-		if (modeSwitchActive==0)
-		{
-			modeSwitchActive = 2;
-			void toggleOverlayRequest();
-			toggleOverlayRequest();
-		}
-	}
-	else 
-	if (modeSwitchActive==2)
-	{
-		modeSwitchActive = 0;
-	}
-
-
-   	if (isAsciiDown('b'))
-	{
-		brightnessLCD = brightnessLCD + 1;
-		if (brightnessLCD>1022) brightnessLCD=1022;
-		printf("brightnessLCD: %d\n", brightnessLCD);
-	    lvds_backlight(true, brightnessLCD);
-	}
-   	if (isAsciiDown('v'))
-	{
-		
-		brightnessLCD = brightnessLCD - 1;
-		if (brightnessLCD<0) brightnessLCD=0;
-		printf("toggleOverlay: %d\n", brightnessLCD);
-	    lvds_backlight(true, brightnessLCD);
-	}
-
-   	if (isAsciiDown('o'))
-	{
-		loadNum--;
-		if (loadNum<0) loadNum = 8;
-		printf("Loading rom: %s\n", name[loadNum]);
-        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-
-		if (mode == VIDEO_OUT_HDMI)
-			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-		else
-			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-		vecx_init();
-		void resizeVectrex();
-        resizeVectrex();
-		vTaskDelay(pdMS_TO_TICKS(100));
-	}
-   	if (isAsciiDown('p'))
-	{
-		loadNum++;
-		if (loadNum>8) loadNum = 0;
-		printf("Loading rom: %s\n", name[loadNum]);
-        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-		if (mode == VIDEO_OUT_HDMI)
-			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-		else
-			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-		vecx_init();
-		void resizeVectrex();
-        resizeVectrex();
-		vTaskDelay(pdMS_TO_TICKS(100));
-	}
-	if (isKeyDown(HID_KEY_F11))
-	{
-		brightnessAdjust = brightnessAdjust - 1;
-		printf("brightnessAdjust: %d\n", brightnessAdjust);
-	}
-	if (isKeyDown(HID_KEY_F12))
-	{
-		brightnessAdjust = brightnessAdjust + 1;
-		printf("brightnessAdjust: %d\n", brightnessAdjust);
-	}
-
-void changeGlobalLineValues(int w, int g);
-   
-	if (isKeyDown(HID_KEY_F1))
-	{
-		g_line_width = g_line_width - 1;
-		if (g_line_width<0) g_line_width = 0;
-		printf("g_line_width: %d\n", g_line_width);
-		changeGlobalLineValues(g_line_width, g_line_glow);
-
-	}
-	if (isKeyDown(HID_KEY_F2))
-	{
-		g_line_width = g_line_width + 1;
-		printf("g_line_width: %d\n", g_line_width);
-		changeGlobalLineValues(g_line_width, g_line_glow);
-	}
-	if (isKeyDown(HID_KEY_F3))
-	{
-		g_line_glow = g_line_glow - 1;
-		if (g_line_glow<0) g_line_glow = 0;
-		printf("g_line_glow: %d\n", g_line_glow);
-		changeGlobalLineValues(g_line_width, g_line_glow);
-	}
-	if (isKeyDown(HID_KEY_F4))
-	{
-		g_line_glow = g_line_glow + 1;
-		printf("g_line_glow: %d\n", g_line_glow);
-		changeGlobalLineValues(g_line_width, g_line_glow);
-	}
-	
-	if (isKeyDown(HID_KEY_1))
-	{
-		blankOnDelay = blankOnDelay - 1;
-		printf("blankOnDelay: %d\n", blankOnDelay);
-	}
-	if (isKeyDown(HID_KEY_2))
-	{
-		blankOnDelay = blankOnDelay + 1;
-		printf("blankOnDelay: %d\n", blankOnDelay);
-	}
-
-	if (isKeyDown(HID_KEY_3))
-	{
-		blankOffDelay = blankOffDelay - 1;
-		printf("blankOffDelay: %d\n", blankOffDelay);
-	}
-	if (isKeyDown(HID_KEY_4))
-	{
-		blankOffDelay = blankOffDelay + 1;
-		printf("blankOffDelay: %d\n", blankOffDelay);
-	}
-	if (isKeyDown(HID_KEY_5))
-	{
-		rampOnFractionValue = rampOnFractionValue - 1;
-		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
-	}
-	if (isKeyDown(HID_KEY_6))
-	{
-		rampOnFractionValue = rampOnFractionValue + 1;
-		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
-	}
-	if (isKeyDown(HID_KEY_7))
-	{
-		rampOffFractionValue = rampOffFractionValue - 1;
-		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
-	}
-	if (isKeyDown(HID_KEY_8))
-	{
-		rampOffFractionValue = rampOffFractionValue + 1;
-		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
-	}
-
-
-
-   if (isAsciiDown('a'))
-      snd_regs[14] &= ~1;
-   else
-      snd_regs[14] |= 1;
-
-   if (isAsciiDown('s'))
-      snd_regs[14] &= ~2;
-   else
-      snd_regs[14] |= 2;
-
-   if (isAsciiDown('d'))
-      snd_regs[14] &= ~4;
-   else
-      snd_regs[14] |= 4;
-
-   if (isAsciiDown('f'))
-      snd_regs[14] &= ~8;
-   else
-      snd_regs[14] |= 8;
-
-   /* Player 2 */
- 	if (isKeyDown('h')) alg_jch2 = 0; // left
- 	if (isKeyDown('j')) alg_jch2 = 255;
- 	if (isKeyDown('u')) alg_jch3 = 255; // up
- 	if (isKeyDown('n')) alg_jch3 = 0;
-	
-   if (isAsciiDown('q'))
-      snd_regs[14] &= ~16;
-   else
-      snd_regs[14] |= 16;
-
-   if (isAsciiDown('w'))
-      snd_regs[14] &= ~32;
-   else
-      snd_regs[14] |= 32;
-
-   if (isAsciiDown('e'))
-      snd_regs[14] &= ~64;
-   else
-      snd_regs[14] |= 64;
-
-   if (isAsciiDown('r'))
-      snd_regs[14] &= ~128;
-   else
-      snd_regs[14] |= 128;
-}
-
-IRAM_ATTR void mini_taskloop(int cycles)
-{
-	vecx_emu(cycles);
-	readevents();
-}
-
-// resize and center to given width / height
-void resize(int width, int height){
-
-	scl_factorx = ALG_MAX_X / width;
-	scl_factory = ALG_MAX_Y / height;
-	offx = (SCREEN_WIDTH-width)/2;
-	offy = (SCREEN_HEIGHT-height)/2;
-}
-
-int vecx_init()
-{
-	if (cartSize != 0)
-	{
-		//cartData
-		// a cartridge was loaded!
-	}
-	if (mode == VIDEO_OUT_HDMI)
-	{
-		SCREEN_HEIGHT = LCD_V_RES;
-		SCREEN_WIDTH = LCD_H_RES;
-		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
-	}
-	else
-	{
-		SCREEN_HEIGHT = LCD_H_RES;
-		SCREEN_WIDTH = LCD_V_RES;
-		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
-	}
-
-	vecx_reset();
-	e8910_init_sound();
-//	e8910_done_sound();
-	return 0;
-}
-
-IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
-{
-	if (intensityDrift>200000)
-	{
-		float degradePercent = (180000000.0f-((float)intensityDrift))/180000000.0f; // two minutes
-		if (degradePercent<0) degradePercent = 0;
-		color = (int)(((float)color)*degradePercent);
-	}
-
-	mini_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
-	return;
-}
 
 static IRAM_ATTR einline void detach_from_list(TimerNode **head, TimerNode *node)
 {
