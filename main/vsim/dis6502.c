@@ -19,7 +19,7 @@
  *
  * $Id: dis6502.c,v 1.1 2018/07/31 01:19:44 pi Exp $
  */
-
+#include "../defines.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -55,7 +55,7 @@ struct InstInfo
     int addrmode;
   };
 
-struct InstInfo inst_info[] = 
+struct FLASH_ROM_ATTR InstInfo inst_info[] = 
 {
 /* 0x00 */ {"brk",INH }, {"ora",INDX}, {"???",INH }, {"???",INH },
 	   {"???",INH }, {"ora",ZP  }, {"asl",ZP  }, {"???",INH },

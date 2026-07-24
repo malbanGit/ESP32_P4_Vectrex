@@ -25,11 +25,11 @@ extern "C" {
 /* Assembly-optimised versions (RISC-V, ESP32-P4) */
 void draw_line_yuv422_color(uint8_t *fb, int fb_w, int fb_h,
                             int x0, int y0, int x1, int y1,
-                            int colorPaletteEntry);
+                            int colorPaletteEntry, int brightness);
 
 void undraw_line_yuv422_color(uint8_t *fb, int fb_w, int fb_h,
                               int x0, int y0, int x1, int y1,
-                              int colorPaletteEntry);
+                              int colorPaletteEntry, int brightness);
 
 void draw_line_yuv422_brightness(uint8_t *fb, int fb_w, int fb_h,
                                  int x0, int y0, int x1, int y1,
@@ -52,11 +52,11 @@ void undraw_line_yuv422_overlay(uint8_t *fb, int fb_w, int fb_h,
 /* C reference versions */
 void draw_line_yuv422_color_c(uint8_t *fb, int fb_w, int fb_h,
                         int x0, int y0, int x1, int y1,
-                        int colorPaletteEntry);
+                        int colorPaletteEntry, int brightness);
 
 void undraw_line_yuv422_color_c(uint8_t *fb, int fb_w, int fb_h,
                           int x0, int y0, int x1, int y1,
-                          int colorPaletteEntry);
+                          int colorPaletteEntry, int brightness);
 
 /* Brightness (white) variants — UV never written (delta always 0 for white) */
 void draw_line_yuv422_brightness_c(uint8_t *fb, int fb_w, int fb_h,

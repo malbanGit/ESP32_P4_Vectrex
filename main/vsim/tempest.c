@@ -1,3 +1,4 @@
+#include "../defines.h"
 /*
 https://github.com/historicalsource/tempest
 https://arcarc.xmission.com/Web%20Archives/ionpool.net%20(Dec-31-2020)/arcade/tempest_code_project/tempest_code_project.html
@@ -159,39 +160,11 @@ FLASH   =15.            ;CHANGES EVERY 4 MO.
 #include <string.h>
 #include <stdlib.h>
 
-#include "../sim/memory.h"
-#include "../sim/game.h"
-#include "../sim/display.h"
-#include "../sim/sim6502.h"
+#include "memory.h"
+#include "game.h"
+#include "display.h"
+#include "sim6502.h"
 
-#include <vectrex/vectrexInterface.h>
-
-unsigned char playerShot_alt1_data[]=
-{
-    0xEC, 0xE2, 0x00, 0x00, 0xAD, 0xBE, 0x00, 0xAC, 0xAA, 0x00, 
-    0xAB, 0x99, 0x00, 0xAC, 0x88, 0x00, 0xAB, 0x77, 0x00, 0xD0, 
-    0x20, 
-};
-unsigned char playerShot_alt2_data[]=
-{
-    0xEF, 0x80, 0x00, 0x0A, 0xAF, 0x00, 0x01, 0xAE, 0x80, 0x01, 
-    0xAE, 0x00, 0x02, 0xAD, 0x80, 0x02, 0xAD, 0x00, 0x03, 0xAE, 
-    0x80, 0x01, 0xAE, 0x40, 0x01, 0xAD, 0x00, 0x01, 0xA8, 0xC0, 
-    0x00, 0xA8, 0x80, 0x00, 0xA8, 0x60, 0x00, 0xD0, 0x20, 
-};
-
-unsigned char cursorMove_alt1_data[]=
-{
-    0xEB, 0x28, 0x00, 0x1E, 0x89, 0x88, 0x89, 0xA6, 0x29, 0x00, 
-    0xA5, 0x28, 0x00, 0x84, 0x83, 0xA8, 0x01, 0x00, 0xD0, 0x20, 
-
-};
-unsigned char cursorMove_alt2_data[]=
-{
-    0xEF, 0x20, 0x00, 0x1E, 0xA8, 0x60, 0x00, 0xAF, 0x20, 0x00, 
-    0xA8, 0x60, 0x00, 0xAC, 0x20, 0x00, 0xA4, 0x60, 0x00, 0xD0, 
-    0x20, 
-};
 
 // RAM addresses for Tempest
 
@@ -301,13 +274,13 @@ inline unsigned char getTempestByte(int adr)
   // direct read, not triggering any emulation thingy
   return mem[adr].cell;
 }
-
+  
 
 void tempestCallback(int type)
 {
   if (type == 999) // openPage callback
   {
-    int gameState = getTempestByte(QSTATE); // status bit 7 not set
+    // int gameState = getTempestByte(QSTATE); // status bit 7 not set
     
     // adjust emulation / display parameters
     // according to game state
@@ -343,32 +316,37 @@ void tempestCallback(int type)
       break;
   }
 */
-}
-    
-    
-char gameMemory[4*65536];
-void setDimensions(int offsetx, int offsety, int mulx, int muly);
+}    
+HUGE_DATA_LOCATION char gameMemory[4*65536];
+void yuv_palette_init(void);
+void setAppFPS(int fps);
 
-int tempest()
+int tempest(void)
 {
-  int smallwindow = 1;
-  int use_pixmap = 1;
-  int line_width = 0;
   ProgName = "tempest"; // defined in display.h
-
-  init_graphics (smallwindow, use_pixmap, line_width, game_name (game));
   gameCallback = tempestCallback;
   
-  // see if there is a directory "roms"
   mem = (elem *) gameMemory;
-  game = pick_game (SINGLE_GAME);
-  
- // srand(getpid());
-  setup_game();
+  game = pick_game (ProgName);
 
+ ALG_XMIN=-20000;
+ ALG_XMAX=20000;
+ ALG_YMIN=-20000;
+ ALG_YMAX=20000;
+ ALG_MAX_X=40000; // wid
+ ALG_MAX_Y=40000;
+
+ POS_ADDER_X = 20000;
+ POS_ADDER_Y = 20000;
+
+  init_graphics (GAME_PORTRAIT);
+  setAppFPS(60);
+  setup_game();
+  g_color_mode = 1;
+  yuv_palette_init();
   // from pokey.c
-  void enablePokeyOutput(int e);
-  enablePokeyOutput(0); // false
+  //  void enablePokeyOutput(int e);
+  //  enablePokeyOutput(0); // false
   
   save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
   save_A = 0;
@@ -376,10 +354,48 @@ int tempest()
   save_Y = 0;
   save_flags = 0;
   save_totcycles = 0;
-  irq_cycle = 4173;
+  irq_cycle = 4173; // tempest 
   sim_6502 ();
   while (1)
   {
     ; // do not "return" - never call _libc_fini_array etc...
   }
+  return 0;
+}
+int battlezone(void)
+{
+  ProgName = "battlezone"; // defined in display.h
+  mem = (elem *) gameMemory;
+  game = pick_game (ProgName);
+
+ ALG_XMIN=0;
+ ALG_XMAX=1000;
+ ALG_YMIN=0;
+ ALG_YMAX=750;
+ ALG_MAX_X=1000; // wid
+ ALG_MAX_Y=750;
+
+ POS_ADDER_X = 0;
+ POS_ADDER_Y = 0;
+
+  init_graphics (GAME_LANDSCAPE);
+  setAppFPS(41);
+  printf("Game picked: %i\n", game);
+  setup_game();
+  g_color_mode = 0;
+ 
+  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  save_A = 0;
+  save_X = 0;
+  save_Y = 0;
+  save_flags = 0;
+  save_totcycles = 0;
+  irq_cycle = 8192; // battlezone
+
+  sim_6502 ();
+  while (1)
+  {
+    ; // do not "return" - never call _libc_fini_array etc...
+  }
+  return 0;
 }

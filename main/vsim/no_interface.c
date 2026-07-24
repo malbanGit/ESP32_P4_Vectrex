@@ -30,8 +30,7 @@ int smallwindow;
 int window_width, window_height;
 
 
-void init_graphics (/*int argc, char *argv[],*/ int p_smallwindow, 
-		    int p_use_pixmap, int p_line_width, char *window_name)
+void init_graphics ()
 {
 }
 

@@ -11,7 +11,9 @@ extern int SCREEN_HEIGHT;
 
 /*
 Bug:
-- release end of game explosion verzerrt (color_c ok, color_asm nok, overlay asm nok, overlay c ok, brightness asm nok, )
+   "Battlezone" - wenn lines außerhalb starten - oder aufhören, dsann werden sie abgschitenn=?
+   line asm
+
 
 
 crash overlay asm
@@ -216,7 +218,8 @@ DRAM_ATTR uint32_t g_beam_r2_q16;
 DRAM_ATTR int g_line_Rb = (((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH) > 0) ? ((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH - 1) : 0;
 DRAM_ATTR int g_beam_r = LINE_WIDTH >> 1;
 DRAM_ATTR uint32_t g_gs;
-
+DRAM_ATTR int g_color_mode; // 0 = not color, 1 = color
+DRAM_ATTR int g_fpsToReach=  1000000/MAX_EMU_FPS;
 
 void changeGlobalLineValues(int w, int g)
 {
@@ -295,7 +298,8 @@ typedef struct {
     uint16_t x1;
     uint16_t y1;
     uint8_t brightness;
-    uint8_t  _pad[7];
+    uint32_t color; // 
+    uint8_t  _pad[4];
 } vectrex_line_t; // power of 2 length
 
 typedef struct {
@@ -420,13 +424,14 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 // if RGS stays stable I will drop the YUV
 
 
-IRAM_ATTR static inline void undrawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry)
+IRAM_ATTR static inline void undrawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry, uint8_t brightness)
 {
-    undraw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
+    undraw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, brightness);
 }
-IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry)
+IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry, uint8_t brightness)
 {
-    draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry);
+//printf("Mini Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,colorPaletteEntry, brightness);
+    draw_line_yuv422_color_c(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, brightness);
 }
 IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
@@ -747,12 +752,11 @@ static void frames_init(void)
 // when in color mode
 // color from palette 127
 // color = 0 -> undraw
-
-// Emulator calls this for each line in the CURRENT emulated frame
-IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
+IRAM_ATTR void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, uint8_t brightness)
 {
     int idx = s_build_frame_index;
     frame_slot_t *fs = &s_frames[idx];
+//printf("Mini Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,color, brightness);
 
     if (fs->state != FRAME_BUILDING) {
         // Slot ist nicht im BUILDING-Zustand – dann nichts schreiben
@@ -777,6 +781,7 @@ IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness
         }
 
         l->brightness = brightness;
+        l->color = color;
 
         // Hash für diesen Frame laufend aktualisieren
     }
@@ -787,11 +792,55 @@ IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness
     }
 }
 
+
+// Emulator calls this for each line in the CURRENT emulated frame
+IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
+{
+    int idx = s_build_frame_index;
+    frame_slot_t *fs = &s_frames[idx];
+//printf("Mini-Line:x0:%i, y0:%i, x1:%i, y1:%i, b:%i\n",x0,y0,x1,y1, brightness);
+
+    if (fs->state != FRAME_BUILDING) {
+        // Slot ist nicht im BUILDING-Zustand – dann nichts schreiben
+        printf("No Building frame!");
+        return;
+    }
+
+    if (fs->line_count < MAX_LINE_BUFFER) 
+    {
+        vectrex_line_t *l = &fs->lines[fs->line_count++];
+        if (mode == VIDEO_OUT_HDMI)
+        {
+            l->x0 = x0;
+            l->y0 = y0;
+            l->x1 = x1;
+            l->y1 = y1;
+        }
+        else
+        {
+            /* 90° CW rotation for portrait LCD: (x,y) → (y, -x) */
+            l->x0 =  LCD_H_RES-y0;  l->y0 = x0;
+            l->x1 =  LCD_H_RES-y1;  l->y1 = x1;
+        }
+
+        l->brightness = brightness;
+
+        // Hash für diesen Frame laufend aktualisieren
+        //printf("Line added!\n");
+    }
+    else {
+        // Buffer voll – zusätzliche Linien werden verworfen
+        // Optional: Debug-Ausgabe
+        printf("Emulation Exceeded line Count!!! (%d)\n", fs->line_count);
+    }
+}
+
 // Emulator calls this once when a frame is complete
 // the lines collected from the emulator
 // are kept in 3 buffers
 // the state of the buffer determines which is drawn on screen
 // and which is used to recieve "new" lines.
+uint64_t start=0;
 IRAM_ATTR void mini_end_frame(void)
 {
     static uint64_t emu_last_time   = 0;
@@ -825,14 +874,24 @@ IRAM_ATTR void mini_end_frame(void)
     emu_frame_count++;
     int idx = s_build_frame_index;
     frame_slot_t *cur = &s_frames[idx];
-    if (now - emu_last_time >= 1000000) // has one second passed?
+    if (now - emu_last_time > 1000000) // has one second passed?
     {
-    //        printf("EMU FPS = %d (Lines: %i )\n", emu_frame_count, cur->line_count);
         printf("EMU FPS = %d\n", emu_frame_count);
         emu_frame_count = 0;
         emu_last_time   = now;
     }
-
+    else
+    {
+        // slow down if we are too fast
+        // emulating 30000 vectrex cycles should take 1/50 of a second...
+        // if MAX_EMU_FPS is 50 and 50 is reached, we run with 100% original speed
+        if (now - start <= g_fpsToReach) 
+        {
+            int delay = g_fpsToReach - (now - start);
+            esp_rom_delay_us(delay);  
+        }
+        start = esp_timer_get_time();
+    }
 
     // Aktuellen Slot als READY markieren
     cur->state = FRAME_READY;
@@ -881,7 +940,7 @@ IRAM_ATTR void mini_end_frame(void)
 IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 {
     int count = s_fb_line_count[fb_index];
-//    ESP_LOGI(TAG, "LINES TO ERASE: %i", count);
+    //    ESP_LOGI(TAG, "LINES TO ERASE: %i", count);
 
     for (int i = 0; i < count; ++i) {
         vectrex_line_t *l = &s_fb_lines[fb_index][i];
@@ -890,7 +949,189 @@ IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 
     s_fb_line_count[fb_index] = 0;
 }
+IRAM_ATTR static inline void undraw_previous_fb_color(int fb_index)
+{
+    int count = s_fb_line_count[fb_index];
+    //    ESP_LOGI(TAG, "LINES TO ERASE: %i", count);
 
+    for (int i = 0; i < count; ++i) {
+        vectrex_line_t *l = &s_fb_lines[fb_index][i];
+        undrawLine_raw_color(l->x0, l->y0, l->x1, l->y1, l->color, l->brightness);
+    }
+
+    s_fb_line_count[fb_index] = 0;
+}
+void set_yuv(int i, int r, int g, int b)
+{
+    s_overlay_palette_yuv[i][0] = (uint8_t)((77*r + 150*g + 29*b) >> 8);
+    int u = 128 + ((-43*r - 85*g + 128*b) >> 8);
+    int v = 128 + ((128*r - 107*g - 21*b) >> 8);
+    s_overlay_palette_yuv[i][1] = (uint8_t)(u < 0 ? 0 : u > 255 ? 255 : u);
+    s_overlay_palette_yuv[i][2] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
+void yuv_palette_init(void)
+{
+    /* Neutrals */
+    set_yuv(YUV_PALETTE_BLACK,          0,   0,   0);
+    set_yuv(YUV_PALETTE_DARKGRAY,      45,  45,  45);
+    set_yuv(YUV_PALETTE_GRAY,         100, 100, 100);
+    set_yuv(YUV_PALETTE_MIDGRAY,      128, 128, 128);
+    set_yuv(YUV_PALETTE_LIGHTGRAY,    180, 180, 180);
+    set_yuv(YUV_PALETTE_SILVER,       210, 210, 210);
+    set_yuv(YUV_PALETTE_OFFWHITE,     240, 240, 240);
+    set_yuv(YUV_PALETTE_WHITE,        255, 255, 255);
+
+    /* Reds */
+    set_yuv(YUV_PALETTE_DARKMAROON,    64,   0,   0);
+    set_yuv(YUV_PALETTE_MAROON,       128,   0,   0);
+    set_yuv(YUV_PALETTE_DARKRED,      180,   0,   0);
+    set_yuv(YUV_PALETTE_RED,          255,   0,   0);
+    set_yuv(YUV_PALETTE_BRIGHTRED,    255,  40,  40);
+    set_yuv(YUV_PALETTE_CORAL,        255, 127,  80);
+    set_yuv(YUV_PALETTE_SALMON,       250, 128, 114);
+    set_yuv(YUV_PALETTE_LIGHTCORAL,   240, 128, 128);
+
+    /* Oranges / Yellows */
+    set_yuv(YUV_PALETTE_DARKORANGE,   180,  80,   0);
+    set_yuv(YUV_PALETTE_ORANGE,       255, 128,   0);
+    set_yuv(YUV_PALETTE_BRIGHTORANGE, 255, 160,   0);
+    set_yuv(YUV_PALETTE_GOLD,         255, 200,   0);
+    set_yuv(YUV_PALETTE_YELLOW,       255, 255,   0);
+    set_yuv(YUV_PALETTE_LIGHTYELLOW,  255, 255, 128);
+    set_yuv(YUV_PALETTE_AMBER,        255, 180,   0);
+    set_yuv(YUV_PALETTE_KHAKI,        200, 200, 100);
+
+    /* Greens */
+    set_yuv(YUV_PALETTE_DARKFOREST,     0,  50,   0);
+    set_yuv(YUV_PALETTE_FOREST,         0, 100,   0);
+    set_yuv(YUV_PALETTE_DARKGREEN,      0, 150,   0);
+    set_yuv(YUV_PALETTE_GREEN,          0, 200,   0);
+    set_yuv(YUV_PALETTE_BRIGHTGREEN,    0, 255,   0);
+    set_yuv(YUV_PALETTE_LIGHTGREEN,   100, 255, 100);
+    set_yuv(YUV_PALETTE_PALEGREEN,    180, 255, 180);
+    set_yuv(YUV_PALETTE_YELLOWGREEN,  150, 220,  50);
+
+    /* Cyans / Teals */
+    set_yuv(YUV_PALETTE_DARKTEAL,       0,  64,  64);
+    set_yuv(YUV_PALETTE_TEAL,           0, 128, 128);
+    set_yuv(YUV_PALETTE_DARKCYAN,       0, 180, 180);
+    set_yuv(YUV_PALETTE_CYAN,           0, 255, 255);
+    set_yuv(YUV_PALETTE_LIGHTCYAN,    180, 255, 255);
+    set_yuv(YUV_PALETTE_AQUAMARINE,   100, 230, 200);
+    set_yuv(YUV_PALETTE_TURQUOISE,     64, 224, 208);
+    set_yuv(YUV_PALETTE_MEDTURQUOISE,  72, 209, 204);
+
+    /* Blues */
+    set_yuv(YUV_PALETTE_DARKNAVY,       0,   0,  64);
+    set_yuv(YUV_PALETTE_NAVY,           0,   0, 128);
+    set_yuv(YUV_PALETTE_DARKBLUE,       0,   0, 180);
+    set_yuv(YUV_PALETTE_BLUE,           0,   0, 255);
+    set_yuv(YUV_PALETTE_ROYALBLUE,     65, 105, 225);
+    set_yuv(YUV_PALETTE_CORNFLOWER,   100, 149, 237);
+    set_yuv(YUV_PALETTE_SKYBLUE,      135, 206, 235);
+    set_yuv(YUV_PALETTE_LIGHTBLUE,    180, 220, 255);
+
+    /* Purples / Violets */
+    set_yuv(YUV_PALETTE_DARKINDIGO,    40,   0,  80);
+    set_yuv(YUV_PALETTE_INDIGO,        75,   0, 130);
+    set_yuv(YUV_PALETTE_DARKPURPLE,   100,   0, 150);
+    set_yuv(YUV_PALETTE_PURPLE,       128,   0, 128);
+    set_yuv(YUV_PALETTE_VIOLET,       150,   0, 200);
+    set_yuv(YUV_PALETTE_BLUEVIOLET,   138,  43, 226);
+    set_yuv(YUV_PALETTE_MEDIUMPURPLE, 147, 112, 219);
+    set_yuv(YUV_PALETTE_LAVENDER,     200, 180, 255);
+
+    /* Pinks / Magentas */
+    set_yuv(YUV_PALETTE_DARKMAGENTA,  139,   0, 139);
+    set_yuv(YUV_PALETTE_MAGENTA,      255,   0, 255);
+    set_yuv(YUV_PALETTE_FUCHSIA,      255,   0, 180);
+    set_yuv(YUV_PALETTE_DEEPPINK,     255,  20, 147);
+    set_yuv(YUV_PALETTE_HOTPINK,      255, 105, 180);
+    set_yuv(YUV_PALETTE_PINK,         255, 180, 210);
+    set_yuv(YUV_PALETTE_LIGHTPINK,    255, 210, 230);
+    set_yuv(YUV_PALETTE_ROSE,         255,   0, 100);
+
+    /* Browns / Earth */
+    set_yuv(YUV_PALETTE_DARKBROWN,     80,  30,   0);
+    set_yuv(YUV_PALETTE_BROWN,        139,  69,  19);
+    set_yuv(YUV_PALETTE_SADDLEBROWN,  160,  90,  40);
+    set_yuv(YUV_PALETTE_CHOCOLATE,    210, 105,  30);
+    set_yuv(YUV_PALETTE_PERU,         205, 133,  63);
+    set_yuv(YUV_PALETTE_TAN,          210, 180, 140);
+    set_yuv(YUV_PALETTE_WHEAT,        245, 222, 179);
+    set_yuv(YUV_PALETTE_SANDYBROWN,   244, 164,  96);
+
+    /* Olive / Sea greens */
+    set_yuv(YUV_PALETTE_OLIVEDARK,     60,  60,   0);
+    set_yuv(YUV_PALETTE_OLIVE,        128, 128,   0);
+    set_yuv(YUV_PALETTE_DARKOLIVE,    100, 110,  30);
+    set_yuv(YUV_PALETTE_OLIVEDRAB,    107, 142,  35);
+    set_yuv(YUV_PALETTE_SEAGREEN,      46, 139,  87);
+    set_yuv(YUV_PALETTE_MEDSEAGREEN,   60, 179, 113);
+    set_yuv(YUV_PALETTE_SPRINGGREEN,    0, 255, 127);
+    set_yuv(YUV_PALETTE_MINTGREEN,    100, 255, 160);
+
+    /* Blue-greens / Slate */
+    set_yuv(YUV_PALETTE_CADETBLUE,     95, 158, 160);
+    set_yuv(YUV_PALETTE_STEELBLUE,     70, 130, 180);
+    set_yuv(YUV_PALETTE_DODGERBLUE,    30, 144, 255);
+    set_yuv(YUV_PALETTE_DEEPSKYBLUE,    0, 191, 255);
+    set_yuv(YUV_PALETTE_POWDERBLUE,   176, 224, 230);
+    set_yuv(YUV_PALETTE_SLATEBLUE,    106,  90, 205);
+    set_yuv(YUV_PALETTE_MIDNIGHTBLUE,  25,  25, 112);
+    set_yuv(YUV_PALETTE_DARKSLATEBLUE, 72,  61, 139);
+
+    /* Warm reds */
+    set_yuv(YUV_PALETTE_CRIMSON,      220,  20,  60);
+    set_yuv(YUV_PALETTE_SCARLET,      255,  36,   0);
+    set_yuv(YUV_PALETTE_TOMATO,       255,  99,  71);
+    set_yuv(YUV_PALETTE_FIREBRICK,    178,  34,  34);
+    set_yuv(YUV_PALETTE_INDIANRED,    205,  92,  92);
+    set_yuv(YUV_PALETTE_ROSEWOOD,     100,   0,  20);
+    set_yuv(YUV_PALETTE_RUBY,         155,  17,  30);
+    set_yuv(YUV_PALETTE_BURGUNDY,     128,   0,  32);
+
+    /* Pastels */
+    set_yuv(YUV_PALETTE_PASTELRED,    255, 180, 180);
+    set_yuv(YUV_PALETTE_PASTELORANGE, 255, 210, 170);
+    set_yuv(YUV_PALETTE_PASTELYELLOW, 255, 255, 190);
+    set_yuv(YUV_PALETTE_PASTELGREEN,  180, 255, 180);
+    set_yuv(YUV_PALETTE_PASTELCYAN,   180, 255, 255);
+    set_yuv(YUV_PALETTE_PASTELBLUE,   180, 210, 255);
+    set_yuv(YUV_PALETTE_PASTELPURPLE, 220, 180, 255);
+    set_yuv(YUV_PALETTE_PASTELPINK,   255, 180, 230);
+
+    /* Neons */
+    set_yuv(YUV_PALETTE_NEONRED,      255,  20,  20);
+    set_yuv(YUV_PALETTE_NEONORANGE,   255, 140,   0);
+    set_yuv(YUV_PALETTE_NEONYELLOW,   240, 255,   0);
+    set_yuv(YUV_PALETTE_NEONGREEN,     57, 255,  20);
+    set_yuv(YUV_PALETTE_NEONCYAN,       0, 255, 240);
+    set_yuv(YUV_PALETTE_NEONBLUE,      30,  80, 255);
+    set_yuv(YUV_PALETTE_NEONPURPLE,   180,   0, 255);
+    set_yuv(YUV_PALETTE_NEONPINK,     255,   0, 180);
+
+    /* Electric / Saturated */
+    set_yuv(YUV_PALETTE_ELECTRICBLUE,   0,  80, 255);
+    set_yuv(YUV_PALETTE_ELECTRICGREEN,  0, 220,   0);
+    set_yuv(YUV_PALETTE_ELECTRICPURP, 160,   0, 255);
+    set_yuv(YUV_PALETTE_ELECTRICCYAN,   0, 230, 230);
+    set_yuv(YUV_PALETTE_ELECTRICYELL,  220, 220,  0);
+    set_yuv(YUV_PALETTE_ELECTRICORANG, 255, 100,  0);
+    set_yuv(YUV_PALETTE_ELECTRICRED,   220,   0,  0);
+    set_yuv(YUV_PALETTE_ELECTRICPINK,  220,   0, 150);
+
+    /* Misc warm */
+    set_yuv(YUV_PALETTE_OCHRE,        200, 150,  20);
+    set_yuv(YUV_PALETTE_TERRACOTTA,   200,  90,  50);
+    set_yuv(YUV_PALETTE_RUST,         180,  70,  20);
+    set_yuv(YUV_PALETTE_COPPER,       185, 115,  50);
+    set_yuv(YUV_PALETTE_BRONZE,       160, 100,  30);
+    set_yuv(YUV_PALETTE_BRASS,        180, 160,  50);
+    set_yuv(YUV_PALETTE_CHARTREUSE,   127, 255,   0);
+    set_yuv(YUV_PALETTE_LIMEGREEN,     50, 205,  50);
+}
 // ----------------------------------------------------
 // Tasks
 // ----------------------------------------------------
@@ -899,19 +1140,14 @@ IRAM_ATTR static void application_task(void *arg)
 {
     while (1) 
     {
-        uint64_t start = esp_timer_get_time();
+        // void sim_6502 (void);
+        //  sim_6502 ();
+        int tempest(void);
+        int battlezone(void);
+        tempest();
+
 
         mini_taskloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
-
-        // slow down if we are too fast
-        // emulating 30000 vectrex cycles should take 1/50 of a second...
-        // if MAX_EMU_FPS is 50 and 50 is reached, we run with 100% original speed
-        uint64_t now = esp_timer_get_time();
-        if (now - start <= 1000000/MAX_EMU_FPS) 
-        {
-            int delay = (1000000/MAX_EMU_FPS) - (now - start);
-            esp_rom_delay_us(delay);  
-        }
     }
 }
 
@@ -921,7 +1157,7 @@ IRAM_ATTR static inline uint32_t line_hash_key(const vectrex_line_t *l)
     h ^= (uint32_t)l->y0 * 40503u;
     h ^= (uint32_t)l->x1 * 2246822519u;
     h ^= (uint32_t)l->y1 * 3266489917u;
-    h ^= (uint32_t)l->brightness;
+    h ^= (uint32_t)l->brightness+l->color;
     return h;
 }
 // Hash table for O(n) line matching (open addressing, linear probe)
@@ -963,7 +1199,8 @@ IRAM_ATTR static void renderer_task(void *arg)
         // this is the frequency of the screen refresh - so if it shows 60 on a 60Hz display - everything is good!
         fps_frame_count++;
         uint64_t now = esp_timer_get_time();
-        if (now - fps_last_time >= 1000000) {
+        if (now - fps_last_time >= 1000000) 
+        {
             printf("DISPLAY FPS = %d\n", fps_frame_count);
             fps_frame_count = 0;
             fps_last_time   = now;
@@ -990,6 +1227,7 @@ IRAM_ATTR static void renderer_task(void *arg)
         if (frame_idx < 0) {
             continue;
         }
+//        printf("line_count = %d\n", line_count);
 
 
         frame_slot_t *fs = &s_frames[frame_idx]; // frame_idx = 0-2
@@ -997,189 +1235,340 @@ IRAM_ATTR static void renderer_task(void *arg)
 
         // Use current back framebuffer index
         int fb_idx = s_back_fb_index;           // the current backbuffer - we can write to - it is not displayed!
-//        uint64_t t0 = esp_timer_get_time();
 
-// simple version
-// undraw all known old lines
-// draw all known new lines
-// regardless whether they are the same or not
-    if (redraw>0)
-    {
-        redraw--;
-        undraw_previous_fb(fb_idx);             // undraw all from that framebuffer
+        if (g_color_mode == 0)
+        {
+            // simple version
+            // undraw all known old lines
+            // draw all known new lines
+            // regardless whether they are the same or not
+            if (redraw>0)
+            {
+                redraw--;
+                undraw_previous_fb(fb_idx);             // undraw all from that framebuffer
 
-        // Draw new frame lines into backbuffer and remember them
-        // linecount from "frame" (collection of lines)
-        for (int i = 0; i < line_count; ++i) {
-            vectrex_line_t *src = &fs->lines[i];
+                // Draw new frame lines into backbuffer and remember them
+                // linecount from "frame" (collection of lines)
+                for (int i = 0; i < line_count; ++i) {
+                    vectrex_line_t *src = &fs->lines[i];
 
-            drawLine_raw(src->x0, src->y0, src->x1, src->y1, src->brightness);
+                    drawLine_raw(src->x0, src->y0, src->x1, src->y1, src->brightness);
 
-            if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
-                s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
+                    if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
+                        s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
+                    }
+                    else
+                    {
+                        printf("-----------------------\n");
+                        printf("Line Buffer Exceeded!!!\n");
+                        printf("-----------------------\n");
+                    }
+                }
             }
             else
             {
-                printf("-----------------------\n");
-                printf("Line Buffer Exceeded!!!\n");
-                printf("-----------------------\n");
-            }
-        }
-    }
-    else
-    {
-        // printf("linecount: %i\n", line_count);
-        // non simple version
-        // check which lines are IDENTICAL to last draw
-        // check if any undelete lines interesect
-        // undraw all deleted and marked as "dirty lines"
-        // draw all lines that are not on the screen already
+                // printf("linecount: %i\n", line_count);
+                // non simple version
+                // check which lines are IDENTICAL to last draw
+                // check if any undelete lines interesect
+                // undraw all deleted and marked as "dirty lines"
+                // draw all lines that are not on the screen already
 
-        // most games have somewhere "steady" lines... this really saves a lot!
-        // for cleansweep - this is a party! - A maze full of "fixed" lines!
+                // most games have somewhere "steady" lines... this really saves a lot!
+                // for cleansweep - this is a party! - A maze full of "fixed" lines!
 
-        // --- Stable/dirty/redraw frame-diff ---
-            unsigned int old_count = s_fb_line_count[fb_idx];
-            vectrex_line_t *old_lines = s_fb_lines[fb_idx];
+                // --- Stable/dirty/redraw frame-diff ---
+                unsigned int old_count = s_fb_line_count[fb_idx];
+                vectrex_line_t *old_lines = s_fb_lines[fb_idx];
 
-            // Step 1: match old lines to new lines (exact match)
-            /*
-            memset(s_diff_old_matched, 0, old_count);
-            memset(s_diff_new_matched, 0, line_count);
-            for (int i = 0; i < old_count; i++) {
-                for (int j = 0; j < line_count; j++) {
-                    if (!s_diff_new_matched[j] &&
-                        old_lines[i].x0 == fs->lines[j].x0 &&
-                        old_lines[i].y0 == fs->lines[j].y0 &&
-                        old_lines[i].x1 == fs->lines[j].x1 &&
-                        old_lines[i].y1 == fs->lines[j].y1 &&
-                        old_lines[i].brightness == fs->lines[j].brightness) {
-                        s_diff_old_matched[i] = 1;
-                        s_diff_new_matched[j] = 1;
-                        break;
-                    }
-                }
-            }
-            */
-            // Step 1: match old lines to new lines — O(n) hash table
-            memset(s_match_ht, 0xFF, sizeof(s_match_ht)); // -1 = empty
-            for (int j = 0; j < line_count; j++) {
-                uint32_t h = line_hash_key(&fs->lines[j]) & MATCH_HT_MASK;
-                while (s_match_ht[h] != -1) h = (h + 1) & MATCH_HT_MASK;
-                s_match_ht[h] = (int16_t)j;
-            }
-            memset(s_diff_old_matched, 0, old_count);
-            memset(s_diff_new_matched, 0, line_count);
-            for (int i = 0; i < old_count; i++) {
-                const vectrex_line_t *ol = &old_lines[i];      /* i*20 computed once */
-                uint32_t h = line_hash_key(ol) & MATCH_HT_MASK;
-                while (s_match_ht[h] != -1) {
-                    int j = s_match_ht[h];
-                    const vectrex_line_t *nw = &fs->lines[j];  /* j*20 computed once per probe */
-                    if (!s_diff_new_matched[j] &&
-                        ol->x0 == nw->x0 &&
-                        ol->y0 == nw->y0 &&
-                        ol->x1 == nw->x1 &&
-                        ol->y1 == nw->y1 &&
-                        ol->brightness == nw->brightness) {
-                        s_diff_old_matched[i] = 1;
-                        s_diff_new_matched[j] = 1;
-                        break;
-                    }
-                    h = (h + 1) & MATCH_HT_MASK;
-                }
-            }
-
-
-            // Step 2: compute bboxes for dirty (unmatched) old lines
-            int dirty_bbox_count = 0;
-            for (int i = 0; i < old_count; i++) {
-                if (!s_diff_old_matched[i])
-                    s_diff_dirty_bboxes[dirty_bbox_count++] = line_compute_bbox(&old_lines[i]);
-            }
-
-
-            // Step 3: detect stable lines damaged by dirty bbox overlap
-            memset(s_diff_damaged, 0, old_count);
-            for (int i = 0; i < old_count; i++) {
-                if (!s_diff_old_matched[i]) continue;
-                line_bbox_t sb = line_compute_bbox(&old_lines[i]);
-                for (int d = 0; d < dirty_bbox_count; d++) {
-                    if (bboxes_overlap(&sb, &s_diff_dirty_bboxes[d])) {
-                        s_diff_damaged[i] = 1;
-                        break;
-                    }
-                }
-            }
-
-            // Step 3b: propagate damage through stable-stable overlaps
-            // (undrawing a damaged line erases contributions of overlapping stable lines)
-            int propagated = 1;
-            while (propagated) {
-                propagated = 0;
+                // Step 1: match old lines to new lines (exact match)
+                /*
+                memset(s_diff_old_matched, 0, old_count);
+                memset(s_diff_new_matched, 0, line_count);
                 for (int i = 0; i < old_count; i++) {
-                    if (!s_diff_old_matched[i] || !s_diff_damaged[i]) continue;
-                    line_bbox_t ab = line_compute_bbox(&old_lines[i]);
-                    for (int k = 0; k < old_count; k++) {
-                        if (!s_diff_old_matched[k] || s_diff_damaged[k]) continue;
-                        line_bbox_t kb = line_compute_bbox(&old_lines[k]);
-                        if (bboxes_overlap(&ab, &kb)) {
-                            s_diff_damaged[k] = 1;
-                            propagated = 1;
+                    for (int j = 0; j < line_count; j++) {
+                        if (!s_diff_new_matched[j] &&
+                            old_lines[i].x0 == fs->lines[j].x0 &&
+                            old_lines[i].y0 == fs->lines[j].y0 &&
+                            old_lines[i].x1 == fs->lines[j].x1 &&
+                            old_lines[i].y1 == fs->lines[j].y1 &&
+                            old_lines[i].brightness == fs->lines[j].brightness) {
+                            s_diff_old_matched[i] = 1;
+                            s_diff_new_matched[j] = 1;
+                            break;
                         }
                     }
                 }
-            }
-    /*
-            // Step 4: undraw dirty old lines
-            for (int i = 0; i < old_count; i++) {
-                if (!s_diff_old_matched[i]) {
-                    vectrex_line_t *l = &old_lines[i];
-                    drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+                */
+                // Step 1: match old lines to new lines — O(n) hash table
+                memset(s_match_ht, 0xFF, sizeof(s_match_ht)); // -1 = empty
+                for (int j = 0; j < line_count; j++) {
+                    uint32_t h = line_hash_key(&fs->lines[j]) & MATCH_HT_MASK;
+                    while (s_match_ht[h] != -1) h = (h + 1) & MATCH_HT_MASK;
+                    s_match_ht[h] = (int16_t)j;
+                }
+                memset(s_diff_old_matched, 0, old_count);
+                memset(s_diff_new_matched, 0, line_count);
+                for (int i = 0; i < old_count; i++) {
+                    const vectrex_line_t *ol = &old_lines[i];      /* i*20 computed once */
+                    uint32_t h = line_hash_key(ol) & MATCH_HT_MASK;
+                    while (s_match_ht[h] != -1) {
+                        int j = s_match_ht[h];
+                        const vectrex_line_t *nw = &fs->lines[j];  /* j*20 computed once per probe */
+                        if (!s_diff_new_matched[j] &&
+                            ol->x0 == nw->x0 &&
+                            ol->y0 == nw->y0 &&
+                            ol->x1 == nw->x1 &&
+                            ol->y1 == nw->y1 &&
+                            ol->brightness == nw->brightness) {
+                            s_diff_old_matched[i] = 1;
+                            s_diff_new_matched[j] = 1;
+                            break;
+                        }
+                        h = (h + 1) & MATCH_HT_MASK;
+                    }
+                }
+
+
+                // Step 2: compute bboxes for dirty (unmatched) old lines
+                int dirty_bbox_count = 0;
+                for (int i = 0; i < old_count; i++) {
+                    if (!s_diff_old_matched[i])
+                        s_diff_dirty_bboxes[dirty_bbox_count++] = line_compute_bbox(&old_lines[i]);
+                }
+
+
+                // Step 3: detect stable lines damaged by dirty bbox overlap
+                memset(s_diff_damaged, 0, old_count);
+                for (int i = 0; i < old_count; i++) {
+                    if (!s_diff_old_matched[i]) continue;
+                    line_bbox_t sb = line_compute_bbox(&old_lines[i]);
+                    for (int d = 0; d < dirty_bbox_count; d++) {
+                        if (bboxes_overlap(&sb, &s_diff_dirty_bboxes[d])) {
+                            s_diff_damaged[i] = 1;
+                            break;
+                        }
+                    }
+                }
+
+                // Step 3b: propagate damage through stable-stable overlaps
+                // (undrawing a damaged line erases contributions of overlapping stable lines)
+                int propagated = 1;
+                while (propagated) {
+                    propagated = 0;
+                    for (int i = 0; i < old_count; i++) {
+                        if (!s_diff_old_matched[i] || !s_diff_damaged[i]) continue;
+                        line_bbox_t ab = line_compute_bbox(&old_lines[i]);
+                        for (int k = 0; k < old_count; k++) {
+                            if (!s_diff_old_matched[k] || s_diff_damaged[k]) continue;
+                            line_bbox_t kb = line_compute_bbox(&old_lines[k]);
+                            if (bboxes_overlap(&ab, &kb)) {
+                                s_diff_damaged[k] = 1;
+                                propagated = 1;
+                            }
+                        }
+                    }
+                }
+            /*
+                    // Step 4: undraw dirty old lines
+                    for (int i = 0; i < old_count; i++) {
+                        if (!s_diff_old_matched[i]) {
+                            vectrex_line_t *l = &old_lines[i];
+                            drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+                        }
+                    }
+
+                    // Step 5a: undraw ALL damaged stable lines
+                    for (int i = 0; i < old_count; i++) {
+                        if (s_diff_old_matched[i] && s_diff_damaged[i]) {
+                            vectrex_line_t *l = &old_lines[i];
+                            drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+                        }
+                    }
+                    */
+                // Steps 4+5a: undraw dirty old lines AND damaged stable lines in one pass
+                for (int i = 0; i < old_count; i++) {
+                    if (!s_diff_old_matched[i] || s_diff_damaged[i]) {
+                        vectrex_line_t *l = &old_lines[i];
+                        undrawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+                    }
+                }
+
+
+                // Step 5b: redraw ALL damaged stable lines
+                for (int i = 0; i < old_count; i++) {
+                    if (s_diff_old_matched[i] && s_diff_damaged[i]) {
+                        vectrex_line_t *l = &old_lines[i];
+                        drawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+                    }
+                }
+
+                // Step 6: draw dirty new lines + rebuild s_fb_lines for next frame
+                s_fb_line_count[fb_idx] = 0;
+                for (int j = 0; j < line_count; j++) {
+                    vectrex_line_t *src = &fs->lines[j];
+                    if (!s_diff_new_matched[j])
+                        drawLine_raw(src->x0, src->y0, src->x1, src->y1, src->brightness);
+                    if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
+                        s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
+                    } else {
+                        printf("-----------------------\n");
+                        printf("Line Buffer Exceeded!!!\n");
+                        printf("-----------------------\n");
+                    }
                 }
             }
 
-            // Step 5a: undraw ALL damaged stable lines
-            for (int i = 0; i < old_count; i++) {
-                if (s_diff_old_matched[i] && s_diff_damaged[i]) {
-                    vectrex_line_t *l = &old_lines[i];
-                    drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
+        }
+        else // now color mode = 1
+        {
+            // simple version
+            // undraw all known old lines
+            // draw all known new lines
+            // regardless whether they are the same or not
+            if (redraw>0)
+            {
+                redraw--;
+                undraw_previous_fb_color(fb_idx);             // undraw all from that framebuffer
+
+                // Draw new frame lines into backbuffer and remember them
+                // linecount from "frame" (collection of lines)
+                for (int i = 0; i < line_count; ++i) {
+                    vectrex_line_t *src = &fs->lines[i];
+
+                    drawLine_raw_color(src->x0, src->y0, src->x1, src->y1, src->color, src->brightness);
+
+                    if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
+                        s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
+                    }
+                    else
+                    {
+                        printf("-----------------------\n");
+                        printf("Line Buffer Exceeded!!!\n");
+                        printf("-----------------------\n");
+                    }
                 }
             }
-            */
-            // Steps 4+5a: undraw dirty old lines AND damaged stable lines in one pass
-            for (int i = 0; i < old_count; i++) {
-                if (!s_diff_old_matched[i] || s_diff_damaged[i]) {
-                    vectrex_line_t *l = &old_lines[i];
-                    undrawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+            else
+            {
+                // printf("linecount: %i\n", line_count);
+                // non simple version
+                // check which lines are IDENTICAL to last draw
+                // check if any undelete lines interesect
+                // undraw all deleted and marked as "dirty lines"
+                // draw all lines that are not on the screen already
+
+                // most games have somewhere "steady" lines... this really saves a lot!
+                // for cleansweep - this is a party! - A maze full of "fixed" lines!
+
+                // --- Stable/dirty/redraw frame-diff ---
+                unsigned int old_count = s_fb_line_count[fb_idx];
+                vectrex_line_t *old_lines = s_fb_lines[fb_idx];
+
+                // Step 1: match old lines to new lines (exact match)
+                // Step 1: match old lines to new lines — O(n) hash table
+                memset(s_match_ht, 0xFF, sizeof(s_match_ht)); // -1 = empty
+                for (int j = 0; j < line_count; j++) {
+                    uint32_t h = line_hash_key(&fs->lines[j]) & MATCH_HT_MASK;
+                    while (s_match_ht[h] != -1) h = (h + 1) & MATCH_HT_MASK;
+                    s_match_ht[h] = (int16_t)j;
                 }
-            }
-
-
-            // Step 5b: redraw ALL damaged stable lines
-            for (int i = 0; i < old_count; i++) {
-                if (s_diff_old_matched[i] && s_diff_damaged[i]) {
-                    vectrex_line_t *l = &old_lines[i];
-                    drawLine_raw(l->x0, l->y0, l->x1, l->y1, l->brightness);
+                memset(s_diff_old_matched, 0, old_count);
+                memset(s_diff_new_matched, 0, line_count);
+                for (int i = 0; i < old_count; i++) {
+                    const vectrex_line_t *ol = &old_lines[i];      /* i*20 computed once */
+                    uint32_t h = line_hash_key(ol) & MATCH_HT_MASK;
+                    while (s_match_ht[h] != -1) {
+                        int j = s_match_ht[h];
+                        const vectrex_line_t *nw = &fs->lines[j];  /* j*20 computed once per probe */
+                        if (!s_diff_new_matched[j] &&
+                            ol->x0 == nw->x0 &&
+                            ol->y0 == nw->y0 &&
+                            ol->x1 == nw->x1 &&
+                            ol->y1 == nw->y1 &&
+                            ol->color == nw->color &&
+                            ol->brightness == nw->brightness) {
+                            s_diff_old_matched[i] = 1;
+                            s_diff_new_matched[j] = 1;
+                            break;
+                        }
+                        h = (h + 1) & MATCH_HT_MASK;
+                    }
                 }
-            }
 
-            // Step 6: draw dirty new lines + rebuild s_fb_lines for next frame
-            s_fb_line_count[fb_idx] = 0;
-            for (int j = 0; j < line_count; j++) {
-                vectrex_line_t *src = &fs->lines[j];
-                if (!s_diff_new_matched[j])
-                    drawLine_raw(src->x0, src->y0, src->x1, src->y1, src->brightness);
-                if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
-                    s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
-                } else {
-                    printf("-----------------------\n");
-                    printf("Line Buffer Exceeded!!!\n");
-                    printf("-----------------------\n");
+
+                // Step 2: compute bboxes for dirty (unmatched) old lines
+                int dirty_bbox_count = 0;
+                for (int i = 0; i < old_count; i++) {
+                    if (!s_diff_old_matched[i])
+                        s_diff_dirty_bboxes[dirty_bbox_count++] = line_compute_bbox(&old_lines[i]);
+                }
+
+                // Step 3: detect stable lines damaged by dirty bbox overlap
+                memset(s_diff_damaged, 0, old_count);
+                for (int i = 0; i < old_count; i++) {
+                    if (!s_diff_old_matched[i]) continue;
+                    line_bbox_t sb = line_compute_bbox(&old_lines[i]);
+                    for (int d = 0; d < dirty_bbox_count; d++) {
+                        if (bboxes_overlap(&sb, &s_diff_dirty_bboxes[d])) {
+                            s_diff_damaged[i] = 1;
+                            break;
+                        }
+                    }
+                }
+
+                // Step 3b: propagate damage through stable-stable overlaps
+                // (undrawing a damaged line erases contributions of overlapping stable lines)
+                int propagated = 1;
+                while (propagated) {
+                    propagated = 0;
+                    for (int i = 0; i < old_count; i++) {
+                        if (!s_diff_old_matched[i] || !s_diff_damaged[i]) continue;
+                        line_bbox_t ab = line_compute_bbox(&old_lines[i]);
+                        for (int k = 0; k < old_count; k++) {
+                            if (!s_diff_old_matched[k] || s_diff_damaged[k]) continue;
+                            line_bbox_t kb = line_compute_bbox(&old_lines[k]);
+                            if (bboxes_overlap(&ab, &kb)) {
+                                s_diff_damaged[k] = 1;
+                                propagated = 1;
+                            }
+                        }
+                    }
+                }
+
+                // Steps 4+5a: undraw dirty old lines AND damaged stable lines in one pass
+                for (int i = 0; i < old_count; i++) {
+                    if (!s_diff_old_matched[i] || s_diff_damaged[i]) {
+                        vectrex_line_t *l = &old_lines[i];
+                        undrawLine_raw_color(l->x0, l->y0, l->x1, l->y1, l->color, l->brightness);
+                    }
+                }
+
+
+                // Step 5b: redraw ALL damaged stable lines
+                for (int i = 0; i < old_count; i++) {
+                    if (s_diff_old_matched[i] && s_diff_damaged[i]) {
+                        vectrex_line_t *l = &old_lines[i];
+                        drawLine_raw_color(l->x0, l->y0, l->x1, l->y1, l->color, l->brightness);
+                    }
+                }
+
+                // Step 6: draw dirty new lines + rebuild s_fb_lines for next frame
+                s_fb_line_count[fb_idx] = 0;
+                for (int j = 0; j < line_count; j++) {
+                    vectrex_line_t *src = &fs->lines[j];
+                    if (!s_diff_new_matched[j])
+                        drawLine_raw_color(src->x0, src->y0, src->x1, src->y1, src->color, src->brightness);
+                    if (s_fb_line_count[fb_idx] < MAX_LINE_BUFFER) {
+                        s_fb_lines[fb_idx][s_fb_line_count[fb_idx]++] = *src;
+                    } else {
+                        printf("-----------------------\n");
+                        printf("Line Buffer Exceeded!!!\n");
+                        printf("-----------------------\n");
+                    }
                 }
             }
         }
-
 
         // Swap front/back pointers and indices
         uint8_t *tmp_fb = s_fb_front;
@@ -1688,10 +2077,17 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
              name, img_w, img_h, LCD_H_RES, LCD_V_RES);
     return ESP_OK;
 }
+void setAppFPS(int fps)
+{
+    g_fpsToReach=  1000000/fps;
+}
 void initGlobals()
 {
-    overlayEnabled =  ENABLE_OVERLAYS;
+    overlayEnabled = ENABLE_OVERLAYS;
     mode = VIDEO_OUT_SELECTED;          // default at boot
+    g_color_mode = 0;
+    g_fpsToReach=  1000000/MAX_EMU_FPS;
+
     changeGlobalLineValues( LINE_WIDTH, LINE_GLOW_WIDTH);
 }
 void resizeVectrex()
@@ -1945,3 +2341,40 @@ void toggleVideoMode()
     }
 }
 
+// physical device reolution
+int getScreenWidth()
+{
+    return (mode == VIDEO_OUT_HDMI) ? LCD_H_RES: LCD_V_RES;
+}
+int getScreenHeight()
+{
+    return (mode == VIDEO_OUT_HDMI) ? LCD_V_RES: LCD_H_RES;
+}
+
+// actual part of the screen used for display
+int getDisplayWidth()
+{
+   if (mode == VIDEO_OUT_HDMI)
+    {
+        if (overlayEnabled)
+    		return HDMI_IN_OVERLAY_VECX_WIDTH;
+        else
+            return HDMI_VECX_WIDTH;
+    }
+    if (overlayEnabled)
+        return LCD_IN_OVERLAY_VECX_WIDTH;
+    return LCD_VECX_WIDTH;
+}
+int getDisplayHeight()
+{
+   if (mode == VIDEO_OUT_HDMI)
+    {
+        if (overlayEnabled)
+    		return HDMI_IN_OVERLAY_VECX_HEIGHT;
+        else
+            return HDMI_VECX_HEIGHT;
+    }
+    if (overlayEnabled)
+        return LCD_IN_OVERLAY_VECX_HEIGHT;
+    return LCD_VECX_HEIGHT;
+}

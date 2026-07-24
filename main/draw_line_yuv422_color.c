@@ -11,7 +11,7 @@
 
 #include "defines.h"
 #include "draw_line_yuv422.h"
-
+#include <stdio.h>
 
 /* ════════════════════════════════════════════════════════════════════════
  * draw_line_yuv422_c
@@ -19,11 +19,10 @@
 IRAM_ATTR void draw_line_yuv422_color_c(
         uint8_t *fb, int fb_w, int fb_h,
         int x0, int y0, int x1, int y1,
-        int colorPaletteEntry)
+        int colorPaletteEntry, int brightness)
 {
     if (!fb || fb_w <= 0 || fb_h <= 0) return;
 
-    int brightness = 255;
 
     /* Opt 2: load precomputed globals */
     int      beam_r      = g_beam_r;
@@ -36,6 +35,8 @@ IRAM_ATTR void draw_line_yuv422_color_c(
     int b_col = c[0], g_col = c[1], r_col = c[2];
     int u_full = bgr_to_u(b_col, g_col, r_col);   /* constant per call */
     int v_full = bgr_to_v(b_col, g_col, r_col);
+
+printf("Y: %i, U:%i,V%i\n",bgr_to_y(b_col, g_col, r_col), u_full, v_full);
 
     int bx0 = iclamp((x0 < x1 ? x0 : x1) - Rb, 0, fb_w - 1);
     int bx1 = iclamp((x0 > x1 ? x0 : x1) + Rb, 0, fb_w - 1);
@@ -235,11 +236,9 @@ IRAM_ATTR void draw_line_yuv422_color_c(
 IRAM_ATTR void undraw_line_yuv422_color_c(
         uint8_t *fb, int fb_w, int fb_h,
         int x0, int y0, int x1, int y1,
-        int colorPaletteEntry)
+        int colorPaletteEntry, int brightness)
 {
     if (!fb || fb_w <= 0 || fb_h <= 0) return;
-
-    int brightness = 255;
 
     /* Opt 2: load precomputed globals */
     int      beam_r      = g_beam_r;

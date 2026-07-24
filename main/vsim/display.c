@@ -1,3 +1,5 @@
+#include "..\defines.h"
+
 void avg_reset(unsigned long cyc);
 
 void avg_go(unsigned long cyc);
@@ -29,11 +31,6 @@ void avg_halt(int dummy);
 
 #include <stdio.h>
 #include <stdlib.h>
-
-#ifndef TRANSLATE_ONLY
-  #include <vectrex/osWrapper.h>
-  #include <vectrex/vectrexInterface.h>
-#endif
 
 #include "game.h"
 #include "memory.h"
@@ -77,10 +74,10 @@ int frame = 0;
 
 #define twos_comp_val(num,bits) ((num&(1<<(bits-1)))?(num|~((1<<bits)-1)):(num&((1<<bits)-1)))
 
-char *avg_mnem[] = { "vctr", "halt", "svec", "stat", "cntr", "jsrl", "rtsl",
+FLASH_ROM_ATTR char *avg_mnem[] = { "vctr", "halt", "svec", "stat", "cntr", "jsrl", "rtsl",
 		 "jmpl", "scal" };
 
-char *dvg_mnem[] = { "????", "vct1", "vct2", "vct3",
+FLASH_ROM_ATTR char *dvg_mnem[] = { "????", "vct1", "vct2", "vct3",
 		     "vct4", "vct5", "vct6", "vct7",
 		     "vct8", "vct9", "labs", "halt",
 		     "jsrl", "rtsl", "jmpl", "svec" };
@@ -90,7 +87,7 @@ char *dvg_mnem[] = { "????", "vct1", "vct2", "vct3",
 #define max(x,y) (((x)>(y))?(x):(y))
 
              
-char displBrowseModeData[160];
+//char displBrowseModeData[160];
 
              
              
@@ -1231,8 +1228,8 @@ int rgb_t(u8 r, u8 g, u8 b)
   rgb = rgb | ((r&3)<<2);
   rgb = rgb | ((g&1)<<1);
   rgb = rgb | ((b&1));
-  return rgbColorMap[rgb];
-//  return rgb;
+//  return rgbColorMap[rgb];
+  return rgb;
 //  return ((r+g+b)/3) / 32;
 }
 int tempest_handler_7() // tempest_strobe3

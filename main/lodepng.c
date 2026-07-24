@@ -29,6 +29,7 @@ Rename this file to lodepng.cpp to use it for C++, or to lodepng.c to use it for
 */
 
 #include "lodepng.h"
+#include "esp_heap_caps.h"
 
 #ifdef LODEPNG_COMPILE_DISK
 #include <limits.h> /* LONG_MAX */
@@ -75,7 +76,9 @@ static void* lodepng_malloc(size_t size) {
 #ifdef LODEPNG_MAX_ALLOC
   if(size > LODEPNG_MAX_ALLOC) return 0;
 #endif
-  return malloc(size);
+//  return malloc(size);
+    return heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+
 }
 
 /* NOTE: when realloc returns NULL, it leaves the original memory untouched */
@@ -83,7 +86,7 @@ static void* lodepng_realloc(void* ptr, size_t new_size) {
 #ifdef LODEPNG_MAX_ALLOC
   if(new_size > LODEPNG_MAX_ALLOC) return 0;
 #endif
-  return realloc(ptr, new_size);
+  return heap_caps_realloc(ptr, new_size, MALLOC_CAP_SPIRAM);
 }
 
 static void lodepng_free(void* ptr) {

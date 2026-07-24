@@ -1,4 +1,4 @@
-/* draw_line_yuv422_color.S 
+/* draw_line_yuv422_color.S
  *
  * RV32IMAFC IRAM-resident assembly for fixed palette-colour YUV422 line
  * renderers.  Algorithm matches draw_line_yuv422_color.c /
@@ -99,7 +99,7 @@
  *    a3=x0, a4=y0, a5=x1, a6=y1, a7=colorPaletteEntry)
  *
  *  Register map (saved/callee):
- *    s0  fb          s6  brightness (255)
+ *    s0  fb          s6  brightness (from parameter)
  *    s1  fb_w        s7  r_col
  *    s2  bx0         s8  g_col
  *    s3  bx1         s9  b_col
@@ -108,6 +108,11 @@
  *
  *  a5  beam_r2_q16 cached.
  *  a6  len2 per row;  a7  beam_r2_q16 per row.
+ *
+ *  void draw_line_yuv422_color(
+ *    a0=fb, a1=fb_w, a2=fb_h,
+ *    a3=x0, a4=y0, a5=x1, a6=y1, a7=colorPaletteEntry,
+ *    stack[0]=brightness)
  * ══════════════════════════════════════════════════════════════════════════ */
 
     .globl draw_line_yuv422_color
@@ -136,7 +141,7 @@ draw_line_yuv422_color:
 
     mv    s0, a0
     mv    s1, a1
-    li    s6, 255                  /* brightness fixed at 255 for colour draw */
+    lw    s6, DL(sp)               /* brightness from 9th argument (stack) */
 
     /* colour lookup: s_overlay_palette[colorPaletteEntry & 0x7F] → BGR */
     andi  a7, a7, 0x7F
@@ -466,7 +471,7 @@ draw_line_yuv422_color:
  *    v_delta   = ((v_full-128) * contrib) >> 8  → gate UV write
  *
  *  Register map (saved/callee):
- *    s0  fb          s6  brightness (255)
+ *    s0  fb          s6  brightness (from parameter)
  *    s1  fb_w        s7  r_col
  *    s2  bx0         s8  g_col
  *    s3  bx1         s9  b_col
@@ -474,7 +479,12 @@ draw_line_yuv422_color:
  *    s5  by1         s11 py
  *
  *  a5 = beam_r2_q16 cached throughout inner loop.
- *  Stack frame UL=112 bytes.
+ *  Stack frame UL=128 bytes.
+ *
+ *  void undraw_line_yuv422_color(
+ *    a0=fb, a1=fb_w, a2=fb_h,
+ *    a3=x0, a4=y0, a5=x1, a6=y1, a7=colorPaletteEntry,
+ *    stack[0]=brightness)
  * ══════════════════════════════════════════════════════════════════════════ */
 
     .globl undraw_line_yuv422_color
@@ -503,7 +513,7 @@ undraw_line_yuv422_color:
 
     mv    s0, a0
     mv    s1, a1
-    li    s6, 255
+    lw    s6, UL(sp)               /* brightness from 9th argument (stack) */
 
     /* colour lookup (same as draw) */
     andi  a7, a7, 0x7F

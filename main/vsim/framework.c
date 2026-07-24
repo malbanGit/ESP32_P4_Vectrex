@@ -89,13 +89,12 @@ byte dopop(unsigned short PC)
 
 
 #ifdef FIFO
-struct _fifo fifo[0x10000];
+ s struct _fifo fifo[0x10000];
 unsigned short pcpos=0;
 #endif
 
 
 long icount=0;
-extern char simBrowseModeData2[80];
 
 extern void avg_draw_vector_list_t();
 
@@ -171,7 +170,7 @@ void sim_6502 (void)
     if (totcycles > irq_cycle)
 	{
       DEBUG_OUT( "%-27s PC=%04x, A=%02x, X=%02x, Y=%02x, SP=%04x, %s, Cyc: %ld\r\n",disbuffer, PC, A, X, Y, SP + 0x100, getFlagString(CC), totcycles);
-check_IRQ: // due to branching
+//check_IRQ: // due to branching
       if (use_nmi)
       {
         DEBUG_OUT( "%-27s PC=%04x, A=%02x, X=%02x, Y=%02x, SP=%04x, %s, Cyc: %ld NMI\r\n",disbuffer, PC, A, X, Y, SP + 0x100, getFlagString(CC), totcycles);
@@ -236,17 +235,13 @@ trans_ok = 0;
 
     if ((!stepflag) && trans_ok)
     {
-restart_sbt: // due to branching
+//restart_sbt: // due to branching
       switch (PC)
       {
 //        #include GAME_INC
         default: break;
       }
       
-    }
-    if (browseMode)
-    {
-        sprintf(simBrowseModeData2, "     PC=%04x, A=%02x, X=%02x, Y=%02x, SP=%04x\r\n", PC, A, X, Y, SP + 0x100);
     }
 
     opcode = memrd (PC, PC, totcycles); PC++;

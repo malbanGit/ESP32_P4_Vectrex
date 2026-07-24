@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "display.h"
+#include "..\defines.h"
 #include "memory.h"
 #include "game.h"
 
@@ -38,7 +39,7 @@ extern unsigned char avg_prom[256];
 
 typedef struct { int show; char *kw1; char *kw2; char *name; } game_info;
 
-game_info game_names [] =
+FLASH_ROM_ATTR  game_info game_names [] =
 {
   { 0, "unknown",    "??",    "Unknown" },
   { 1, "lunar",      "ll",    "Lunar Lander" },
@@ -62,8 +63,9 @@ int pick_game (char *name)
   int i;
 
   for (i = FIRST_GAME; i <= LAST_GAME; i++)
-    if ((strcasecmp (name, game_names [i].kw1) == 0) ||
-	(strcasecmp (name, game_names [i].kw2) == 0))
+
+
+    if ((strcasecmp (name, game_names [i].kw1) == 0) || (strcasecmp (name, game_names [i].kw2) == 0))
       {
 	return (i);
       }
@@ -91,38 +93,38 @@ char *game_name (int game)
 /*
 rom_info black_widow_roms [] =
 {
-  { "roms/BlackWidow/136017.101", 0x9000, 0x1000, 0 },
-  { "roms/BlackWidow/136017.102", 0xa000, 0x1000, 0 },
-  { "roms/BlackWidow/136017.103", 0xb000, 0x1000, 0 },
-  { "roms/BlackWidow/136017.104", 0xc000, 0x1000, 0 },
-  { "roms/BlackWidow/136017.105", 0xd000, 0x1000, 0 },
-  { "roms/BlackWidow/136017.106", 0xe000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.101", 0x9000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.102", 0xa000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.103", 0xb000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.104", 0xc000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.105", 0xd000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.106", 0xe000, 0x1000, 0 },
 
-  { "roms/BlackWidow/136017.107", 0x2800, 0x0800, 0 },
-  { "roms/BlackWidow/136017.108", 0x3000, 0x1000, 0 },
-  { "roms/BlackWidow/136017.109", 0x4000, 0x1000, 0 },
-  { "roms/BlackWidow/136017.110", 0x5000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.107", 0x2800, 0x0800, 0 },
+  { "/sdcard/roms/BlackWidow/136017.108", 0x3000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.109", 0x4000, 0x1000, 0 },
+  { "/sdcard/roms/BlackWidow/136017.110", 0x5000, 0x1000, 0 },
 
   { NULL,   0,      0,      0 }
 };
 */
-rom_info2  black_widow_roms2 [] =
+FLASH_ROM_ATTR rom_info2  black_widow_roms2 [] =
 {
-  { "roms/bwidow.zip","136017-101.d1", 0x9000, 0x1000, 0  , 0xFE3FEBB7},
-  { "roms/bwidow.zip","136017-102.ef1", 0xa000, 0x1000, 0 , 0x10AD0376},
-  { "roms/bwidow.zip","136017-103.h1", 0xb000, 0x1000, 0  , 0x8A1430EE},
-  { "roms/bwidow.zip","136017-104.j1", 0xc000, 0x1000, 0  , 0x44F9943F},
-  { "roms/bwidow.zip","136017-105.kl1", 0xd000, 0x1000, 0 , 0x1FDF801C},
-  { "roms/bwidow.zip","136017-106.m1", 0xe000, 0x1000, 0  , 0xCCC9B26C},
-  { "roms/bwidow.zip","136017-107.l7", 0x2800, 0x0800, 0  , 0x52322C9E},
-  { "roms/bwidow.zip","136017-108.mn7", 0x3000, 0x1000, 0 , 0x3DA354ED},
-  { "roms/bwidow.zip","136017-109.np7", 0x4000, 0x1000, 0 , 0x2FC4CE79},
-  { "roms/bwidow.zip","136017-110.r7", 0x5000, 0x1000, 0  , 0x0DD52987},
+  { "/sdcard/roms/bwidow.zip","136017-101.d1", 0x9000, 0x1000, 0  , 0xFE3FEBB7},
+  { "/sdcard/roms/bwidow.zip","136017-102.ef1", 0xa000, 0x1000, 0 , 0x10AD0376},
+  { "/sdcard/roms/bwidow.zip","136017-103.h1", 0xb000, 0x1000, 0  , 0x8A1430EE},
+  { "/sdcard/roms/bwidow.zip","136017-104.j1", 0xc000, 0x1000, 0  , 0x44F9943F},
+  { "/sdcard/roms/bwidow.zip","136017-105.kl1", 0xd000, 0x1000, 0 , 0x1FDF801C},
+  { "/sdcard/roms/bwidow.zip","136017-106.m1", 0xe000, 0x1000, 0  , 0xCCC9B26C},
+  { "/sdcard/roms/bwidow.zip","136017-107.l7", 0x2800, 0x0800, 0  , 0x52322C9E},
+  { "/sdcard/roms/bwidow.zip","136017-108.mn7", 0x3000, 0x1000, 0 , 0x3DA354ED},
+  { "/sdcard/roms/bwidow.zip","136017-109.np7", 0x4000, 0x1000, 0 , 0x2FC4CE79},
+  { "/sdcard/roms/bwidow.zip","136017-110.r7", 0x5000, 0x1000, 0  , 0x0DD52987},
 
   { NULL,   0,      0,      0, 0 }
 };
 
-tag_info black_widow_tags [] =
+FLASH_ROM_ATTR tag_info black_widow_tags [] =
 {
   { 0x0000, 0x0800, RD | WR, MEMORY }, /* RAM */
 
@@ -156,23 +158,23 @@ tag_info black_widow_tags [] =
 };
 
 
-rom_info2 gravitar_roms2 [] =
+FLASH_ROM_ATTR rom_info2 gravitar_roms2 [] =
 {
-  { "roms/gravitar.zip", "136010-301.d1", 0x9000, 0x1000, 0, 0xA2A55013 },
-  { "roms/gravitar.zip", "136010-302.ef1", 0xa000, 0x1000, 0, 0xD3700B3C },
-  { "roms/gravitar.zip", "136010-303.h1", 0xb000, 0x1000, 0, 0x8E12E3E0 },
-  { "roms/gravitar.zip", "136010-304.j1", 0xc000, 0x1000, 0, 0x467AD5DA },
-  { "roms/gravitar.zip", "136010-305.kl1", 0xd000, 0x1000, 0, 0x840603AF },
-  { "roms/gravitar.zip", "136010-306.m1", 0xe000, 0x1000, 0, 0x3F3805AD },
-  { "roms/gravitar.zip", "136010-210.l7", 0x2800, 0x0800, 0, 0xB763780F },
-  { "roms/gravitar.zip", "136010-207.mn7", 0x3000, 0x1000, 0, 0x4135629A },
-  { "roms/gravitar.zip", "136010-208.np7", 0x4000, 0x1000, 0, 0x358F25D9 },
-  { "roms/gravitar.zip", "136010-309.r7", 0x5000, 0x1000, 0, 0x4AC78DF4 },
+  { "/sdcard/roms/gravitar.zip", "136010-301.d1", 0x9000, 0x1000, 0, 0xA2A55013 },
+  { "/sdcard/roms/gravitar.zip", "136010-302.ef1", 0xa000, 0x1000, 0, 0xD3700B3C },
+  { "/sdcard/roms/gravitar.zip", "136010-303.h1", 0xb000, 0x1000, 0, 0x8E12E3E0 },
+  { "/sdcard/roms/gravitar.zip", "136010-304.j1", 0xc000, 0x1000, 0, 0x467AD5DA },
+  { "/sdcard/roms/gravitar.zip", "136010-305.kl1", 0xd000, 0x1000, 0, 0x840603AF },
+  { "/sdcard/roms/gravitar.zip", "136010-306.m1", 0xe000, 0x1000, 0, 0x3F3805AD },
+  { "/sdcard/roms/gravitar.zip", "136010-210.l7", 0x2800, 0x0800, 0, 0xB763780F },
+  { "/sdcard/roms/gravitar.zip", "136010-207.mn7", 0x3000, 0x1000, 0, 0x4135629A },
+  { "/sdcard/roms/gravitar.zip", "136010-208.np7", 0x4000, 0x1000, 0, 0x358F25D9 },
+  { "/sdcard/roms/gravitar.zip", "136010-309.r7", 0x5000, 0x1000, 0, 0x4AC78DF4 },
 
   { NULL,   0,      0,      0, 0 }
 };
 
-tag_info gravitar_tags [] =
+FLASH_ROM_ATTR tag_info gravitar_tags [] =
 {
   { 0x0000, 0x0800, RD | WR, MEMORY }, /* RAM */
 
@@ -201,20 +203,20 @@ tag_info gravitar_tags [] =
 };
 
 
-rom_info2 space_duel_roms2 [] =
+FLASH_ROM_ATTR rom_info2 space_duel_roms2 [] =
 {
-  { "roms/spacduel.zip", "136006-201.r1", 0x4000, 0x1000, 0 , 0xF4037B6E},
-  { "roms/spacduel.zip", "136006-102.np1", 0x5000, 0x1000, 0 , 0x4C451E8A},
-  { "roms/spacduel.zip", "136006-103.m1", 0x6000, 0x1000, 0 , 0xEE72DA63},
-  { "roms/spacduel.zip", "136006-104.kl1", 0x7000, 0x1000, 0 , 0xE41B38A3},
-  { "roms/spacduel.zip", "136006-105.j1", 0x8000, 0x1000, 0 , 0x5652710F},
-  { "roms/spacduel.zip", "136006-106.r7", 0x2800, 0x0800, 0 , 0x85EB9802},
-  { "roms/spacduel.zip", "136006-107.np7", 0x3000, 0x1000, 0 , 0xD8DD0461},
+  { "/sdcard/roms/spacduel.zip", "136006-201.r1", 0x4000, 0x1000, 0 , 0xF4037B6E},
+  { "/sdcard/roms/spacduel.zip", "136006-102.np1", 0x5000, 0x1000, 0 , 0x4C451E8A},
+  { "/sdcard/roms/spacduel.zip", "136006-103.m1", 0x6000, 0x1000, 0 , 0xEE72DA63},
+  { "/sdcard/roms/spacduel.zip", "136006-104.kl1", 0x7000, 0x1000, 0 , 0xE41B38A3},
+  { "/sdcard/roms/spacduel.zip", "136006-105.j1", 0x8000, 0x1000, 0 , 0x5652710F},
+  { "/sdcard/roms/spacduel.zip", "136006-106.r7", 0x2800, 0x0800, 0 , 0x85EB9802},
+  { "/sdcard/roms/spacduel.zip", "136006-107.np7", 0x3000, 0x1000, 0 , 0xD8DD0461},
 
   { NULL,         0,      0,      0, 0 }
 };
 
-tag_info space_duel_tags [] =
+FLASH_ROM_ATTR tag_info space_duel_tags [] =
 {
   { 0x0000, 0x0400, RD | WR, MEMORY },  /* RAM */
   { 0x1000, 0x0400, RD | WR, POKEY1 },
@@ -244,29 +246,29 @@ tag_info space_duel_tags [] =
 };
 
 
-rom_info2 tempest_roms2 [] =
+FLASH_ROM_ATTR rom_info2 tempest_roms2 [] =
 {
-  { "roms/tempest.zip", "136002-133.d1", 0x9000, 0x1000, 0 , 0x1D0CC503},
-  { "roms/tempest.zip", "136002-134.f1", 0xa000, 0x1000, 0 , 0xC88E3524},
-  { "roms/tempest.zip", "136002-235.j1", 0xb000, 0x1000, 0 , 0xA4B2CE3F},  /* or .235 */
-  { "roms/tempest.zip", "136002-136.lm1", 0xc000, 0x1000, 0 , 0x65A9A9F9},
-  { "roms/tempest.zip", "136002-237.p1", 0xd000, 0x1000, 0 , 0xDE4E9E34},  /* or .237 */
-  { "roms/tempest.zip", "136002-138.np3", 0x3000, 0x1000, 0 , 0x9995256D},
+  { "/sdcard/roms/tempest.zip", "136002-133.d1", 0x9000, 0x1000, 0 , 0x1D0CC503},
+  { "/sdcard/roms/tempest.zip", "136002-134.f1", 0xa000, 0x1000, 0 , 0xC88E3524},
+  { "/sdcard/roms/tempest.zip", "136002-235.j1", 0xb000, 0x1000, 0 , 0xA4B2CE3F},  /* or .235 */
+  { "/sdcard/roms/tempest.zip", "136002-136.lm1", 0xc000, 0x1000, 0 , 0x65A9A9F9},
+  { "/sdcard/roms/tempest.zip", "136002-237.p1", 0xd000, 0x1000, 0 , 0xDE4E9E34},  /* or .237 */
+  { "/sdcard/roms/tempest.zip", "136002-138.np3", 0x3000, 0x1000, 0 , 0x9995256D},
   { NULL,         0,      0,      0 , 0}
 };
 /*
 rom_info tempest_roms [] =
 {
-  { "roms/Tempest/136002-133.d1", 0x9000, 0x1000, 0 },
-  { "roms/Tempest/136002-134.f1", 0xa000, 0x1000, 0 },
-  { "roms/Tempest/136002-235.j1", 0xb000, 0x1000, 0 },  / * or .235 * /
-  { "roms/Tempest/136002-136.lm1", 0xc000, 0x1000, 0 },
-  { "roms/Tempest/136002-237.p1", 0xd000, 0x1000, 0 },  / * or .237 * /
-  { "roms/Tempest/136002-138.np3", 0x3000, 0x1000, 0 },
+  { "/sdcard/roms/Tempest/136002-133.d1", 0x9000, 0x1000, 0 },
+  { "/sdcard/roms/Tempest/136002-134.f1", 0xa000, 0x1000, 0 },
+  { "/sdcard/roms/Tempest/136002-235.j1", 0xb000, 0x1000, 0 },  / * or .235 * /
+  { "/sdcard/roms/Tempest/136002-136.lm1", 0xc000, 0x1000, 0 },
+  { "/sdcard/roms/Tempest/136002-237.p1", 0xd000, 0x1000, 0 },  / * or .237 * /
+  { "/sdcard/roms/Tempest/136002-138.np3", 0x3000, 0x1000, 0 },
   { NULL,         0,      0,      0 }
 };
 */
-tag_info tempest_tags [] =
+FLASH_ROM_ATTR tag_info tempest_tags [] =
 {
   { 0x0000, 0x0800, RD | WR, MEMORY }, /* RAM */
   { 0x0800, 0x0010, RD | WR, COLORRAM },
@@ -317,33 +319,33 @@ tag_info tempest_tags [] =
 /*
 rom_info battlezone_roms [] =
 {
-  { "roms/Battlezone/036414.01", 0x5000, 0x0800, 0 },
-  { "roms/Battlezone/036413.01", 0x5800, 0x0800, 0 },
-  { "roms/Battlezone/036412.01", 0x6000, 0x0800, 0 },
-  { "roms/Battlezone/036411.01", 0x6800, 0x0800, 0 },
-  { "roms/Battlezone/036410.01", 0x7000, 0x0800, 0 },
-  { "roms/Battlezone/036409.01", 0x7800, 0x0800, 0 },
-  { "roms/Battlezone/036422.01", 0x3000, 0x0800, 0 },
-  { "roms/Battlezone/036421.01", 0x3800, 0x0800, 0 },
+  { "/sdcard/roms/Battlezone/036414.01", 0x5000, 0x0800, 0 },
+  { "/sdcard/roms/Battlezone/036413.01", 0x5800, 0x0800, 0 },
+  { "/sdcard/roms/Battlezone/036412.01", 0x6000, 0x0800, 0 },
+  { "/sdcard/roms/Battlezone/036411.01", 0x6800, 0x0800, 0 },
+  { "/sdcard/roms/Battlezone/036410.01", 0x7000, 0x0800, 0 },
+  { "/sdcard/roms/Battlezone/036409.01", 0x7800, 0x0800, 0 },
+  { "/sdcard/roms/Battlezone/036422.01", 0x3000, 0x0800, 0 },
+  { "/sdcard/roms/Battlezone/036421.01", 0x3800, 0x0800, 0 },
 
   { NULL,   0,      0,           0 }
 };
 */
-rom_info2 battlezone_roms2 [] =
+FLASH_ROM_ATTR rom_info2 battlezone_roms2 [] =
 {
-  { "roms/bzone.zip","036414-02.e1", 0x5000, 0x0800, 0, 0x07BF9BF4 },
-  { "roms/bzone.zip","036413-01.h1", 0x5800, 0x0800, 0, 0xD36718F8 },
-  { "roms/bzone.zip","036412-01.j1", 0x6000, 0x0800, 0, 0x0C98FDDC },
-  { "roms/bzone.zip","036411-01.k1", 0x6800, 0x0800, 0, 0xE1DF463A },
-  { "roms/bzone.zip","036410-01.lm1", 0x7000, 0x0800, 0,0x095C08DE },
-  { "roms/bzone.zip","036409-01.n1", 0x7800, 0x0800, 0, 0x18EBACD6 },
-  { "roms/bzone.zip","036422-01.bc3", 0x3000, 0x0800, 0,0x0C2486B0 },
-  { "roms/bzone.zip","036421-01.a3", 0x3800, 0x0800, 0, 0x50EA80FA },
+  { "/sdcard/roms/bzone.zip","036414-02.e1", 0x5000, 0x0800, 0, 0x07BF9BF4 },
+  { "/sdcard/roms/bzone.zip","036413-01.h1", 0x5800, 0x0800, 0, 0xD36718F8 },
+  { "/sdcard/roms/bzone.zip","036412-01.j1", 0x6000, 0x0800, 0, 0x0C98FDDC },
+  { "/sdcard/roms/bzone.zip","036411-01.k1", 0x6800, 0x0800, 0, 0xE1DF463A },
+  { "/sdcard/roms/bzone.zip","036410-01.lm1", 0x7000, 0x0800, 0,0x095C08DE },
+  { "/sdcard/roms/bzone.zip","036409-01.n1", 0x7800, 0x0800, 0, 0x18EBACD6 },
+  { "/sdcard/roms/bzone.zip","036422-01.bc3", 0x3000, 0x0800, 0,0x0C2486B0 },
+  { "/sdcard/roms/bzone.zip","036421-01.a3", 0x3800, 0x0800, 0, 0x50EA80FA },
 
   { NULL,   0,      0,           0 ,0}
 };
 
-tag_info battlezone_tags [] =
+FLASH_ROM_ATTR tag_info battlezone_tags [] =
 {
   { 0x0000, 0x0400, RD | WR, MEMORY },  /* RAM */
 
@@ -370,22 +372,22 @@ tag_info battlezone_tags [] =
   { 0,           0, 0,       0 }
 };
 
-rom_info2 red_baron_roms2 [] =
+FLASH_ROM_ATTR rom_info2 red_baron_roms2 [] =
 {
-  { "roms/redbaron.zip","037587-01.fh1",  0x4800, 0x0800, 0 , 0x60F23983},
-  { "roms/redbaron.zip","037000-01.e1", 0x5000, 0x0800, 0 , 0x870FB62F},
-  { "roms/redbaron.zip","037587-01.fh1",  0x5800, 0x0800, 0x0800 , 0x60F23983},
-  { "roms/redbaron.zip","036998-01.j1", 0x6000, 0x0800, 0 , 0xF90C45B3},
-  { "roms/redbaron.zip","036997-01.k1", 0x6800, 0x0800, 0 , 0xEE85B789},
-  { "roms/redbaron.zip","036996-01.lm1", 0x7000, 0x0800, 0, 0xE7829D53 },
-  { "roms/redbaron.zip","036995-01.n1", 0x7800, 0x0800, 0 , 0x92DD38A6},
-  { "roms/redbaron.zip","037006-01.bc3", 0x3000, 0x0800, 0, 0x890ED1A9},
-  { "roms/redbaron.zip","037007-01.a3", 0x3800, 0x0800, 0 , 0xB83994DA},
+  { "/sdcard/roms/redbaron.zip","037587-01.fh1",  0x4800, 0x0800, 0 , 0x60F23983},
+  { "/sdcard/roms/redbaron.zip","037000-01.e1", 0x5000, 0x0800, 0 , 0x870FB62F},
+  { "/sdcard/roms/redbaron.zip","037587-01.fh1",  0x5800, 0x0800, 0x0800 , 0x60F23983},
+  { "/sdcard/roms/redbaron.zip","036998-01.j1", 0x6000, 0x0800, 0 , 0xF90C45B3},
+  { "/sdcard/roms/redbaron.zip","036997-01.k1", 0x6800, 0x0800, 0 , 0xEE85B789},
+  { "/sdcard/roms/redbaron.zip","036996-01.lm1", 0x7000, 0x0800, 0, 0xE7829D53 },
+  { "/sdcard/roms/redbaron.zip","036995-01.n1", 0x7800, 0x0800, 0 , 0x92DD38A6},
+  { "/sdcard/roms/redbaron.zip","037006-01.bc3", 0x3000, 0x0800, 0, 0x890ED1A9},
+  { "/sdcard/roms/redbaron.zip","037007-01.a3", 0x3800, 0x0800, 0 , 0xB83994DA},
 
   { NULL,         0,      0,      0 , 0 }
 };
 
-tag_info red_baron_tags [] =
+FLASH_ROM_ATTR tag_info red_baron_tags [] =
 {
   { 0x0000, 0x0400, RD | WR, MEMORY },  /* RAM */
 
@@ -422,44 +424,44 @@ tag_info red_baron_tags [] =
 /*
 rom_info lunar_lander_roms [] =
 {
-  { "roms/LunarLander/034572.02", 0x6000, 0x0800, 0 },
-  { "roms/LunarLander/034571.02", 0x6800, 0x0800, 0 },
-  { "roms/LunarLander/034570.02", 0x7000, 0x0800, 0 },
-  { "roms/LunarLander/034569.02", 0x7800, 0x0800, 0 },
-  { "roms/LunarLander/034599.01", 0x4800, 0x0800, 0 },
-  { "roms/LunarLander/034598.01", 0x5000, 0x0800, 0 },
-  { "roms/LunarLander/034597.01", 0x5800, 0x0800, 0 },
+  { "/sdcard/roms/LunarLander/034572.02", 0x6000, 0x0800, 0 },
+  { "/sdcard/roms/LunarLander/034571.02", 0x6800, 0x0800, 0 },
+  { "/sdcard/roms/LunarLander/034570.02", 0x7000, 0x0800, 0 },
+  { "/sdcard/roms/LunarLander/034569.02", 0x7800, 0x0800, 0 },
+  { "/sdcard/roms/LunarLander/034599.01", 0x4800, 0x0800, 0 },
+  { "/sdcard/roms/LunarLander/034598.01", 0x5000, 0x0800, 0 },
+  { "/sdcard/roms/LunarLander/034597.01", 0x5800, 0x0800, 0 },
 
   { NULL,        0,      0,      0 }
 };
 */
-rom_info lunar_lander_roms3 [] =
+FLASH_ROM_ATTR rom_info lunar_lander_roms3 [] =
 {
-  { "roms/lunar/034572-02.f1", 0x6000, 0x0800, 0},
-  { "roms/lunar/034571-02.de1", 0x6800, 0x0800, 0},
-  { "roms/lunar/034570-01.c1", 0x7000, 0x0800, 0},
-  { "roms/lunar/034569-02.b1", 0x7800, 0x0800, 0},
-  { "roms/lunar/034599-01.r3", 0x4800, 0x0800, 0},
-  { "roms/lunar/034598-01.np3", 0x5000, 0x0800, 0},
-  { "roms/lunar/034597-01.m3", 0x5800, 0x0800, 0}, // newer MAME rom differs in two bytes!
+  { "/sdcard/roms/lunar/034572-02.f1", 0x6000, 0x0800, 0},
+  { "/sdcard/roms/lunar/034571-02.de1", 0x6800, 0x0800, 0},
+  { "/sdcard/roms/lunar/034570-01.c1", 0x7000, 0x0800, 0},
+  { "/sdcard/roms/lunar/034569-02.b1", 0x7800, 0x0800, 0},
+  { "/sdcard/roms/lunar/034599-01.r3", 0x4800, 0x0800, 0},
+  { "/sdcard/roms/lunar/034598-01.np3", 0x5000, 0x0800, 0},
+  { "/sdcard/roms/lunar/034597-01.m3", 0x5800, 0x0800, 0}, // newer MAME rom differs in two bytes!
 
   { NULL,        0,      0,      0 }
 };
 
-rom_info2 lunar_lander_roms2 [] =
+FLASH_ROM_ATTR rom_info2 lunar_lander_roms2 [] =
 {
-  { "roms/llander.zip", "034572-02.f1", 0x6000, 0x0800, 0, 0xEB23BAFE },
-  { "roms/llander.zip", "034571-02.de1", 0x6800, 0x0800, 0, 0xABD92475 },
-  { "roms/llander.zip", "034570-01.c1", 0x7000, 0x0800, 0, 0x9AE4F8F7 },
-  { "roms/llander.zip", "034569-02.b1", 0x7800, 0x0800, 0, 0x8A0E2BEF },
-  { "roms/llander.zip", "034599-01.r3", 0x4800, 0x0800, 0, 0x738B681C },
-  { "roms/llander.zip", "034598-01.np3", 0x5000, 0x0800, 0, 0x26701CC2 },
-  { "roms/llander.zip", "034597-01.m3", 0x5800, 0x0800, 0, 0x08A8F775 }, // newer MAME rom differs in two bytes!
+  { "/sdcard/roms/llander.zip", "034572-02.f1", 0x6000, 0x0800, 0, 0xEB23BAFE },
+  { "/sdcard/roms/llander.zip", "034571-02.de1", 0x6800, 0x0800, 0, 0xABD92475 },
+  { "/sdcard/roms/llander.zip", "034570-01.c1", 0x7000, 0x0800, 0, 0x9AE4F8F7 },
+  { "/sdcard/roms/llander.zip", "034569-02.b1", 0x7800, 0x0800, 0, 0x8A0E2BEF },
+  { "/sdcard/roms/llander.zip", "034599-01.r3", 0x4800, 0x0800, 0, 0x738B681C },
+  { "/sdcard/roms/llander.zip", "034598-01.np3", 0x5000, 0x0800, 0, 0x26701CC2 },
+  { "/sdcard/roms/llander.zip", "034597-01.m3", 0x5800, 0x0800, 0, 0x08A8F775 }, // newer MAME rom differs in two bytes!
 
   { NULL,        0,      0,      0, 0 }
 };
 
-tag_info lunar_lander_tags [] =
+FLASH_ROM_ATTR tag_info lunar_lander_tags [] =
 {
   { 0x0000, 0x0100, RD | WR, MEMORY },  /* RAM */
   { 0x0100, 0x0100, RD | WR, LUNAR_MEM },  /* copy of ZP for stack */
@@ -485,35 +487,35 @@ tag_info lunar_lander_tags [] =
   { 0,           0, 0,       0 }
 };
 
-rom_info2 asteroids_roms2 [] =
+FLASH_ROM_ATTR rom_info2 asteroids_roms2 [] =
 {
-  { "roms/asteroid2.zip", "035145-02.ef2", 0x6800, 0x0800, 0, 0x5318BE7F },
-  { "roms/asteroid2.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
-  { "roms/asteroid2.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
-  { "roms/asteroid2.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
+  { "/sdcard/roms/asteroid2.zip", "035145-02.ef2", 0x6800, 0x0800, 0, 0x5318BE7F },
+  { "/sdcard/roms/asteroid2.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
+  { "/sdcard/roms/asteroid2.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
+  { "/sdcard/roms/asteroid2.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
   { NULL,   0,      0,           0, 0 }
 };
-rom_info2 asteroids_roms3 [] =
+FLASH_ROM_ATTR rom_info2 asteroids_roms3 [] =
 {
-  { "roms/asteroid2.zip", "035145-02.ef2", 0x6800, 0x0800, 0, 0x5318BE7F },
-  { "roms/asteroid2.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
-  { "roms/asteroid.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
-  { "roms/asteroid.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
+  { "/sdcard/roms/asteroid2.zip", "035145-02.ef2", 0x6800, 0x0800, 0, 0x5318BE7F },
+  { "/sdcard/roms/asteroid2.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
+  { "/sdcard/roms/asteroid.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
+  { "/sdcard/roms/asteroid.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
   { NULL,   0,      0,           0, 0 }
 };
 /*
 rom_info asteroids_roms [] =
 {
-  { "roms/Asteroids/035145.02", 0x6800, 0x0800, 0 },
-  { "roms/Asteroids/035144.02", 0x7000, 0x0800, 0 },
-  { "roms/Asteroids/035143.02", 0x7800, 0x0800, 0 },
+  { "/sdcard/roms/Asteroids/035145.02", 0x6800, 0x0800, 0 },
+  { "/sdcard/roms/Asteroids/035144.02", 0x7000, 0x0800, 0 },
+  { "/sdcard/roms/Asteroids/035143.02", 0x7800, 0x0800, 0 },
 
-  { "roms/Asteroids/035127.02", 0x5000, 0x0800, 0 },
+  { "/sdcard/roms/Asteroids/035127.02", 0x5000, 0x0800, 0 },
 
   { NULL,   0,      0,           0 }
 };
 */
-tag_info asteroids_tags [] =
+FLASH_ROM_ATTR tag_info asteroids_tags [] =
 {
   { 0x0000, 0x0400, RD | WR, MEMORY },  /* RAM */
 
@@ -543,19 +545,19 @@ tag_info asteroids_tags [] =
 };
 
 
-rom_info2 asteroidsdx_roms2 [] =
+FLASH_ROM_ATTR rom_info2 asteroidsdx_roms2 [] =
 {
 
-  { "roms/astdelux.zip", "036430-02.d1", 0x6000, 0x0800, 0, 0x26E8AFCC },
-  {  "roms/astdelux.zip", "036431-02.ef1", 0x6800, 0x0800, 0, 0x441AD34E },
-  {  "roms/astdelux.zip", "036432-02.fh1", 0x7000, 0x0800, 0, 0x6412A267 },
-  { "roms/astdelux.zip", "036433-03.j1", 0x7800, 0x0800, 0, 0xB851E618 },
-  {  "roms/astdelux.zip", "036800-02.r2", 0x4800, 0x0800, 0, 0x42AC00ED },
-  {  "roms/astdelux.zip", "036799-01.np2", 0x5000, 0x0800, 0, 0x8098F60E },
+  { "/sdcard/roms/astdelux.zip", "036430-02.d1", 0x6000, 0x0800, 0, 0x26E8AFCC },
+  {  "/sdcard/roms/astdelux.zip", "036431-02.ef1", 0x6800, 0x0800, 0, 0x441AD34E },
+  {  "/sdcard/roms/astdelux.zip", "036432-02.fh1", 0x7000, 0x0800, 0, 0x6412A267 },
+  { "/sdcard/roms/astdelux.zip", "036433-03.j1", 0x7800, 0x0800, 0, 0xB851E618 },
+  {  "/sdcard/roms/astdelux.zip", "036800-02.r2", 0x4800, 0x0800, 0, 0x42AC00ED },
+  {  "/sdcard/roms/astdelux.zip", "036799-01.np2", 0x5000, 0x0800, 0, 0x8098F60E },
   { NULL,          0,      0,      0, 0 }
 };
 
-tag_info asteroidsdx_tags [] =
+FLASH_ROM_ATTR tag_info asteroidsdx_tags [] =
 {
   { 0x0000, 0x0400, RD | WR, MEMORY },  /* RAM */
   { 0x2000,      8, RD,      ASTEROIDS_SW1 },
@@ -580,24 +582,24 @@ tag_info asteroidsdx_tags [] =
 };
 
 
-rom_info major_havoc_roms [] =
+FLASH_ROM_ATTR rom_info major_havoc_roms [] =
 {
   /* this is copied from Gravitar and hasn't yet been updated! */
-  { "roms/MajorHavoc/136025.104", 0x9000, 0x4000, 0 },
-  { "roms/MajorHavoc/136010.103", 0xa000, 0x4000, 0 },
-  { "roms/MajorHavoc/136010.109", 0xb000, 0x4000, 0 },
-  { "roms/MajorHavoc/136010.101", 0xc000, 0x4000, 0 },
-  { "roms/MajorHavoc/136010.106", 0xd000, 0x4000, 0 },
-  { "roms/MajorHavoc/136010.107", 0xe000, 0x4000, 0 },
-  { "roms/MajorHavoc/136010.108", 0x3000, 0x4000, 0 },
+  { "/sdcard/roms/MajorHavoc/136025.104", 0x9000, 0x4000, 0 },
+  { "/sdcard/roms/MajorHavoc/136010.103", 0xa000, 0x4000, 0 },
+  { "/sdcard/roms/MajorHavoc/136010.109", 0xb000, 0x4000, 0 },
+  { "/sdcard/roms/MajorHavoc/136010.101", 0xc000, 0x4000, 0 },
+  { "/sdcard/roms/MajorHavoc/136010.106", 0xd000, 0x4000, 0 },
+  { "/sdcard/roms/MajorHavoc/136010.107", 0xe000, 0x4000, 0 },
+  { "/sdcard/roms/MajorHavoc/136010.108", 0x3000, 0x4000, 0 },
 
   /* vector generator */
-  { "roms/MajorHavoc/136010.110", 0x2000, 0x2000, 0 },
+  { "/sdcard/roms/MajorHavoc/136010.110", 0x2000, 0x2000, 0 },
 
   { NULL,   0,      0,      0 }
 };
 
-tag_info major_havoc_tags [] =
+FLASH_ROM_ATTR tag_info major_havoc_tags [] =
 {
   /* this is copied from Gravitar and hasn't yet been updated! */
   { 0x0000, 0x0800, RD | WR, MEMORY }, /* RAM */
@@ -858,12 +860,15 @@ void setup_game (void)
     case TEMPEST:
     {
 //      setup_roms_and_tags (tempest_roms, tempest_tags);
+
+printf("Init Tempest game.\n");
       init_earom();
       int error = setup_roms_and_tags2 (tempest_roms2, tempest_tags);
       if (error != 0)
       {
         printf("TROUBLE WITH TEMPEST ROMS!\n");
       }
+printf("Game setup.\n");
       
       
       
@@ -882,7 +887,10 @@ void setup_game (void)
       
       
       
-	  read_rom_image_zip_to("roms/tempest.zip","136002-125.d7", 0, 256, 0, avg_prom);
+	  int zipLoad = read_rom_image_zip_to("/sdcard/roms/tempest.zip","136002-125.d7", 0, 256, 0, avg_prom);
+    if (zipLoad == 0) printf("Game loaded.\n");
+    else printf("Game not loaded!\n");
+
 
       vector_mem_offset = 0x2000;
 	  avg_init(vector_mem_offset, 0x800);

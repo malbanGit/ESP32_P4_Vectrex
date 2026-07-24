@@ -49,18 +49,27 @@ void avg_init(unsigned short int vram, unsigned short int cram);
 /*
  * Device dependent display functions
  */
+#define GAME_LANDSCAPE 0
+#define GAME_PORTRAIT 1
 
-void init_graphics (int smallwindow, int use_pixmap, int line_width, char *window_name);
+extern int ALG_XMIN;
+extern int ALG_XMAX;
+extern int ALG_YMIN;
+extern int ALG_YMAX;
+extern int ALG_MAX_X; // wid
+extern int ALG_MAX_Y;
 
+extern int POS_ADDER_X;
+extern int POS_ADDER_Y;
+
+
+void init_graphics (int type);
 void term_graphics ();
-
 void draw_line (int x1, int y1, int x2, int y2, int c, int z);
-
 void open_page (int step);
-
 void close_page (void);
-
 int repeat_frame (void);
+
 /*
  * Called if the vector generator is told to go but the vector list is
  * identical to the previous one.  If repeat_frame() returns true, the

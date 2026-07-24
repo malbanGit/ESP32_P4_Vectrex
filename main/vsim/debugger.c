@@ -25,8 +25,6 @@
 #include <ctype.h>
 #include <stdlib.h>
 
-#include <baremetal/pi_support.h>
-  
 
 #include "memory.h"
 #include "debugger.h"
@@ -60,6 +58,7 @@ struct hdr
 
 static int dumpworld (char *name)
 {
+/*
   FILE *fp;
   struct hdr h;
   byte tagr, tagw;
@@ -116,13 +115,14 @@ static int dumpworld (char *name)
       rc_rd = f_write(&file_object_wr,&val, 1, &lenSaved);
     }
   f_close(&file_object_wr);
-  
+  */
   
   return (0);
 }
 
 int reload (char *name)
 {
+  /*
   struct hdr h;
   byte tagr, tagw;
   byte val;
@@ -173,6 +173,7 @@ int reload (char *name)
     }
 
   f_close(&file_object_rd);
+  */
   return (0);
 }
 
@@ -792,44 +793,10 @@ static void execute_command (int argc, char *argv [])
   fflush(stdout);
 }
 
-#define MAX_LINE 200
-static char commandBuffer[MAX_LINE];
-static char *commandBufferPointer;
-static int commandBufferCounter;
 
 char *readline(char *prompt)
 {
-  commandBufferPointer = commandBuffer;
-  commandBufferCounter = 0;
-  char inbuf [MAX_LINE];
-  if (prompt)
-  {
-    while (*prompt != 0) RPI_AuxUartWrite(*prompt++);
-    fflush(stdout);
-  }
-  while (1)
-  {
-    while (RPI_AuxUartReadPending())
-    {
-      char r = RPI_AuxUartRead();
-
-        RPI_AuxUartWrite(r);
-        if (r != '\n')
-        {
-                if (commandBufferCounter<MAX_LINE-2)
-                {
-                        *commandBufferPointer++ = r;
-                        *commandBufferPointer = (char) 0;
-                        commandBufferCounter++;
-                }
-        }
-        else
-        {
-          return (commandBuffer);
-        }
-    }
-  }
-  return (commandBuffer);
+  return NULL;
 }
 
 

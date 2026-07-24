@@ -3,7 +3,8 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "../sim/game.h"
+#include "../defines.h"
+#include "game.h"
 
 
 // choosing a fixed scale here and adjusting per game in draw_line.
@@ -12,8 +13,6 @@
 
 // may need some adjustment for clipping off-screen in the vecterm package
 
-#define SCREEN_W 480
-#define SCREEN_H 800
 
 /*
  * no_interface.c: null display for Atari Vector game simulator
@@ -38,8 +37,8 @@
  */
 
 
-#include "../sim/display.h"
-#include "../sim/memory.h"
+#include "display.h"
+#include "memory.h"
 
 
 int smallwindow;
@@ -57,12 +56,6 @@ void gameCommand(void)
 {
 	printf("Atari Vector game simulator, Copyright 1993, 1996 Eric Smith\r\n");
 }
-Command vecSimCommandList[] =
-{
-	{1,"game", "g", "game | g -> display game information\r\n" ,  gameCommand },
-	{0,"", "", "" ,  (void (*)(void)) 0 }
-};
-
 
 // for now INI setting just stupidly overwrite other saved settings!
 static int simIniHandler(void* user, const char* section, const char* name, const char* value)
@@ -96,17 +89,6 @@ int OFFSET_Y= 300;
 int MUL_X= 35;
 int MUL_Y= 40;
 
-void setDimensions(int offsetx, int offsety, int mulx, int muly)
-{
- OFFSET_X= offsetx;
- OFFSET_Y= offsety;
- MUL_X= mulx;
- MUL_Y= muly;
-}
-
-void init_graphics ( int p_smallwindow, int p_use_pixmap, int p_line_width, char *window_name)
-{
-}
 
 void term_graphics (void)
 {
@@ -325,48 +307,168 @@ void handle_input (void) // call once per frame
       switches [1].shield = (currentButtonState & 0x10)?1:0; // button 1 port 2
       switches [1].abort = 0; // no input
     }
-}
 */
+}
+
+void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, uint8_t brightness); // brightness or color - depending on mode, 0 is always undraw
+void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // brightness or color - depending on mode, 0 is always undraw
+void mini_end_frame(void);
+
+//; MX AVG - MIN AVG for a game
+
+DRAM_ATTR int ALG_XMIN=0;
+DRAM_ATTR int ALG_XMAX=1000;
+DRAM_ATTR int ALG_YMIN=0;
+DRAM_ATTR int ALG_YMAX=750;
+DRAM_ATTR int ALG_MAX_X=1000; // wid
+DRAM_ATTR int ALG_MAX_Y=750;
+
+DRAM_ATTR int POS_ADDER_X = 0;
+DRAM_ATTR int POS_ADDER_Y = 0;
+DRAM_ATTR static float scl_factorx; // for some unkown reason these cannot be uint32_t, if it is uint32_t then lines are sometimes out of bounds
+DRAM_ATTR static float scl_factory; // inspite the fact, that the scale factor is NEVER negative!!!
+DRAM_ATTR static long offx;
+DRAM_ATTR static long offy;
 
 
-void draw_line(int FromX, int FromY, int ToX, int ToY, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
+
+void init_graphics (int type)
 {
-  
+    int getDisplayWidth();
+    int getDisplayHeight();
+    int getScreenWidth();
+    int getScreenHeight();
+
+    int dw = getDisplayWidth();
+    int dh = getDisplayHeight();
+    int sw = getScreenWidth();
+    int sh = getScreenHeight();
+
+    if (type == GAME_PORTRAIT)
+    {
+      if (sh>sw)
+      {
+        scl_factorx = ((float)ALG_MAX_X) / ((float)dw);
+        scl_factory = ((float)ALG_MAX_Y) / ((float)dh);
+        offx = (sw-dw)/2;
+        offy = (sh-dh)/2;
+      }
+      else
+      {
+        float factor = ((float)sh)/((float)sw);
+        dw = ((float)dw)*factor;
+        scl_factorx = ((float)ALG_MAX_X) / ((float)dw);
+        scl_factory = ((float)ALG_MAX_Y) / ((float)dh);
+        offx = (sw-dw)/2;
+        offy = (sh-dh)/2;
+        printf("Landscape correction\n");
+      }
+    }
+    else // LANDCSAPE
+    {
+      if (sw>sh)
+      {
+        scl_factorx = ((float)ALG_MAX_X) / ((float)dw);
+        scl_factory = ((float)ALG_MAX_Y) / ((float)dh);
+        offx = (sw-dw)/2;
+        offy = (sh-dh)/2;
+      }
+      else
+      {
+        float factor = ((float)sw)/((float)sh);
+        dh = ((float)dh)*factor;
+        scl_factorx = ((float)ALG_MAX_X) / ((float)dw);
+        scl_factory = ((float)ALG_MAX_Y) / ((float)dh);
+        offx = (sw-dw)/2;
+        offy = (sh-dh)/2;
+        printf("Landscape correction\n");
+      }
+    }
+
+    printf("scl_factorx:%f, scl_factory: %f, ",scl_factorx, scl_factory);
+}
+
+void draw_line(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
+{
   if (z == 0) return; // MOVE, possibly to realign at 0,0
-  // sign-extend
-  ToX = ToX << 16;
-  ToX = ToX >> 16;
-  FromX = FromX << 16;
-  FromX = FromX >> 16;
-  ToY = ToY << 16;
-  ToY = ToY >> 16;
-  FromY = FromY << 16;
-  FromY = FromY >> 16;
-  FromY = 700-FromY; ToY = 700-ToY; // trial and error
-  
-      v_directDraw32(
+//printf("Sim Line:x0:%i, y0:%i, x1:%i, y1:%i, b:%i\n",x0,y0,x1,y1, z);
+/*
+mini_draw_line(
 		  (FromX - OFFSET_X)*MUL_X, 
 		  (FromY - OFFSET_Y)*MUL_Y, 
 		  (ToX- OFFSET_X)*MUL_X,
 		  (ToY- OFFSET_Y)*MUL_Y, 
 		  z*4+Colour15*8);
+
+    mini_draw_line( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                    offy + (y0+POS_ADDER_Y) / scl_factory, 
+                    offx + (x1+POS_ADDER_X) / scl_factorx, 
+                    offy + (y1+POS_ADDER_Y) / scl_factory, 
+                    255); // For ESP32
+      */      
+    mini_draw_line( offx + (int) ((x0+POS_ADDER_X) / scl_factorx), 
+                    offy + (int) ((y0+POS_ADDER_X) / scl_factory), 
+                    offx + (int) ((x1+POS_ADDER_X) / scl_factorx), 
+                    offy + (int) ((y1+POS_ADDER_X) / scl_factory), 
+                    z<<4); // For ESP32
 }
+/* Tempest 4-bit colour → YUV palette index
+ *
+ * Encoding: %0000rrgb
+ *   rr: 00=R0  01=R85  10=R170  11=R255
+ *   g:  0=G0   1=G255
+ *   b:  0=B0   1=B255
+ */
+static const uint8_t tempest_color_lut[16] = {
+    YUV_PALETTE_BLACK,         /*  0: 0000  R=  0, G=  0, B=  0 */
+    YUV_PALETTE_BLUE,          /*  1: 0001  R=  0, G=  0, B=255 */
+    YUV_PALETTE_BRIGHTGREEN,   /*  2: 0010  R=  0, G=255, B=  0 */
+    YUV_PALETTE_CYAN,          /*  3: 0011  R=  0, G=255, B=255 */
+    YUV_PALETTE_DARKMAROON,    /*  4: 0100  R= 85, G=  0, B=  0 */
+    YUV_PALETTE_BLUEVIOLET,    /*  5: 0101  R= 85, G=  0, B=255 */
+    YUV_PALETTE_CHARTREUSE,    /*  6: 0110  R= 85, G=255, B=  0 */
+    YUV_PALETTE_AQUAMARINE,    /*  7: 0111  R= 85, G=255, B=255 */
+    YUV_PALETTE_DARKRED,       /*  8: 1000  R=170, G=  0, B=  0 */
+    YUV_PALETTE_ELECTRICPURP,  /*  9: 1001  R=170, G=  0, B=255 */
+    YUV_PALETTE_YELLOWGREEN,   /* 10: 1010  R=170, G=255, B=  0 */
+    YUV_PALETTE_PASTELCYAN,    /* 11: 1011  R=170, G=255, B=255 */
+    YUV_PALETTE_RED,           /* 12: 1100  R=255, G=  0, B=  0 */
+    YUV_PALETTE_MAGENTA,       /* 13: 1101  R=255, G=  0, B=255 */
+    YUV_PALETTE_YELLOW,        /* 14: 1110  R=255, G=255, B=  0 */
+    YUV_PALETTE_WHITE,         /* 15: 1111  R=255, G=255, B=255 */
+};
 
 // from addpoint AVG (Tempest)
 // in color is a 4 bit rgb value
 // %0000rrgb
-void draw_line2(int FromX, int FromY, int ToX, int ToY, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
+void draw_line2(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
 {
+
   if (z == 0) return; // MOVE, possibly to realign at 0,0
   
   {
+//printf("Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
    if (z>=12) 
    {
-      v_directDraw32(FromX, FromY, ToX,ToY, Colour15);
-   }
+//      mini_draw_line(FromX, FromY, ToX,ToY, Colour15);
+    mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                    offy + (y0+POS_ADDER_X) / scl_factory, 
+                    offx + (x1+POS_ADDER_X) / scl_factorx, 
+                    offy + (y1+POS_ADDER_X) / scl_factory, 
+                    tempest_color_lut[Colour15],
+                    z<<4); // For ESP32
+
+
+                  }
    else
    {
-      v_directDraw32(FromX, FromY, ToX,ToY, (int)( ((float)Colour15)*(((float)z)/(15.0) )));
+//      mini_draw_line(x0, y0, x1,y1, (int)( ((float)Colour15)*(((float)z)/(15.0) )));
+    mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                    offy + (y0+POS_ADDER_X) / scl_factory, 
+                    offx + (x1+POS_ADDER_X) / scl_factorx, 
+                    offy + (y1+POS_ADDER_X) / scl_factory, 
+                    tempest_color_lut[Colour15],
+                    z<<4); // For ESP32
    }
    
   }
@@ -384,6 +486,7 @@ void close_page (void)
   // OR WAIT FOR VECTREX 1/50Hz HERE?
   if (gameCallback != 0) gameCallback(999);
   handle_input();
+  mini_end_frame();
 }
 
 
