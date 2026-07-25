@@ -603,6 +603,43 @@ int redbaron(void)
   sim_6502 ();
   return 0;
 }
+int asteroids(void)
+{
+  ProgName = "asteroids"; // defined in display.h
+  mem = (elem *) gameMemory;
+  game = pick_game (ProgName);
+
+  ALG_XMIN=0;
+  ALG_XMAX=1000;
+  ALG_YMIN=0;
+  ALG_YMAX=750;
+  ALG_MAX_X=1000; // wid
+  ALG_MAX_Y=750;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+
+  init_graphics ();
+  setAppFPS(62);
+  printf("Game picked: %i\n", game);
+  setup_game();
+  g_color_mode = 0;
+ 
+  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  save_A = 0;
+  save_X = 0;
+  save_Y = 0;
+  save_flags = 0;
+  save_totcycles = 0;
+  irq_cycle = 8192; // 
+
+  avg_reset_really();
+  sim_6502 ();
+  return 0;
+}
 
 
 

@@ -11,62 +11,19 @@ extern int SCREEN_HEIGHT;
 
 /*
 Bug:
-   "Battlezone" - wenn lines außerhalb starten - oder aufhören, dsann werden sie abgschitenn=?
-   line asm
-
-    pole position "same"? bei start x  <0?
 
     pole position flimmert bei game over und hat emu fps von 43?
 
-color hat keine brightness
+Highscore saving
+joystick
+settings save ti ini
+sound volume
 
-crash overlay asm
-Guru Meditation Error: Core  0 panic'ed (Load access fault). Exception was unhandled.
+TODO: Calibration Ala Tuts
 
-Core  0 register dump:
-MEPC    : 0x4ff21c1a  RA      : 0x4ff023dc  SP      : 0x4ff63300  GP      : 0x4ff23100  
---- 0x4ff21c1a: draw_line_yuv422_overlay at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/draw_line_yuv422_overlay.S:719
---- 0x4ff023dc: drawLine_raw at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/main.c:444
---- (inlined by) renderer_task at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/main.c:1158
-TP      : 0x4ff63410  T0      : 0x00000000  T1      : 0x00000000  T2      : 0xfffffff2  
-S0/FP   : 0x48185400  S1      : 0x00000320  A0      : 0x00000143  A1      : 0x00000143  
-A2      : 0x000001e0  A3      : 0x00000000  A4      : 0x00000000  A5      : 0x482036c0  
-A6      : 0x00000000  A7      : 0x000000c2  S2      : 0x00000254  S3      : 0x00000256  
-S4      : 0x00000143  S5      : 0x00000145  S6      : 0x000000c2  S7      : 0x00000255  
-S8      : 0x00000144  S9      : 0x00000255  S10     : 0x00000144  S11     : 0x00000001  
-T3      : 0x00000038  T4      : 0x00000254  T5      : 0xffffffff  T6      : 0x00000254  
-MSTATUS : 0x00011880  MTVEC   : 0x4ff00003  MCAUSE  : 0x00000005  MTVAL   : 0x00000254  
---- 0x4ff00003: _vector_table at ??:?
-MHARTID : 0x00000000  
-
-Stack memory:
-4ff63300: 0x4ff023dc 0x4ff40000 0xaaaaaaab 0x4ff58000 0x4ff40000 0x4ff58000 0xffffffff 0x000003e8
---- 0x4ff023dc: drawLine_raw at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/main.c:444
---- (inlined by) renderer_task at D:/ESP32/new/1/git/ESP32_P4_Vectrex/main/main.c:1158
-
-
-
-#define JOYSTICK_VERTICAL 1
-#define JOYSTICK_HORIZONTAL 1
-#define KEY_ ...
- 
-true / false or value
-int getInput(JOYSTICK_VERTICAL);
-
+ build a audio mixer for samples - which should be "stackable"
 int playWAV();
-
 setSoundCallback(*functionPointer)
-
-
-gives one FPS!
-
-		 && alg_curr_x >= 0 && alg_curr_x < ALG_MAX_X && alg_curr_y >= 0 && alg_curr_y < ALG_MAX_Y
-
- 
-
-
-
-
 
 
 1) 6909 to slow in new version
@@ -122,12 +79,6 @@ c)
 Try out ESP IDF 6 with 400 Mhz -> not working with my chip!!!
 
 
-Highscore saving
-joystick
-settings save ti ini
-sound volume
-
-TODO: Calibration Ala Tuts
 
 
 Pessimism to free DRAM
@@ -198,7 +149,6 @@ Should connect to COM 4, flash and play.
 #include <stdint.h>
 #include <stdbool.h>
 
-
 #include "board.h"
 #include "mire.h"
 #include "hdmi.h"
@@ -266,6 +216,9 @@ DRAM_ATTR int  brightnessAdjust = BRIGHTNESS_ADJUST;
 DRAM_ATTR int  brightnessLCD = DEFAULT_LCD_BRIGHTNESS;
 DRAM_ATTR int LCD_H_RES = 1280; // overwritten when screen is initialized
 DRAM_ATTR int LCD_V_RES = 720;
+
+DRAM_ATTR uint8_t  s_overlay_alpha_val = GLOBAL_OVERLAY_ALPHA;  /* representative raw alpha */
+
 //hdmi 1280x720
 //vdsl 480x800
 
@@ -288,15 +241,7 @@ typedef enum {
     FRAME_READY,         // fertig und wartet auf Renderer
     FRAME_RENDERING      // Renderer liest/zeichnet
 } frame_state_t;
-/*
-typedef struct {
-    int x0;
-    int y0;
-    int x1;
-    int y1;
-    uint8_t brightness;
-} vectrex_line_t;
-*/
+
 typedef struct {
     int16_t x0;
     int16_t y0;
@@ -332,7 +277,6 @@ DRAM_ATTR static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
 DRAM_ATTR static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
 DRAM_ATTR static int          s_build_frame_index = 0;   // Slot, in den der Emulator gerade schreibt
 
-
 /* ── Palettised overlay (draw optimisation) ───────────────────────────────── *
  * s_overlay_pal: 1 byte/pixel covering the active image region only (PSRAM).
  *   bit 7 = 1 → drawable pixel; palette index in bits 6..0
@@ -345,7 +289,6 @@ DRAM_ATTR uint8_t  s_overlay_palette_yuv[128][3];    /* {Y, U, V} full-range for
 DRAM_ATTR uint8_t  s_overlay_palette_yuv_ea[128][3]; /* {Y, U, V} ea-scaled for YUV undraw */
 
 DRAM_ATTR int      s_overlay_pal_n   = 0;
-DRAM_ATTR uint8_t  s_overlay_alpha_val = GLOBAL_OVERLAY_ALPHA;  /* representative raw alpha */
 DRAM_ATTR int      s_ov_off_x = 0;             /* active region x offset   */
 DRAM_ATTR int      s_ov_off_y = 0;             /* active region y offset   */
 DRAM_ATTR int      s_ov_w     = 0;             /* active region width      */
@@ -358,9 +301,9 @@ DRAM_ATTR int      s_ov_h     = 0;             /* active region height     */
 /* Task stacks pinned to internal SRAM so function calls never touch PSRAM. */
 #define EMU_STACK_SIZE  (8192+4096)
 #define REND_STACK_SIZE (8192+4096)
-static /*DRAM_ATTR*/ StackType_t  s_emu_stack[EMU_STACK_SIZE];
+static StackType_t  s_emu_stack[EMU_STACK_SIZE];
 static DRAM_ATTR StaticTask_t s_emu_tcb;
-static /*DRAM_ATTR*/ StackType_t  s_rend_stack[REND_STACK_SIZE];
+static StackType_t  s_rend_stack[REND_STACK_SIZE];
 static DRAM_ATTR StaticTask_t s_rend_tcb;
 
 // ----------------------------------------------------
@@ -426,9 +369,7 @@ IRAM_ATTR static bool lcd_on_refresh_done_cb(esp_lcd_panel_handle_t panel,
 // a line draw - ONE
 // used to draw and undraw (undraw brightness = 0)
 // at the moment a few different line-draws are possible
-// if RGS stays stable I will drop the YUV
-
-
+// all YUV
 IRAM_ATTR static inline void undrawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry, uint8_t brightness)
 {
     int b = brightness+brightnessAdjust;
@@ -436,7 +377,6 @@ IRAM_ATTR static inline void undrawLine_raw_color(int x0, int y0, int x1, int y1
 }
 IRAM_ATTR static inline void drawLine_raw_color(int x0, int y0, int x1, int y1, uint8_t colorPaletteEntry, uint8_t brightness)
 {
-//printf("Mini Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,colorPaletteEntry, brightness);
     int b = brightness+brightnessAdjust;
     draw_line_yuv422_color(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, colorPaletteEntry, b);
 }
@@ -451,7 +391,6 @@ IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint
     {
         undraw_line_yuv422_overlay(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b, s_overlay);
     }
-
 }
 IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
@@ -602,7 +541,6 @@ static void video_stop(esp_lcd_panel_handle_t panel)
     if (panel) esp_lcd_panel_del(panel);   // also deletes the inner DPI panel
     s_fb_front       = NULL;
     s_fb_back        = NULL;
-
 }
 
 static void lcd_deinit(void)
@@ -693,12 +631,11 @@ static void lcd_init(void)
     esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
     esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG();
     if (mode == VIDEO_OUT_LVDS)
-        dsi_bus_cfg.lane_bit_rate_mbps = 1500;//BOARD_DSI_LANE_MBPS;   // single source: board.h
+        dsi_bus_cfg.lane_bit_rate_mbps = BOARD_DSI_LANE_MBPS;   // single source: board.h
     else
-        dsi_bus_cfg.lane_bit_rate_mbps = 1200;   // single source: board.h
+        dsi_bus_cfg.lane_bit_rate_mbps = 1200;   // single source: custom
 
     ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&dsi_bus_cfg, &dsi_bus));
-
 
     const bool yuv422 = VIDEO_FB_YUV422; // 
     panel_handle = NULL;
@@ -708,7 +645,6 @@ static void lcd_init(void)
     LCD_H_RES = w;
     LCD_V_RES = h;
     s_dpi_panel = panel_handle;
-//    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_dpi_panel, true));
 
     // Register VSYNC callback
     esp_lcd_dpi_panel_event_callbacks_t cbs = {
@@ -744,7 +680,6 @@ IRAM_ATTR void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, u
 {
     int idx = s_build_frame_index;
     frame_slot_t *fs = &s_frames[idx];
-//printf("Mini Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,color, brightness);
 
     if (fs->state != FRAME_BUILDING) {
         // Slot ist nicht im BUILDING-Zustand – dann nichts schreiben
@@ -770,8 +705,6 @@ IRAM_ATTR void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, u
 
         l->brightness = brightness;
         l->color = color;
-
-        // Hash für diesen Frame laufend aktualisieren
     }
     else {
         // Buffer voll – zusätzliche Linien werden verworfen
@@ -780,13 +713,11 @@ IRAM_ATTR void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, u
     }
 }
 
-
 // Emulator calls this for each line in the CURRENT emulated frame
 IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness)
 {
     int idx = s_build_frame_index;
     frame_slot_t *fs = &s_frames[idx];
-//printf("Mini-Line:x0:%i, y0:%i, x1:%i, y1:%i, b:%i\n",x0,y0,x1,y1, brightness);
 
     if (fs->state != FRAME_BUILDING) {
         // Slot ist nicht im BUILDING-Zustand – dann nichts schreiben
@@ -812,9 +743,6 @@ IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness
         }
 
         l->brightness = brightness;
-
-        // Hash für diesen Frame laufend aktualisieren
-        //printf("Line added!\n");
     }
     else {
         // Buffer voll – zusätzliche Linien werden verworfen
@@ -880,6 +808,8 @@ IRAM_ATTR void mini_end_frame(void)
         }
         start = esp_timer_get_time();
     }
+    // keyboard / joystick events are "collected" once every round
+    // if we ever support a spinner - it might have to be called more often
     void readevents();
     readevents();
 
@@ -930,27 +860,22 @@ IRAM_ATTR void mini_end_frame(void)
 IRAM_ATTR static inline void undraw_previous_fb(int fb_index)
 {
     int count = s_fb_line_count[fb_index];
-    //    ESP_LOGI(TAG, "LINES TO ERASE: %i", count);
-
     for (int i = 0; i < count; ++i) {
         vectrex_line_t *l = &s_fb_lines[fb_index][i];
         undrawLine_raw((int16_t)l->x0, (int16_t)l->y0, (int16_t)l->x1,(int16_t)l->y1, l->brightness);
     }
-
     s_fb_line_count[fb_index] = 0;
 }
 IRAM_ATTR static inline void undraw_previous_fb_color(int fb_index)
 {
     int count = s_fb_line_count[fb_index];
-    //    ESP_LOGI(TAG, "LINES TO ERASE: %i", count);
-
     for (int i = 0; i < count; ++i) {
         vectrex_line_t *l = &s_fb_lines[fb_index][i];
         undrawLine_raw_color((int16_t)l->x0,(int16_t) l->y0, (int16_t)l->x1, (int16_t)l->y1, l->color, l->brightness);
     }
-
     s_fb_line_count[fb_index] = 0;
 }
+
 void set_yuv(int i, int r, int g, int b)
 {
     s_overlay_palette_yuv[i][0] = (uint8_t)((77*r + 150*g + 29*b) >> 8);
@@ -1141,10 +1066,11 @@ IRAM_ATTR static void application_task(void *arg)
         int asteroids(void); // bad roms
         int gravitar(void);
         int lunar(void); // Nw?
-        int redbaron(void); // Nw?
-        int spaceDuel(void); // Nw?
+        int redbaron(void); //
+        int spaceDuel(void); // 
         
         //tempest();
+        if (vecsimGame==1) asteroids();
         if (vecsimGame==1) gravitar();
         if (vecsimGame==2) blackwidow();
         if (vecsimGame==3) spaceDuel();
@@ -1232,8 +1158,6 @@ IRAM_ATTR static void renderer_task(void *arg)
         if (frame_idx < 0) {
             continue;
         }
-//        printf("line_count = %d\n", line_count);
-
 
         frame_slot_t *fs = &s_frames[frame_idx]; // frame_idx = 0-2
         fs->state = FRAME_RENDERING;
@@ -1272,7 +1196,6 @@ IRAM_ATTR static void renderer_task(void *arg)
             }
             else
             {
-                // printf("linecount: %i\n", line_count);
                 // non simple version
                 // check which lines are IDENTICAL to last draw
                 // check if any undelete lines interesect
@@ -1286,25 +1209,6 @@ IRAM_ATTR static void renderer_task(void *arg)
                 unsigned int old_count = s_fb_line_count[fb_idx];
                 vectrex_line_t *old_lines = s_fb_lines[fb_idx];
 
-                // Step 1: match old lines to new lines (exact match)
-                /*
-                memset(s_diff_old_matched, 0, old_count);
-                memset(s_diff_new_matched, 0, line_count);
-                for (int i = 0; i < old_count; i++) {
-                    for (int j = 0; j < line_count; j++) {
-                        if (!s_diff_new_matched[j] &&
-                            old_lines[i].x0 == fs->lines[j].x0 &&
-                            old_lines[i].y0 == fs->lines[j].y0 &&
-                            old_lines[i].x1 == fs->lines[j].x1 &&
-                            old_lines[i].y1 == fs->lines[j].y1 &&
-                            old_lines[i].brightness == fs->lines[j].brightness) {
-                            s_diff_old_matched[i] = 1;
-                            s_diff_new_matched[j] = 1;
-                            break;
-                        }
-                    }
-                }
-                */
                 // Step 1: match old lines to new lines — O(n) hash table
                 memset(s_match_ht, 0xFF, sizeof(s_match_ht)); // -1 = empty
                 for (int j = 0; j < line_count; j++) {
@@ -1334,14 +1238,12 @@ IRAM_ATTR static void renderer_task(void *arg)
                     }
                 }
 
-
                 // Step 2: compute bboxes for dirty (unmatched) old lines
                 int dirty_bbox_count = 0;
                 for (int i = 0; i < old_count; i++) {
                     if (!s_diff_old_matched[i])
                         s_diff_dirty_bboxes[dirty_bbox_count++] = line_compute_bbox(&old_lines[i]);
                 }
-
 
                 // Step 3: detect stable lines damaged by dirty bbox overlap
                 memset(s_diff_damaged, 0, old_count);
@@ -1374,23 +1276,6 @@ IRAM_ATTR static void renderer_task(void *arg)
                         }
                     }
                 }
-            /*
-                    // Step 4: undraw dirty old lines
-                    for (int i = 0; i < old_count; i++) {
-                        if (!s_diff_old_matched[i]) {
-                            vectrex_line_t *l = &old_lines[i];
-                            drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
-                        }
-                    }
-
-                    // Step 5a: undraw ALL damaged stable lines
-                    for (int i = 0; i < old_count; i++) {
-                        if (s_diff_old_matched[i] && s_diff_damaged[i]) {
-                            vectrex_line_t *l = &old_lines[i];
-                            drawLine_raw(l->x0, l->y0, l->x1, l->y1, 0);
-                        }
-                    }
-                    */
                 // Steps 4+5a: undraw dirty old lines AND damaged stable lines in one pass
                 for (int i = 0; i < old_count; i++) {
                     if (!s_diff_old_matched[i] || s_diff_damaged[i]) {
@@ -1398,7 +1283,6 @@ IRAM_ATTR static void renderer_task(void *arg)
                         undrawLine_raw((int16_t)l->x0, (int16_t)l->y0, (int16_t)l->x1, (int16_t)l->y1, l->brightness);
                     }
                 }
-
 
                 // Step 5b: redraw ALL damaged stable lines
                 for (int i = 0; i < old_count; i++) {
@@ -1470,7 +1354,6 @@ IRAM_ATTR static void renderer_task(void *arg)
                 unsigned int old_count = s_fb_line_count[fb_idx];
                 vectrex_line_t *old_lines = s_fb_lines[fb_idx];
 
-                // Step 1: match old lines to new lines (exact match)
                 // Step 1: match old lines to new lines — O(n) hash table
                 memset(s_match_ht, 0xFF, sizeof(s_match_ht)); // -1 = empty
                 for (int j = 0; j < line_count; j++) {
@@ -1500,7 +1383,6 @@ IRAM_ATTR static void renderer_task(void *arg)
                         h = (h + 1) & MATCH_HT_MASK;
                     }
                 }
-
 
                 // Step 2: compute bboxes for dirty (unmatched) old lines
                 int dirty_bbox_count = 0;
@@ -1548,7 +1430,6 @@ IRAM_ATTR static void renderer_task(void *arg)
                         undrawLine_raw_color(l->x0, l->y0, l->x1, l->y1, l->color, l->brightness);
                     }
                 }
-
 
                 // Step 5b: redraw ALL damaged stable lines
                 for (int i = 0; i < old_count; i++) {
@@ -1745,7 +1626,7 @@ void drawOverlayPal(uint8_t *dest)
                 row_dst[px * 2 + 3] = (uint8_t)vv;
             }
         }
-#else
+#else // else is RGB
         uint8_t *row_dst = dest + ((size_t)dst_y * LCD_H_RES + s_ov_off_x) * 3;
 
         for (int x = 0; x < s_ov_w; x++, row_dst += 3)
@@ -1846,27 +1727,11 @@ static int build_palette_freq(
     }
     return n;
 }
+
 void clearFramebuffers()
 {
-
-DRAM_ATTR static vectrex_line_t s_fb_lines[NUM_FB][MAX_LINE_BUFFER]; // these are the last drawn lines by the renderer - used to undraw!
-DRAM_ATTR static int            s_fb_line_count[NUM_FB] = {0};
-DRAM_ATTR static uint8_t     s_diff_old_matched[MAX_LINE_BUFFER];
-DRAM_ATTR static uint8_t     s_diff_new_matched[MAX_LINE_BUFFER];
-DRAM_ATTR static uint8_t     s_diff_damaged[MAX_LINE_BUFFER];
-DRAM_ATTR static line_bbox_t s_diff_dirty_bboxes[MAX_LINE_BUFFER];
-
-// ----------------------------------------------------
-// Emulator frame storage (independent of framebuffers)
-// ----------------------------------------------------
-
-// Drei logische Frames als Ringpuffer
-DRAM_ATTR static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
-
-//    for (int i=0;i<NUM_FRAME_SLOTS;i++;) s_frames[i].linecount=0;
     frames_init();
     for (int i=0;i<NUM_FB;i++) s_fb_line_count[i]=0;
-
 
     #if VIDEO_FB_YUV422
         init_yuv422_framebuffer(s_fb_front, LCD_H_RES, LCD_V_RES);
@@ -1875,10 +1740,6 @@ DRAM_ATTR static frame_slot_t s_frames[NUM_FRAME_SLOTS]; // 3 frames
         memset(s_fb_front, 0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
         memset(s_fb_back,  0x00, (LCD_H_RES) * (LCD_V_RES) * sizeof(uint8_t)*VIDEO_FB_BPP);
     #endif
-
-
-
-
 }
 
 // returns pointer
@@ -2171,7 +2032,6 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_ERROR);  
 #endif
 
-
     board_assert_vcv_noe();
     board_enable_dsi_phy_power();
 
@@ -2222,7 +2082,6 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
 
 
     ESP_LOGI(TAG, "VIDEO_FB_BPP: %i", VIDEO_FB_BPP);
-
     ESP_LOGI(TAG, "LCD_H_RES: %i, LCD_V_RES: %i", LCD_H_RES, LCD_V_RES);
 
     // Logische Frame-Slots initialisieren
@@ -2241,7 +2100,6 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
 #endif
 
     ESP_ERROR_CHECK(audio_init());
-
 
     if (mode == VIDEO_OUT_HDMI)
     {
@@ -2321,6 +2179,7 @@ void toggleOverlay()
 {
 	if (overlayEnabled) overlayEnabled=0; else overlayEnabled = 1; 
 
+    // loading a disable overlay, frees all buffers and does not load...
     if (mode == VIDEO_OUT_HDMI)
         loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
     else

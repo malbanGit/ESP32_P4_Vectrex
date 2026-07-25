@@ -489,18 +489,18 @@ FLASH_ROM_ATTR tag_info lunar_lander_tags [] =
 
 FLASH_ROM_ATTR rom_info2 asteroids_roms2 [] =
 {
-  { "/sdcard/roms/asteroid2.zip", "035145-02.ef2", 0x6800, 0x0800, 0, 0x5318BE7F },
-  { "/sdcard/roms/asteroid2.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
-  { "/sdcard/roms/asteroid2.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
-  { "/sdcard/roms/asteroid2.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
+  { "/sdcard/roms/ast2_.zip", "035145-02.ef2", 0x6800, 0x0800, 0, 0x5318BE7F },
+  { "/sdcard/roms/ast2.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
+  { "/sdcard/roms/ast2.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
+  { "/sdcard/roms/ast2.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
   { NULL,   0,      0,           0, 0 }
 };
 FLASH_ROM_ATTR rom_info2 asteroids_roms3 [] =
 {
-  { "/sdcard/roms/asteroid2.zip", "035145-02.ef2", 0x6800, 0x0800, 0, 0x5318BE7F },
-  { "/sdcard/roms/asteroid2.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
-  { "/sdcard/roms/asteroid.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
-  { "/sdcard/roms/asteroid.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
+  { "/sdcard/roms/ast2a.zip", "035145-02.ef2", 0x6800, 0x0800, 0, 0x5318BE7F },
+  { "/sdcard/roms/ast2a.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
+  { "/sdcard/roms/ast.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
+  { "/sdcard/roms/ast.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
   { NULL,   0,      0,           0, 0 }
 };
 /*
