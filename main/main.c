@@ -1054,27 +1054,23 @@ void yuv_palette_init(void)
 // Tasks
 // ----------------------------------------------------
 void mini_taskloop(int cycles);
-int vecsimGame=0;
+int vecsimGame=1;
 #define MAX_VECSIM_GAME 7
 IRAM_ATTR static void application_task(void *arg)
 {
     while (1) 
     {
-        // void sim_6502 (void);
-        //  sim_6502 ();
         int tempest(void); //ok
         int battlezone(void); //ok
         int blackwidow(void); //ok
-        int deluxe(void); // nw
+        int deluxe(void); // rand seems broken
         int asteroids(void); // crashes while playing
         int gravitar(void); //ok
         int lunar(void); // to slow
         int redbaron(void); // ok
         int spaceDuel(void); // ok
         
-        //tempest();
 
-        if (vecsimGame==1) deluxe();
         if (vecsimGame==1) tempest();
         if (vecsimGame==2) gravitar();
         if (vecsimGame==3) blackwidow();
@@ -2385,12 +2381,20 @@ IRAM_ATTR void readevents()
 	{
 		if (modeSwitchActive==0)
 		{
-			modeSwitchActive = 3;
+            audio_set_callback(NULL, NULL);
+
+            modeSwitchActive = 3;
             vecsimGame++;
             if (vecsimGame==MAX_VECSIM_GAME) 
             {
                 setAppFPS(MAX_EMU_FPS);
                 vecsimGame=0;
+            }
+            if (vecsimGame==0)
+            {
+                // back to vectrex
+                void callbackAY(void *userdata, int16_t *stream, int length);
+                audio_set_callback(callbackAY, NULL);
             }
             vecsimSigDone=1;
             clearFramebuffers();

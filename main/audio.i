@@ -328,9 +328,6 @@ void audio_deinit(void)
 	}
 }
 
-//DRAM_ATTR int16_t audioBuffer[AUDIO_FRAME_SAMPLES];
-/* Callback-Typ: mono, 16 Bit, length = Anzahl Samples */
-typedef void (*audio_sample_callback_t)(void *userdata, int16_t *stream, int length);
 
 /* Callback setzen (z. B. e8910_callback) */
 void audio_set_callback(audio_sample_callback_t cb, void *userdata);

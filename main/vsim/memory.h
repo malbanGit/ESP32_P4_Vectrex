@@ -1,3 +1,4 @@
+#pragma once
 /*
  * memory.h: memory and I/O functions for Atari Vector game simulator
  *

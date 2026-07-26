@@ -27,6 +27,7 @@
 #include "..\defines.h"
 #include "memory.h"
 #include "game.h"
+#include "pokey.h"
 
 
 
@@ -901,7 +902,9 @@ printf("Game setup.\n");
 #endif
 
       
-      
+        pokey_set_count (2);
+        pokey_init();
+
       optionreg [0] = 0x02;//N13 INVERTED and backwards
       optionreg [1] = 0x00;//L12 INVERTED and backwards
 /*

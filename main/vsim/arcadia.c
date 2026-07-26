@@ -1,4 +1,5 @@
 #include "../defines.h"
+#include "pokey.h"
 extern int vecsimSigDone;
   void avg_reset_really();
 
@@ -348,6 +349,11 @@ int tempest(void)
   init_graphics();
   setAppFPS(60);
   setup_game();
+  void audio_set_callback(audio_sample_callback_t cb, void *userdata);
+  //void callbackPokey(void *userdata, uint8_t *stream, int length);
+  void callbackPokey(void *userdata, int16_t *stream, int length);
+  audio_set_callback(callbackPokey, NULL);
+
   g_color_mode = 1;
   yuv_palette_init();
   // from pokey.c

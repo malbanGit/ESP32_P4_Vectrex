@@ -1,526 +1,715 @@
-#include "../defines.h"
-/* from BZ disasm
-
-https://6502disassembly.com/va-battlezone/Battlezone.html
-
-POKEY audio has four channels, with two 8-bit I/O locations per channel (AUDFn
-                   ; and AUDCn).  The sound effects defined by this data are played on channels 1
-                   ; and 2.
-                   ; 
-                   ; The AUDFn setting determines frequency.  Larger value == lower pitch.
-                   ; 
-                   ; The AUDCn value is NNNFVVVV, where N is a noise / distortion setting, F is
-                   ; "forced volume-only output" enable, and V is the volume level.
-                   ; 
-                   ; In the table below, each chunk has 4 values:
-                   ;  +00 initial value
-                   ;  +01 duration
-                   ;  +03 increment
-                   ;  +04 repetition count
-                   ; 
-                   ; The sound specified by the value is played until the duration reaches zero. 
-                   ; If the repetition count is nonzero, the value is increased or decreased by the
-                   ; increment, and the duration is reset.  When the repetition count reaches zero,
-                   ; the next chunk is loaded.  If the chunk has the value $00, the sequence ends. 
-                   ; The counters are updated by the 250Hz NMI.
-                   ; 
-                   ; Because AUDFn and AUDCn are specified by different chunks, care must be taken
-                   ; to ensure the durations run out at the same time.
-                   ; 
-*/                   
-                   
-                   
-
-/*
- * pokey.c: POKEY chip simulation functions
- *
- * Copyright 1991, 1992, 1993, 1996 Hedley Rainnie and Eric Smith
- *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License as published by
- *    the Free Software Foundation; either version 2 of the License, or
- *    (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You should have received a copy of the GNU General Public License
- *    along with this program; if not, write to the Free Software
- *    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- *
- * $Id: pokey.c 2 2003-08-20 01:51:05Z eric $
- */
+// license:BSD-3-Clause
+// copyright-holders:Brad Oliver, Eric Smith, Juergen Buchmueller
+// POKEY chip emulator 4.9 — adapted from libvgm/ValleyBell for ESP32-P4 vsim.
+// Stripped of libvgm framework; poly tables promoted to shared statics;
+// voltab removed (LEGACY_LINEAR only). Interface unchanged from original vsim.
 
 #include <stdlib.h>
-#include <stdio.h>
+#include <math.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
 
-#include "memory.h"
+#include "../defines.h"
 #include "pokey.h"
-
-
-#define MAX_REG 16
-
-
-/* read registers */
-#define POT0 0x0
-#define POT1 0x1
-#define POT2 0x2
-#define POT3 0x3
-#define POT4 0x4
-#define POT5 0x5
-#define POT6 0x6
-#define POT7 0x7
-#define ALLPOT 0x8
-#define KBCODE 0x9
-#define RANDOM 0xa
-#define IRQSTAT 0xe
-#define SKSTAT 0xf
-
-/* write registers */
-#define AUDF1 0x0
-#define AUDC1 0x1
-#define AUDF2 0x2
-#define AUDC2 0x3
-#define AUDF3 0x4
-#define AUDC3 0x5
-#define AUDF4 0x6
-#define AUDC4 0x7
-#define AUDCTL 0x8
-#define STIMER 0x9
-#define SKRES 0xa
-#define POTGO 0xb
-#define SEROUT 0xd
-#define IRQEN 0xe
-#define SKCTL 0xf
-
-
-// used by e.g. tempest
-// enable 1
-// disable 0
-
-
-
-
-FLASH_ROM_ATTR char *pokey_rreg_name [] =
-{
-  "POT0", "POT1", "POT2", "POT3", 
-  "POT4", "POT5", "POT6", "POT7", 
-  "ALLPOT", "KBCODE", "RANDOM", "unused0xB", 
-  "unused0xC", "unused0xD", "IRQSTAT", "SKSTAT"
-};
-
-FLASH_ROM_ATTR char *pokey_wreg_name [] =
-{
-  "AUDF1", "AUDC1", "AUDF2", "AUDC2",
-  "AUDF3", "AUDC3", "AUDF4", "AUDC4", 
-  "AUDCTL", "STIMER", "SKRES", "POTGO",
-  "unused0xC", "SEROUT", "IRQEN", "SKCTL" 
-};
-
-
-DRAM_ATTR byte pokey_rreg [MAX_POKEY][MAX_REG];
-
-DRAM_ATTR byte pokey_wreg [MAX_POKEY][MAX_REG];
-
-#ifdef POKEY_DEBUG
-byte pokey_wreg_inited [MAX_POKEY][MAX_REG] = { { 0 } };
-#endif
 #include "game.h"
-static int oldSpinner = 0;
 
-static int spinnerSum = 0;
+/* ---- type aliases matching libvgm conventions ---- */
+typedef uint8_t  UINT8;
+typedef uint16_t UINT16;
+typedef uint32_t UINT32;
+typedef int16_t  INT16;
+typedef int32_t  INT32;
+#define INLINE static inline
 
-byte pokey_read (int pokeynum, int reg, int PC, unsigned long cyc)
-{
-  switch (reg)
-    {
-    case RANDOM:
-      if ((pokey_wreg [pokeynum] [SKCTL] & 0x03) != 0x00)
-        pokey_rreg [pokeynum] [RANDOM] = (rand () >> 12) & 0xff;
-      if ((game == TEMPEST) && (pokeynum==1)) return 0xff;
-      return (pokey_rreg [pokeynum] [RANDOM]);
-    case ALLPOT:
-      if ((game == TEMPEST) && (pokeynum==0)) 
-      {
-        // joystick.x = 30 - 127
-        // joystick.x = -30 - -127
-        signed char spin = (signed char)joystick.x;
-        
-        if (spin >0)
-          spin = (spin-30)/30;
-        else if (spin <0)
-          spin = (spin+30)/30;
-        
-        // spin something like -3 -> +3
-        
-        spinnerSum += spin;
-        if (spinnerSum>7)
-        {
-          oldSpinner+=spin;
-          spinnerSum-=7;
-        }
-        if (spinnerSum<-7)
-        {
-          oldSpinner+=spin;
-          spinnerSum+=7;
-        }
-/*        
-    joystick.x = currentJoy1X;  // 0x80   0  0x7f
+/* ---- POKEY constants ---- */
+#define FREQ_17_EXACT  1789790u   /* 1.79 MHz Atari clock */
+#define POKEY_CHANNELS 4
+#define POKEY_DEFAULT_GAIN (32767/11/4)
 
+#define CHAN1 0
+#define CHAN2 1
+#define CHAN3 2
+#define CHAN4 3
 
-                     ; BITS 0-3: Encoder Wheel
-                     ; BIT  4  : Cocktail detection
-                     ; BIT  5  : Switch #1 at D/E2
-                     ; BITS 6-7: Unused.
+/* AUDCx bits */
+#define NOTPOLY5    0x80
+#define POLY4       0x40
+#define PURE        0x20
+#define VOLUME_ONLY 0x10
+#define VOLUME_MASK 0x0f
 
-*/                     
-        int ret = 0;
-        ret = oldSpinner & 0x0f;
-        return ret;
-      }
-      else if ((game == TEMPEST) && (pokeynum==1)) 
-      {
-/*        
+/* AUDCTL bits */
+#define POLY9       0x80
+#define CH1_HICLK   0x40
+#define CH3_HICLK   0x20
+#define CH12_JOINED 0x10
+#define CH34_JOINED 0x08
+#define CH1_FILTER  0x04
+#define CH2_FILTER  0x02
+#define CLK_15KHZ   0x01
 
+/* IRQ bits */
+#define IRQ_BREAK   0x80
+#define IRQ_KEYBD   0x40
+#define IRQ_SERIN   0x20
+#define IRQ_SEROR   0x10
+#define IRQ_SEROC   0x08
+#define IRQ_TIMR4   0x04
+#define IRQ_TIMR2   0x02
+#define IRQ_TIMR1   0x01
 
-    GAME OPTIONS:
-    (4-position switch at D/E2 on Math Box PCB)
+/* SKSTAT bits */
+#define SK_FRAME    0x80
+#define SK_KBERR    0x40
+#define SK_OVERRUN  0x20
+#define SK_SERIN    0x10
+#define SK_SHIFT    0x08
+#define SK_KEYBD    0x04
+#define SK_BUSY     0x02
 
-    1   2   3   4                   Meaning
-    -------------------------------------------------------------------------
-        Off                         Minimum rating range: 1, 3, 5, 7, 9
-        On                          Minimum rating range tied to high score
-            Off Off                 Medium difficulty (see notes)
-            Off On                  Easy difficulty (see notes)
-            On  Off                 Hard difficulty (see notes)
-            On  On                  Medium difficulty (see notes)
-            
-            
-                     ; BIT 0: D/E2 switch #2
-                     ; BIT 1: D/E2 switch #3
-                     ; BIT 2: D/E2 switch #4
-                     ; BIT 3: Fire Button
-                     ; BIT 4: Zapper Button
-                     ; BIT 5: Start Player 1 Button
-                     ; BIT 6: Start Player 2 Button
-                     ; BIT 7: Unused.
-*/                     
-        int ret = 0;
-        if (switches [0].fire) ret = ret | 0x04; // EASY
-        if (switches [0].fire) ret = ret | 0x08;
-        if (switches [0].thrust) ret = ret | 0x10;
-        if (start1) ret = ret | 0x20;
-        if (start2) ret = ret | 0x40;
+/* SKCTL bits */
+#define SK_BREAK    0x80
+#define SK_OCLK     0x60
+#define SK_ICLK     0x30
+#define SK_ASYNC    0x10
+#define SK_TWOTONE  0x08
+#define SK_PADDLE   0x04
+#define SK_RESET    0x03
+#define SK_KEYSCAN  0x02
+#define SK_DEBOUNCE 0x01
 
-        return ret;
-      }
-      else if (pokeynum==0)
-        return 0xf;
-      else return 0;
-    default:
-#ifdef POKEY_DEBUG
-      printf ("pokey %d read reg %1x (%s)\n", pokeynum, reg, pokey_rreg_name [reg]);
-#endif
-      return (pokey_rreg [pokeynum] [RANDOM]);
-    }
-}
+/* read register addresses */
+#define ALLPOT_C 0x08
+#define KBCODE_C 0x09
+#define RANDOM_C 0x0A
+#define SERIN_C  0x0D
+#define IRQST_C  0x0E
+#define SKSTAT_C 0x0F
+
+/* write register addresses */
+#define AUDF1_C  0x00
+#define AUDC1_C  0x01
+#define AUDF2_C  0x02
+#define AUDC2_C  0x03
+#define AUDF3_C  0x04
+#define AUDC3_C  0x05
+#define AUDF4_C  0x06
+#define AUDC4_C  0x07
+#define AUDCTL_C 0x08
+#define STIMER_C 0x09
+#define SKREST_C 0x0A
+#define POTGO_C  0x0B
+#define SEROUT_C 0x0D
+#define IRQEN_C  0x0E
+#define SKCTL_C  0x0F
+
+#define DIV_64  28
+#define DIV_15  114
+#define CLK_1   0
+#define CLK_28  1
+#define CLK_114 2
+
+/* ---- shared poly tables (same values for every POKEY instance) ---- */
+static UINT32 s_poly4 [0x0f];
+static UINT32 s_poly5 [0x1f];
+static UINT32 s_poly9 [0x1ff];
+HUGE_DATA_LOCATION UINT32 s_poly17[0x1ffff];
+static bool s_poly_inited = false;
+
+/* ---- per-channel state ---- */
+typedef struct pokey_device pokey_device;
 
 typedef struct {
-  uint8_t hi;
-  uint8_t lo;
-} FreqTrans;
+    pokey_device *m_parent;
+    UINT8  m_INTMask;
+    UINT8  m_AUDF;
+    UINT8  m_AUDC;
+    INT32  m_borrow_cnt;
+    INT32  m_counter;
+    UINT8  m_output;
+    UINT8  m_filter_sample;
+} pokey_channel;
 
-// distortion 10
-// 8bit
+/* ---- per-chip state (voltab removed; poly tables are globals) ---- */
+struct pokey_device {
+    UINT8  m_muted[POKEY_CHANNELS];
+    pokey_channel m_channel[POKEY_CHANNELS];
 
-FreqTrans pt[]=
-{
-  {000,000}, // 0
-  {000,015}, // 1
-  {000,016}, // 2
-  {000,017}, // 3
-  {000,020}, // 4
-  {000,021}, // 5
-  {000,022}, // 6
-  {000,023}, // 7
-  {000,024}, // 8
-  {000,025}, // 9
-  {000,026}, // a
-  {000,027}, // b
-  {000,030}, // c
-  {000,031}, // d; --------------------  
-  {000,033}, // e - 0 1 5 3 ; C, Ocatve 7
-  {000,034}, // f - 0 1 5 3 ; B, Ocatve 7
-  {000,036}, // 10 - 0 1 5 3 ; A#, Ocatve 7
-  {000,040}, // 11 - 0 1 5 3 ; A, Ocatve 7
-  {000,042}, // 12 - 0 1 5 3 ; G#, Ocatve 7
-  {000,044}, // 13 - 0 1 5 3 ; G, Ocatve 7
-{000,045}, // 14
-  {000,046}, // 15 - 0 1 5 3 ; F#, Ocatve 7
-  {000,050}, // 16 - 0 1 5 3 ; F, Ocatve 7
-  {000,052}, // 17 - 0 1 5 3 ; E, Ocatve 7
-{000,053}, // 18
-  {000,055}, // 19 - 0 1 5 3 ; D#, Ocatve 7
-  {000,060}, // 1a - 0 1 5 3 ; D, Ocatve 7
-{000,061}, // 1b
-  {000,062}, // 1c - 0 1 5 3 ; C#, Ocatve 7; --------------------  
-  {000,065}, // 1d - 0 1 5 3 ; C, Ocatve 6
-  {000,067}, // 1e
-  {000,071}, // 1f - 0 1 5 3 ; B, Ocatve 6
-{000,072}, // 20
-  {000,074}, // 21 - 0 1 5 3 ; A#, Ocatve 6
-{000,076}, // 22
-  {001,000}, // 23 - 0 1 5 3 ; A, Ocatve 6
-{001,000}, // 24
-  {001,003}, // 25 - 0 1 5 3 ; G#, Ocatve 6
-{001,004}, // 26
-{001,005}, // 27
-  {001,007}, // 28 - 0 1 5 3 ; G, Ocatve 6
-{001,011}, // 29
-  {001,014}, // 2a - 0 1 5 3 ; F#, Ocatve 6
-{001,015}, // 2b
-{001,016}, // 2c
-  {001,020}, // 2d - 0 1 5 3 ; F, Ocatve 6
-{001,022}, // 2e
-  {001,025}, // 2f - 0 1 5 3 ; E, Ocatve 6
-{001,027}, // 30
-{001,030}, // 31
-  {001,032}, // 32 - 0 1 5 3 ; D#, Ocatve 6
-{001,033}, // 33
-{001,035}, // 34
-  {001,037}, // 35 - 0 1 5 3 ; D, Ocatve 6
-{001,040}, // 36
-{001,041}, // 37
-{001,043}, // 38
-  {001,045}, // 39 - 0 1 5 3 ; C#, Ocatve 6
-{001,047}, // 3a
-{001,051}, // 3b ; --------------------  
-  {001,053}, // 3c - 0 1 5 3 ; C, Ocatve 5
-{001,053}, // 3d
-{001,055}, // 3e
-{001,057}, // 3f
-  {001,061}, // 40 - 0 1 5 3 ; B, Ocatve 5
-{001,063}, // 41
-{001,065}, // 42
-{001,067}, // 43
-  {001,070}, // 44 - 0 1 5 3 ; A#, Ocatve 5
-{001,072}, // 45
-{001,074}, // 46
-{001,076}, // 47
-  {001,077}, // 48 - 0 1 5 3 ; A, Ocatve 5
-{002,002}, // 49
-{002,004}, // 4a
-{002,006}, // 4b
-  {002,007}, // 4c - 0 1 5 3 ; G#, Ocatve 5
-{002,011}, // 4d
-{002,013}, // 4e
-{002,014}, // 4f
-{002,015}, // 50
-  {002,017}, // 51 - 0 1 5 3 ; G, Ocatve 5
-{002,021}, // 52
-{002,023}, // 53
-{002,025}, // 54
-  {002,027}, // 55 - 0 1 5 3 ; F#, Ocatve 5
-{002,031}, // 56
-{002,033}, // 57
-{002,034}, // 58
-{002,036}, // 59
-{002,037}, // 5a
-  {002,040}, // 5b - 0 1 5 3 ; F, Ocatve 5
-{002,042}, // 5c
-{002,044}, // 5d
-{002,046}, // 5e
-{002,050}, // 5f
-  {002,052}, // 60 - 0 1 5 3 ; E, Ocatve 5
-{002,054}, // 61
-{002,056}, // 62
-{002,060}, // 63
-{002,061}, // 64
-{002,062}, // 65
-  {002,064}, // 66 - 0 1 5 3 ; D#, Ocatve 5
-{002,066}, // 67
-{002,070}, // 68
-{002,072}, // 69
-{002,073}, // 6a
-{002,075}, // 6b
-  {002,076}, // 6c - 0 1 5 3 ; D, Ocatve 5
-{003,000}, // 6d
-{003,002}, // 6e
-{003,004}, // 6f
-{003,006}, // 70
-{003,010}, // 71
-  {003,012}, // 72 - 0 1 5 3 ; C#, Ocatve 5
-{003,014}, // 73
-{003,016}, // 74
-{003,020}, // 75
-{003,022}, // 76
-{003,023}, // 77
-{003,024}, // 78
-  {003,026}, // 79 - 0 1 5 3 ; C, Ocatve 4
-{003,030}, // 7a
-{003,032}, // 7b
-{003,034}, // 7c
-{003,036}, // 7d
-{003,037}, // 7e
-{003,041}, // 7f
-  {003,042}, // 80 - 0 1 5 3 ; B, Ocatve 4
-{003,043}, // 7f
-{003,045}, // 7f
-{003,047}, // 7f
-{003,052}, // 7f
-{003,054}, // 7f
-{003,056}, // 7f
-{003,057}, // 7f
-  {003,060}, // 88 - 0 1 5 3 ; A#, Ocatve 4
-{003,062}, // 7f
-{003,064}, // 7f
-{003,066}, // 7f
-{003,071}, // 7f
-{003,073}, // 7f
-{003,074}, // 7f
-{003,074}, // 7f
-  {003,076}, // 90 - 0 1 5 3 ; A, Ocatve 4
-{004,001}, // 7f
-{004,003}, // 7f
-{004,005}, // 7f
-{004,007}, // 7f
-{004,011}, // 7f
-{004,012}, // 7f
-{004,013}, // 7f
-{004,014}, // 7f
-  {004,015}, // 99 - 0 1 5 3 ; G#, Ocatve 4
-{004,017}, // 7f
-{004,021}, // 7f
-{004,022}, // 7f
-{004,024}, // 7f
-{004,025}, // 7f
-{004,027}, // 7f
-{004,031}, // 7f
-{004,033}, // 7f
-  {004,035}, // A2 - 0 1 5 3 ; G, Ocatve 4
-{004,037}, // 7f
-{004,041}, // 7f
-{004,043}, // 7f
-{004,044}, // 7f
-{004,046}, // 7f
-{004,047}, // 7f
-{004,051}, // 7f
-{004,052}, // 7f
-{004,054}, // 7f
-{004,055}, // 7f
-  {004,056}, // AD - 0 1 5 3 ; F#, Ocatve 4
-{004,060}, // 7f
-{004,062}, // 7f
-{004,064}, // 7f
-{004,066}, // 7f
-{004,070}, // 7f
-{004,072}, // 7f
-{004,074}, // 7f
-{004,076}, // 7f
-  {005,000}, // B6 - 0 1 5 3 ; F, Ocatve 4
-{005,002}, // 7f
-{005,004}, // 7f
-{005,006}, // 7f
-{005,010}, // 7f
-{005,012}, // 7f
-{005,014}, // 7f
-{005,016}, // 7f
-{005,017}, // 7f
-{005,020}, // 7f
-{005,021}, // 7f
-  {005,023}, // C1 - 0 1 5 3 ; E, Ocatve 4
-{005,025}, // 7f
-{005,026}, // 7f
-{005,030}, // 7f
-{005,032}, // 7f
-{005,034}, // 7f
-{005,036}, // 7f
-{005,041}, // 7f
-{005,043}, // 7f
-{005,045}, // 7f
-{005,046}, // 7f
-  {005,050}, // CC - 0 1 5 3 ; D#, Ocatve 4
-{005,051}, // 7f
-{005,053}, // 7f
-{005,055}, // 7f
-{005,056}, // 7f
-{005,060}, // 7f
-{005,061}, // 7f
-{005,062}, // 7f
-{005,064}, // 7f
-{005,066}, // 7f
-{005,070}, // 7f
-{005,072}, // 7f
-{005,073}, // 7f
-  {005,075}, // D9 - 0 1 5 3 ; D, Ocatve 4
-{006,000}, // 7f
-{006,001}, // 7f
-{006,003}, // 7f
-{006,005}, // 7f
-{006,007}, // 7f
-{006,011}, // 7f
-{006,013}, // 7f
-{006,014}, // 7f
-{006,016}, // 7f
-{006,017}, // 7f
-{006,021}, // 7f
-{006,022}, // 7f
-  {006,024}, // E6 - 0 1 5 3 ; C#, Ocatve 4
-{006,026}, // 7f
-{006,027}, // 7f
-{006,031}, // 7f
-{006,032}, // 7f
-{006,034}, // 7f
-{006,036}, // 7f
-{006,040}, // 7f
-{006,041}, // 7f
-{006,043}, // 7f
-{006,045}, // 7f
-{006,047}, // 7f
-{006,051}, // 7f
-  {006,054}, // F3 - 0 1 5 3 ; C, Ocatve 3
-{006,056}, // 7f
-{006,061}, // 7f
-{006,063}, // 7f
-{006,064}, // 7f
-{006,066}, // 7f
-{006,070}, // 7f
-{006,071}, // 7f
-{006,072}, // 7f
-{006,073}, // 7f
-{006,074}, // 7f
-{006,075}, // 7f
-{006,077} // 7f
+    UINT32 m_out_raw;
+    UINT8  m_old_raw_inval;
+    double m_out_filter;
+
+    INT32  m_clock_cnt[3];
+    UINT32 m_p4, m_p5, m_p9, m_p17;
+
+    UINT8  m_POTx[8];
+    UINT8  m_AUDCTL;
+    UINT8  m_ALLPOT;
+    UINT8  m_KBCODE;
+    UINT8  m_SERIN;
+    UINT8  m_SEROUT;
+    UINT8  m_IRQST;
+    UINT8  m_IRQEN;
+    UINT8  m_SKSTAT;
+    UINT8  m_SKCTL;
+
+    UINT8  m_pot_counter;
+    UINT8  m_kbd_cnt;
+    UINT8  m_kbd_latch;
+    UINT8  m_kbd_state;
+
+    UINT16 m_serin_shift;
+    UINT16 m_serout_shift;
+    UINT8  m_ser_iclk;
+    UINT8  m_ser_oclk;
+    UINT8  m_serout_full;
+    UINT8  m_sod_twotone;
+
+    double m_clock_period;
+    int    m_icount;
 };
-void pokey_write (int pokeynum, int reg, byte val, int PC, unsigned long cyc)
+
+static DRAM_ATTR pokey_device s_dev[MAX_POKEY];
+static int s_pokey_count = 1;  /* active chips — set by pokey_set_count() */
+
+/* ---- forward declarations ---- */
+static void pokey_dev_write(pokey_device *d, UINT8 offset, UINT8 data);
+static void pokey_potgo(pokey_device *d);
+static void pokey_step_one_clock(pokey_device *d);
+static void pokey_step_pot(pokey_device *d);
+static void pokey_step_keyboard(pokey_device *d);
+INLINE void pokey_process_channel(pokey_device *d, int ch);
+
+/* ---- channel helpers ---- */
+INLINE void pokey_channel_sample(pokey_channel *c)
 {
-#ifdef POKEY_DEBUG
-  if (! pokey_wreg_inited [pokeynum] [reg])
-    {
-      pokey_wreg_inited [pokeynum] [reg] = 1;
-      pokey_wreg [pokeynum] [reg] = val + 1;  /* make sure we log it */
-    }
-#endif
-//      printf ("pokey %d reg %1x (%s) write data %02x\n", pokeynum, reg, pokey_wreg_name [reg], val);
-  
-/* BZ
-                   POKEY_AUDF1     .eq     $1820             ;W audio channel 1 frequency
-                   POKEY_AUDC1     .eq     $1821             ;W audio channel 1 control
-                   POKEY_AUDF2     .eq     $1822             ;W audio channel 2 frequency
-                   POKEY_AUDC2     .eq     $1823             ;W audio channel 2 control
-                   POKEY_AUDF3     .eq     $1824             ;W audio channel 3 frequency
-                   POKEY_AUDC3     .eq     $1825             ;W audio channel 3 control
-                   POKEY_AUDF4     .eq     $1826             ;W audio channel 4 frequency
-                   POKEY_AUDC4     .eq     $1827             ;W audio channel 4 control
-                   POKEY_ALLPOT    .eq     $1828             ;R read 8 line POT port state
-                   POKEY_AUDCTL    .eq     $1828             ;W audio control
-                   POKEY_RANDOM    .eq     $182a             ;R random number
-                   POKEY_POTGO     .eq     $182b             ;W start POT scan sequence
-                   POKEY_SKCTL     .eq     $182f             ;W serial port control
-*/                   
-                   
-  
+    c->m_filter_sample = c->m_output;
 }
 
+INLINE void pokey_channel_reset_channel(pokey_channel *c)
+{
+    c->m_counter   = c->m_AUDF ^ 0xff;
+    c->m_borrow_cnt = 0;
+}
+
+INLINE void pokey_channel_inc_chan(pokey_channel *c, pokey_device *host, int cycles)
+{
+    c->m_counter = (c->m_counter + 1) & 0xff;
+    if (c->m_counter == 0 && c->m_borrow_cnt == 0)
+        c->m_borrow_cnt = cycles;
+}
+
+INLINE int pokey_channel_check_borrow(pokey_channel *c)
+{
+    if (c->m_borrow_cnt > 0) {
+        c->m_borrow_cnt--;
+        return (c->m_borrow_cnt == 0);
+    }
+    return 0;
+}
+
+/* ---- poly table init ---- */
+static void poly_init_4_5(UINT32 *poly, int size)
+{
+    int mask   = (1 << size) - 1;
+    int xorbit = size - 1;
+    UINT32 lfsr = 0;
+    int i;
+    for (i = 0; i < mask; i++) {
+        lfsr  = (lfsr << 1) | (~((lfsr >> 2) ^ (lfsr >> xorbit)) & 1);
+        *poly = lfsr & mask;
+        poly++;
+    }
+}
+
+static void poly_init_9_17(UINT32 *poly, int size)
+{
+    int mask   = (1 << size) - 1;
+    UINT32 lfsr = mask;
+    int i;
+    if (size == 17) {
+        for (i = 0; i < mask; i++) {
+            const UINT32 in8 = ((lfsr >> 8) & 1) ^ ((lfsr >> 13) & 1);
+            const UINT32 in  = (lfsr & 1);
+            lfsr = lfsr >> 1;
+            lfsr = (lfsr & 0xff7f) | (in8 << 7);
+            lfsr = (in << 16) | lfsr;
+            *poly++ = lfsr;
+        }
+    } else {
+        for (i = 0; i < mask; i++) {
+            const UINT32 in = ((lfsr >> 0) & 1) ^ ((lfsr >> 5) & 1);
+            lfsr = lfsr >> 1;
+            lfsr = (in << 8) | lfsr;
+            *poly++ = lfsr;
+        }
+    }
+}
+
+/* ---- device reset ---- */
+static void pokey_device_reset(pokey_device *d)
+{
+    int i;
+    memset(d, 0, sizeof(*d));
+
+    for (i = 0; i < POKEY_CHANNELS; i++) {
+        d->m_channel[i].m_parent        = d;
+        d->m_channel[i].m_INTMask       = 0;
+        d->m_channel[i].m_AUDF          = 0;
+        d->m_channel[i].m_AUDC          = 0xb0;
+        d->m_channel[i].m_borrow_cnt    = 0;
+        d->m_channel[i].m_counter       = 0;
+        d->m_channel[i].m_output        = 0;
+        d->m_channel[i].m_filter_sample = 0;
+    }
+    d->m_channel[CHAN1].m_INTMask = IRQ_TIMR1;
+    d->m_channel[CHAN2].m_INTMask = IRQ_TIMR2;
+    d->m_channel[CHAN4].m_INTMask = IRQ_TIMR4;
+
+    d->m_KBCODE       = 0x09;
+    d->m_SKCTL        = SK_RESET;
+    d->m_IRQST        = IRQ_SEROC;
+    d->m_old_raw_inval = 1;
+    d->m_ser_iclk     = 1;
+    d->m_serin_shift  = 1;
+    d->m_serout_shift = 1;
+    d->m_clock_period = 1.0 / FREQ_17_EXACT;
+
+    pokey_potgo(d);
+}
+
+/* ---- set number of active POKEY chips ---- */
+void pokey_set_count(int n)
+{
+    if (n < 1) n = 1;
+    if (n > MAX_POKEY) n = MAX_POKEY;
+    s_pokey_count = n;
+}
+
+/* ---- public init ---- */
+void pokey_init(void)
+{
+    int i;
+    if (!s_poly_inited) {
+        poly_init_4_5(s_poly4, 4);
+        poly_init_4_5(s_poly5, 5);
+        poly_init_9_17(s_poly9,  9);
+        poly_init_9_17(s_poly17, 17);
+        s_poly_inited = true;
+    }
+    for (i = 0; i < MAX_POKEY; i++)
+        pokey_device_reset(&s_dev[i]);
+}
+
+/* ---- potentiometer ---- */
+static void pokey_potgo(pokey_device *d)
+{
+    int pot;
+    d->m_ALLPOT = 0x00;
+    d->m_pot_counter = 0;
+    for (pot = 0; pot < 8; pot++)
+        d->m_POTx[pot] = 228;
+}
+
+static void pokey_step_pot(pokey_device *d)
+{
+    uint8_t upd = 0;
+    int pot;
+    d->m_pot_counter++;
+    for (pot = 0; pot < 8; pot++) {
+        if ((d->m_POTx[pot] < d->m_pot_counter) || (d->m_pot_counter == 228))
+            upd |= (1 << pot);
+    }
+    if (upd)
+        d->m_ALLPOT |= upd;
+}
+
+/* ---- keyboard stub ---- */
+static void pokey_step_keyboard(pokey_device *d)
+{
+    if (++d->m_kbd_cnt > 63)
+        d->m_kbd_cnt = 0;
+    /* no keyboard input in vsim — intentionally a no-op */
+}
+
+/* ---- process channel output ---- */
+INLINE void pokey_process_channel(pokey_device *d, int ch)
+{
+    if ((d->m_channel[ch].m_AUDC & NOTPOLY5) || (s_poly5[d->m_p5] & 1)) {
+        if (d->m_channel[ch].m_AUDC & PURE)
+            d->m_channel[ch].m_output ^= 1;
+        else if (d->m_channel[ch].m_AUDC & POLY4)
+            d->m_channel[ch].m_output = (s_poly4[d->m_p4] & 1);
+        else if (d->m_AUDCTL & POLY9)
+            d->m_channel[ch].m_output = (s_poly9[d->m_p9] & 1);
+        else
+            d->m_channel[ch].m_output = (s_poly17[d->m_p17] & 1);
+        d->m_old_raw_inval = 1;
+    }
+}
+
+/* ---- step one chip clock ---- */
+static void pokey_step_one_clock(pokey_device *d)
+{
+    UINT8 toggle_iclk = 0;
+    UINT8 toggle_oclk = 0;
+
+    if (d->m_SKCTL & SK_RESET) {
+        int clock_triggered[3] = {1, 0, 0};
+        int base_clock;
+        UINT8 async_reset;
+
+        if (++d->m_p4  == 0x0000f) d->m_p4  = 0;
+        if (++d->m_p5  == 0x0001f) d->m_p5  = 0;
+        if (++d->m_p9  == 0x001ff) d->m_p9  = 0;
+        if (++d->m_p17 == 0x1ffff) d->m_p17 = 0;
+
+        if (++d->m_clock_cnt[CLK_28] >= DIV_64) {
+            d->m_clock_cnt[CLK_28] = 0;
+            clock_triggered[CLK_28] = 1;
+        }
+        if (++d->m_clock_cnt[CLK_114] >= DIV_15) {
+            d->m_clock_cnt[CLK_114] = 0;
+            clock_triggered[CLK_114] = 1;
+        }
+
+        if ((d->m_AUDCTL & CH1_HICLK) && clock_triggered[CLK_1]) {
+            if (d->m_AUDCTL & CH12_JOINED)
+                pokey_channel_inc_chan(&d->m_channel[CHAN1], d, 7);
+            else
+                pokey_channel_inc_chan(&d->m_channel[CHAN1], d, 4);
+        }
+
+        base_clock = (d->m_AUDCTL & CLK_15KHZ) ? CLK_114 : CLK_28;
+
+        if (!(d->m_AUDCTL & CH1_HICLK) && clock_triggered[base_clock])
+            pokey_channel_inc_chan(&d->m_channel[CHAN1], d, 1);
+
+        async_reset = (d->m_SKCTL & SK_ASYNC) && !(d->m_SKSTAT & (SK_BUSY | SK_SERIN));
+        if (async_reset)
+            d->m_ser_iclk = 1;
+
+        if ((d->m_AUDCTL & CH3_HICLK) && clock_triggered[CLK_1] && !async_reset) {
+            if (d->m_AUDCTL & CH34_JOINED)
+                pokey_channel_inc_chan(&d->m_channel[CHAN3], d, 7);
+            else
+                pokey_channel_inc_chan(&d->m_channel[CHAN3], d, 4);
+        }
+        if (!(d->m_AUDCTL & CH3_HICLK) && clock_triggered[base_clock] && !async_reset)
+            pokey_channel_inc_chan(&d->m_channel[CHAN3], d, 1);
+
+        if (clock_triggered[base_clock]) {
+            if (!(d->m_AUDCTL & CH12_JOINED)) {
+                if (d->m_channel[CHAN2].m_counter == 0xff && (d->m_SKCTL & SK_OCLK) == 0x60)
+                    toggle_oclk = 1;
+                pokey_channel_inc_chan(&d->m_channel[CHAN2], d, 1);
+            }
+            if (!(d->m_AUDCTL & CH34_JOINED) && !async_reset) {
+                if (d->m_channel[CHAN4].m_counter == 0xff) {
+                    if ((d->m_SKCTL & SK_ICLK) != 0) toggle_iclk = 1;
+                    if ((d->m_SKCTL & SK_OCLK) && (d->m_SKCTL & SK_OCLK) != 0x60)
+                        toggle_oclk = 1;
+                }
+                pokey_channel_inc_chan(&d->m_channel[CHAN4], d, 1);
+            }
+        }
+
+        if ((clock_triggered[CLK_114] || (d->m_SKCTL & SK_PADDLE)) && (d->m_pot_counter < 228))
+            pokey_step_pot(d);
+        if (clock_triggered[CLK_114] && (d->m_SKCTL & SK_KEYSCAN))
+            pokey_step_keyboard(d);
+    }
+
+    if (pokey_channel_check_borrow(&d->m_channel[CHAN3])) {
+        if (d->m_AUDCTL & CH34_JOINED) {
+            if (d->m_channel[CHAN4].m_counter == 0xff) {
+                if ((d->m_SKCTL & SK_ICLK) != 0) toggle_iclk = 1;
+                if ((d->m_SKCTL & SK_OCLK) != 0 && (d->m_SKCTL & SK_OCLK) != 0x60)
+                    toggle_oclk = 1;
+            }
+            pokey_channel_inc_chan(&d->m_channel[CHAN4], d, 1);
+        } else {
+            pokey_channel_reset_channel(&d->m_channel[CHAN3]);
+        }
+        pokey_process_channel(d, CHAN3);
+        if (d->m_AUDCTL & CH1_FILTER)
+            pokey_channel_sample(&d->m_channel[CHAN1]);
+        else
+            d->m_channel[CHAN1].m_filter_sample = 1;
+        d->m_old_raw_inval = 1;
+    }
+
+    if (pokey_channel_check_borrow(&d->m_channel[CHAN4])) {
+        if (d->m_AUDCTL & CH34_JOINED)
+            pokey_channel_reset_channel(&d->m_channel[CHAN3]);
+        pokey_channel_reset_channel(&d->m_channel[CHAN4]);
+        pokey_process_channel(d, CHAN4);
+        if (d->m_AUDCTL & CH2_FILTER)
+            pokey_channel_sample(&d->m_channel[CHAN2]);
+        else
+            d->m_channel[CHAN2].m_filter_sample = 1;
+        d->m_old_raw_inval = 1;
+    }
+
+    if ((d->m_SKCTL & SK_TWOTONE) && (d->m_channel[CHAN2].m_borrow_cnt == 1)) {
+        pokey_channel_reset_channel(&d->m_channel[CHAN1]);
+        d->m_old_raw_inval = 1;
+        d->m_sod_twotone = !d->m_sod_twotone;
+    }
+
+    if (pokey_channel_check_borrow(&d->m_channel[CHAN1])) {
+        if (d->m_AUDCTL & CH12_JOINED) {
+            if (d->m_channel[CHAN2].m_counter == 0xff && (d->m_SKCTL & SK_OCLK) == 0x60)
+                toggle_oclk = 1;
+            pokey_channel_inc_chan(&d->m_channel[CHAN2], d, 1);
+        } else {
+            pokey_channel_reset_channel(&d->m_channel[CHAN1]);
+            if ((d->m_SKCTL & SK_TWOTONE) &&
+                ((d->m_IRQST & IRQ_SEROC) ? !(d->m_SKCTL & SK_BREAK) : d->m_serout_shift & 1))
+            {
+                pokey_channel_reset_channel(&d->m_channel[CHAN2]);
+                d->m_old_raw_inval = 1;
+                d->m_sod_twotone = !d->m_sod_twotone;
+            }
+        }
+        pokey_process_channel(d, CHAN1);
+    }
+
+    if (pokey_channel_check_borrow(&d->m_channel[CHAN2])) {
+        if (d->m_AUDCTL & CH12_JOINED)
+            pokey_channel_reset_channel(&d->m_channel[CHAN1]);
+        pokey_channel_reset_channel(&d->m_channel[CHAN2]);
+        pokey_process_channel(d, CHAN2);
+    }
+
+    if (d->m_old_raw_inval) {
+        UINT32 sum = 0;
+        int ch;
+        for (ch = 0; ch < 4; ch++) {
+            if (d->m_muted[ch]) continue;
+            sum |= (((d->m_channel[ch].m_output ^ d->m_channel[ch].m_filter_sample) ||
+                     (d->m_channel[ch].m_AUDC & VOLUME_ONLY)) ?
+                    ((d->m_channel[ch].m_AUDC & VOLUME_MASK) << (ch * 4)) : 0);
+        }
+        d->m_old_raw_inval = 0;
+        d->m_out_raw = sum;
+    }
+
+    if (toggle_iclk)
+        d->m_ser_iclk = !d->m_ser_iclk;
+
+    if (toggle_oclk && (d->m_serout_full || !(d->m_IRQST & IRQ_SEROC)))
+        d->m_ser_oclk = !d->m_ser_oclk;
+}
+
+/* ---- generate one sample from a device (LEGACY_LINEAR) ---- */
+static INT32 pokey_get_sample(pokey_device *d)
+{
+    INT32 out = 0;
+    int i;
+    do {
+        pokey_step_one_clock(d);
+        d->m_icount--;
+    } while (d->m_icount > 0);
+
+    for (i = 0; i < 4; i++)
+        out += ((d->m_out_raw >> (4 * i)) & 0x0f);
+    out *= POKEY_DEFAULT_GAIN;
+    if (out > 0x7fff) out = 0x7fff;
+    return out;
+}
+
+/* ---- register read (libvgm logic) ---- */
+static UINT8 pokey_dev_read(pokey_device *d, UINT8 offset)
+{
+    int data, pot;
+    switch (offset & 15) {
+    case 0x00: case 0x01: case 0x02: case 0x03:
+    case 0x04: case 0x05: case 0x06: case 0x07:
+        pot = offset & 7;
+        data = (d->m_ALLPOT & (1 << pot)) ? d->m_POTx[pot] : d->m_pot_counter;
+        break;
+    case ALLPOT_C:
+        data = ((d->m_SKCTL & SK_RESET) == 0) ? d->m_ALLPOT : (d->m_ALLPOT ^ 0xff);
+        break;
+    case KBCODE_C:
+        data = d->m_KBCODE;
+        break;
+    case RANDOM_C:
+        if (d->m_AUDCTL & POLY9)
+            data = s_poly9[d->m_p9] & 0xff;
+        else
+            data = (s_poly17[d->m_p17] >> 8) & 0xff;
+        break;
+    case SERIN_C:
+        data = d->m_SERIN;
+        break;
+    case IRQST_C:
+        data = d->m_IRQST ^ 0xff;
+        break;
+    case SKSTAT_C:
+        data = d->m_SKSTAT ^ 0xff;
+        break;
+    default:
+        data = 0xff;
+        break;
+    }
+    return (UINT8)data;
+}
+
+/* ---- register write (libvgm logic) ---- */
+static void pokey_dev_write(pokey_device *d, UINT8 offset, UINT8 data)
+{
+    switch (offset & 15) {
+    case AUDF1_C: d->m_channel[CHAN1].m_AUDF = data; break;
+    case AUDC1_C: d->m_channel[CHAN1].m_AUDC = data; d->m_old_raw_inval = 1; break;
+    case AUDF2_C: d->m_channel[CHAN2].m_AUDF = data; break;
+    case AUDC2_C: d->m_channel[CHAN2].m_AUDC = data; d->m_old_raw_inval = 1; break;
+    case AUDF3_C: d->m_channel[CHAN3].m_AUDF = data; break;
+    case AUDC3_C: d->m_channel[CHAN3].m_AUDC = data; d->m_old_raw_inval = 1; break;
+    case AUDF4_C: d->m_channel[CHAN4].m_AUDF = data; break;
+    case AUDC4_C: d->m_channel[CHAN4].m_AUDC = data; d->m_old_raw_inval = 1; break;
+    case AUDCTL_C:
+        if (data == d->m_AUDCTL) return;
+        d->m_AUDCTL = data;
+        d->m_old_raw_inval = 1;
+        break;
+    case STIMER_C: {
+        int i;
+        for (i = 0; i < POKEY_CHANNELS; i++) {
+            pokey_channel_reset_channel(&d->m_channel[i]);
+            d->m_channel[i].m_output = 0;
+            d->m_channel[i].m_filter_sample = (i < 2 ? 1 : 0);
+        }
+        d->m_old_raw_inval = 1;
+        break;
+    }
+    case SKREST_C:
+        d->m_SKSTAT &= ~(SK_FRAME | SK_OVERRUN | SK_KBERR);
+        break;
+    case POTGO_C:
+        if (d->m_SKCTL & SK_RESET) pokey_potgo(d);
+        break;
+    case SEROUT_C:
+        d->m_SEROUT = data;
+        d->m_serout_full = 1;
+        break;
+    case IRQEN_C:
+        if (d->m_IRQST & ~data)
+            d->m_IRQST &= (IRQ_SEROC | data);
+        d->m_IRQEN = data;
+        break;
+    case SKCTL_C:
+        if (data == d->m_SKCTL) return;
+        d->m_SKCTL = data;
+        if (!(data & SK_RESET)) {
+            pokey_dev_write(d, IRQEN_C,  0);
+            pokey_dev_write(d, SKREST_C, 0);
+            d->m_p9 = 0; d->m_p17 = 0;
+            d->m_p4 = 0; d->m_p5  = 0;
+            d->m_clock_cnt[0] = 0;
+            d->m_clock_cnt[1] = 0;
+            d->m_clock_cnt[2] = 0;
+            d->m_serin_shift  = 1;
+            d->m_serout_shift = 1;
+            d->m_serout_full  = 0;
+            d->m_SKSTAT &= ~SK_BUSY;
+        }
+        if (!(data & SK_KEYSCAN)) {
+            d->m_SKSTAT &= ~SK_KEYBD;
+            d->m_kbd_cnt   = 0;
+            d->m_kbd_state = 0;
+        }
+        if ((data & SK_ICLK) == 0) d->m_ser_iclk = 1;
+        if ((data & SK_OCLK) == 0) d->m_ser_oclk = 0;
+        if ((data & SK_ASYNC) && !(d->m_SKSTAT & SK_BUSY)) {
+            pokey_channel_reset_channel(&d->m_channel[CHAN3]);
+            pokey_channel_reset_channel(&d->m_channel[CHAN4]);
+        }
+        d->m_old_raw_inval = 1;
+        break;
+    }
+}
+
+/* ---- Tempest-specific state (kept from original vsim pokey.c) ---- */
+static int s_oldSpinner = 0;
+static int s_spinnerSum = 0;
+
+/* ---- public vsim interface ---- */
+
+byte pokey_read(int pokeynum, int reg, int PC, unsigned long cyc)
+{
+    if (pokeynum < 0 || pokeynum >= MAX_POKEY) return 0xff;
+
+    /* Tempest overrides — kept from original vsim pokey.c */
+    if (game == TEMPEST) {
+        if (reg == (RANDOM_C & 0x0f) && pokeynum == 1) return 0xff;
+        if (reg == (ALLPOT_C & 0x0f) && pokeynum == 0) {
+            signed char spin = (signed char)joystick.x;
+            if (spin > 0)       spin = (spin - 30) / 30;
+            else if (spin < 0)  spin = (spin + 30) / 30;
+            s_spinnerSum += spin;
+            if (s_spinnerSum >  7) { s_oldSpinner += spin; s_spinnerSum -= 7; }
+            if (s_spinnerSum < -7) { s_oldSpinner += spin; s_spinnerSum += 7; }
+            return (byte)(s_oldSpinner & 0x0f);
+        }
+        if (reg == (ALLPOT_C & 0x0f) && pokeynum == 1) {
+            int ret = 0;
+            if (switches[0].fire)   ret |= 0x04;
+            if (switches[0].fire)   ret |= 0x08;
+            if (switches[0].thrust) ret |= 0x10;
+            if (start1)             ret |= 0x20;
+            if (start2)             ret |= 0x40;
+            return (byte)ret;
+        }
+    }
+
+    return pokey_dev_read(&s_dev[pokeynum], (UINT8)reg);
+}
+
+void pokey_write(int pokeynum, int reg, byte val, int PC, unsigned long cyc)
+{
+    if (pokeynum < 0 || pokeynum >= MAX_POKEY) return;
+    pokey_dev_write(&s_dev[pokeynum], (UINT8)reg, (UINT8)val);
+}
+
+/* ---- audio sample generation ---- */
+/* Writes stereo interleaved 16-bit PCM: L, R, L, R, ...
+ * buf must hold n_samples * 2 int16_t values (same as AY_CHANNEL=2 layout).
+ * clocks_per_sample = FREQ_17_EXACT / sample_rate (e.g. 40 for 44100 Hz).
+ * POKEY is mono; both channels receive the same mixed value.
+ */
+void pokey_generate_samples(int16_t *buf, int n_samples, int clocks_per_sample)
+{
+    int i, p;
+    for (i = 0; i < n_samples; i++) {
+        INT32 mix = 0;
+        for (p = 0; p < s_pokey_count; p++) {
+            s_dev[p].m_icount = clocks_per_sample;
+            mix += pokey_get_sample(&s_dev[p]);
+        }
+        mix /= s_pokey_count;
+        if (mix >  32767) mix =  32767;
+        if (mix < -32768) mix = -32768;
+        buf[i * 2]     = (int16_t)mix;  /* L */
+        buf[i * 2 + 1] = (int16_t)mix;  /* R */
+    }
+}
+// length in byte!
+IRAM_ATTR void callbackPokey(void *userdata, uint8_t *stream, int length)
+{
+	(void) userdata;
+
+	/* hack to prevent us from hanging when starting filtered outputs */
+	if (!s_poly_inited)
+	{
+		memset(stream, 0, length * sizeof(*stream));
+		return;
+	}
+  // the set reg as a batch - is buggy
+  // some noises do not fade if  regs are set with the batch!
+  //	ayemu_set_regs(&ay, snd_regs);
+  pokey_generate_samples((int16_t *)stream, 882, 1789790 / 44100);
+
+}
