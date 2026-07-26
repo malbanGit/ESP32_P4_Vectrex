@@ -1,10 +1,10 @@
-#include "defines.h"
+#include "../defines.h"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "../libayemu/ayemu.h"
+#include "libayemu/ayemu.h"
 ayemu_ay_t ay;
 
 /***************************************************************************
@@ -101,8 +101,9 @@ void initAY(int freq, int chans, int bits)
 void ayemu_set_regs(ayemu_ay_t *ay, unsigned *regs);
 
 // length in byte!
-IRAM_ATTR void callbackAY(void *userdata, uint8_t *stream, int length)
+IRAM_ATTR void callbackAY(void *userdata, int16_t *s, int length)
 {
+	uint8_t *stream = (uint8_t *)s;
 	(void) userdata;
 
 	/* hack to prevent us from hanging when starting filtered outputs */
@@ -683,10 +684,12 @@ void e8910_init_sound(void)
 	PSG.OutputN = 0xff;
 //	e8910_build_mixer_table();
 	PSG.ready   = 1;
+    initAY(freq, chans, bits); 
 }
 
 
 void e8910_done_sound()
 {
+	ayemu_free(&ay);
 }
 

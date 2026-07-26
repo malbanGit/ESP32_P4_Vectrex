@@ -351,7 +351,7 @@ if (kbd_scancode_to_char(kb->modifier.val, new_key, &ch))  kbd_print_char(ch);
     }
 }
 
- bool isKeyDown(uint8_t hid_code)
+bool isKeyDown(uint8_t hid_code)
 {
     // if (hid_code >= KBD_MAX_KEYS) return false;
     return key_state[hid_code];

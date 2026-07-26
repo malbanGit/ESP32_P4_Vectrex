@@ -26,8 +26,9 @@ long load_rom_file(const char *rom_name, uint8_t *buffer, long max_size)
     char path[256];
     snprintf(path, sizeof(path), "/sdcard/%s", rom_name);
 
-
-
+    
+    // fill rom with 01, see https://vectrex-emu.blogspot.com/2006/07/
+    memset(buffer, 0x01, max_size * sizeof(uint8_t));
 
     FILE *f = fopen(path, "rb");
     if (!f) {

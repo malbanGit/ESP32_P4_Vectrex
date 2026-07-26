@@ -26,10 +26,12 @@ this must be "restored"
 #define einline __inline
 
 // from main
-extern char *cartName;
-extern long cartSize;
-extern  unsigned char cartData[MAX_CART_SIZE];
+char cartName[MAX_ROM_NAME];
+HUGE_DATA_LOCATION unsigned char cartData[MAX_CART_SIZE];
+long cartSize = 0;
+
 DRAM_ATTR int isBedlam = 0;
+DRAM_ATTR int tobekilled = 0;
 
 
 
@@ -295,46 +297,6 @@ IRAM_ATTR static einline void readevents()
 	snd_regs[14] = g_inputState.buttonState;
 }
 
-IRAM_ATTR void mini_taskloop(int cycles)
-{
-	vecx_emu(cycles);
-	readevents();
-}
-
-// resize and center to given width / height
-void resize(int width, int height){
-
-	scl_factorx = ALG_MAX_X / width;
-	scl_factory = ALG_MAX_Y / height;
-	offx = (SCREEN_WIDTH-width)/2;
-	offy = (SCREEN_HEIGHT-height)/2;
-}
-
-int vecx_init()
-{
-	if (cartSize != 0)
-	{
-		//cartData
-		// a cartridge was loaded!
-	}
-	if (mode == VIDEO_OUT_HDMI)
-	{
-		SCREEN_HEIGHT = LCD_V_RES;
-		SCREEN_WIDTH = LCD_H_RES;
-		resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
-	}
-	else
-	{
-		SCREEN_HEIGHT = LCD_H_RES;
-		SCREEN_WIDTH = LCD_V_RES;
-		resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
-	}
-
-	vecx_reset();
-	e8910_init_sound();
-//	e8910_done_sound();
-	return 0;
-}
 
 IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
 {
@@ -2066,3 +2028,250 @@ IRAM_ATTR void vecx_emu (long cycles)
 }
 
 
+
+void vecx_deinit();
+int vecx_init();
+void resize();
+void readKeyEvents();
+
+// listeners will be called at the end of a frame!
+// The listener — receives events from the ESP32 environment layer.
+// Only acts on the types it cares about; ignores everything else.
+static void esp_event_listener(const ESPEvent *event)
+{
+    switch (event->type)
+    {
+		case ESP_EVENT_INIT:
+			vecx_init();
+			break;
+		case ESP_EVENT_SIZE_CHANGED:
+			resize();
+			break;
+		case ESP_EVENT_KILL:
+			tobekilled = 1;
+			break;
+    default:
+        break;   // not our event — ignore
+    }
+}
+
+IRAM_ATTR void vectrex()
+{
+	if (!read_ini_rom_name(cartName, sizeof(cartName)))
+	{
+		printf("INI konnte nicht gelesen werden\n");
+	}
+	else
+	{
+		printf("ROM Name in ini: %s\n", cartName);
+//            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
+
+cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
+//cartSize = load_rom_file("VBLADE.NIB", cartData, sizeof(cartData));
+//cartSize = load_rom_file("AKLABETH.BIN", cartData, sizeof(cartData));
+//cartSize = load_rom_file("BERZERKU.BIN", cartData, sizeof(cartData));
+		if (cartSize < 0) {
+			printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
+			cartSize = 0;
+		}
+		else
+		{
+			printf("ROM geladen: %ld Bytes\n", cartSize);
+			for (int i = 0; i < 16; i++)
+				printf("$%02x ", cartData[i]);
+			printf("\n");
+		}
+		if (mode == VIDEO_OUT_HDMI)
+			loadOverlayRGB("/sdcard/KARL.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+		else
+			loadOverlayRGB("/sdcard/KARL.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+
+		ESP_LOGI("Vectrex", "Start vectrex tasks");
+	}
+
+
+	vecx_init();
+
+	while (1)
+	{
+		vecx_emu(30000);
+		readevents();
+		readKeyEvents(); // single key test makes it impractical to do as an event
+		if (tobekilled) break;
+	}
+	vecx_deinit();
+}
+
+// resize and center to given width / height
+void resize()
+{
+	int width;
+	int height;
+    if (mode == VIDEO_OUT_HDMI)
+    {
+		SCREEN_HEIGHT = LCD_V_RES;
+		SCREEN_WIDTH = LCD_H_RES;
+        if (overlayEnabled)
+		{
+			width = HDMI_IN_OVERLAY_VECX_WIDTH;
+			height = HDMI_IN_OVERLAY_VECX_HEIGHT;
+		}
+        else
+		{
+			width = HDMI_VECX_WIDTH;
+			height = HDMI_VECX_HEIGHT;
+		}
+    }
+    else
+    {
+		SCREEN_HEIGHT = LCD_H_RES;
+		SCREEN_WIDTH = LCD_V_RES;
+        if (overlayEnabled)
+		{
+			width = LCD_IN_OVERLAY_VECX_WIDTH;
+			height = LCD_IN_OVERLAY_VECX_HEIGHT;
+		}
+        else
+		{
+			width = LCD_VECX_WIDTH;
+			height = LCD_VECX_HEIGHT;
+		}
+    }
+
+	scl_factorx = ALG_MAX_X / width;
+	scl_factory = ALG_MAX_Y / height;
+	offx = (SCREEN_WIDTH-width)/2;
+	offy = (SCREEN_HEIGHT-height)/2;
+}
+
+int vecx_init()
+{
+	tobekilled = 0;
+	overlayEnabled = 1;
+	if (cartSize != 0)
+	{
+		//cartData
+		// a cartridge was loaded!
+	}
+	resize();
+	vecx_reset();
+	e8910_init_sound();
+    void callbackAY(void *userdata, int16_t *stream, int length);
+#ifndef NO_AUDIO
+    audio_set_callback(callbackAY, NULL);
+#endif
+	esp_add_event_listener(esp_event_listener);
+	return 0;
+}
+void vecx_deinit()
+{
+    audio_set_callback(NULL, NULL);
+	void e8910_done_sound();
+	esp_remove_event_listener(esp_event_listener);
+	overlayEnabled = 0;
+}
+
+
+
+static int loadNum = -1;
+char  *name[]={
+	"VECTERX/POLE.BIN", 
+	"POLE.BIN", 
+	"SWEEP.BIN", 
+	"KARL.BIN",
+	"ARMOR.BIN",
+	"BERZERK.BIN",
+	"RELEASE.BIN",
+	"SPIKE.BIN",
+	"BEDLAM.BIN",
+	"CASTLE.BIN",
+	"COSMIC.BIN"
+};
+char  *ov[]={
+	"/sdcard/POLE.PNG", 
+	"/sdcard/POLE.PNG", 
+	"/sdcard/SWEEP.PNG", 
+	"/sdcard/KARL.PNG",
+	"/sdcard/ARMOR.PNG",
+	"/sdcard/BERZERK.PNG",
+	"",
+	"/sdcard/SPIKE.PNG",
+	"/sdcard/BEDLAM.PNG",
+	"/sdcard/CASTLE.PNG",
+	"/sdcard/COSMIC.PNG"
+}; 
+IRAM_ATTR void readKeyEvents()
+{
+   	if (isKeyDown(HID_KEY_O))
+	{
+		loadNum--;
+		if (loadNum<0) loadNum = 8;
+		printf("Loading rom: %s\n", name[loadNum]);
+        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+
+		if (mode == VIDEO_OUT_HDMI)
+			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+		else
+			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+		
+		vecx_init();
+		resize();
+		vTaskDelay(pdMS_TO_TICKS(100));
+	}
+   	if (isKeyDown(HID_KEY_P))
+	{
+		loadNum++;
+		if (loadNum>8) loadNum = 0;
+		printf("Loading rom: %s\n", name[loadNum]);
+        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
+		if (mode == VIDEO_OUT_HDMI)
+			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+		else
+			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+		vecx_init();
+		resize();
+		vTaskDelay(pdMS_TO_TICKS(100));
+	}
+	if (isKeyDown(HID_KEY_1))
+	{
+		blankOnDelay = blankOnDelay - 1;
+		printf("blankOnDelay: %d\n", blankOnDelay);
+	}
+	if (isKeyDown(HID_KEY_2))
+	{
+		blankOnDelay = blankOnDelay + 1;
+		printf("blankOnDelay: %d\n", blankOnDelay);
+	}
+
+	if (isKeyDown(HID_KEY_3))
+	{
+		blankOffDelay = blankOffDelay - 1;
+		printf("blankOffDelay: %d\n", blankOffDelay);
+	}
+	if (isKeyDown(HID_KEY_4))
+	{
+		blankOffDelay = blankOffDelay + 1;
+		printf("blankOffDelay: %d\n", blankOffDelay);
+	}
+	if (isKeyDown(HID_KEY_5))
+	{
+		rampOnFractionValue = rampOnFractionValue - 1;
+		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
+	}
+	if (isKeyDown(HID_KEY_6))
+	{
+		rampOnFractionValue = rampOnFractionValue + 1;
+		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
+	}
+	if (isKeyDown(HID_KEY_7))
+	{
+		rampOffFractionValue = rampOffFractionValue - 1;
+		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
+	}
+	if (isKeyDown(HID_KEY_8))
+	{
+		rampOffFractionValue = rampOffFractionValue + 1;
+		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
+	}
+
+}

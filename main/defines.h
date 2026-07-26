@@ -1,7 +1,15 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdbool.h>
 #include "esp_attr.h"
+#include "esp_log.h"
+#include "esp_err.h"
+
+#include "esp_events.h"
+#include "usb/hid_usage_keyboard.h"
 
 //#define NO_AUDIO 1 just be quiet!
 
@@ -96,19 +104,20 @@ extern uint8_t s_overlay_palette[128][3];
 extern int g_fpsToReach;
 
 typedef struct {
-    int8_t j0_x;
-    int8_t j0_y;
-    int8_t j1_x;
-    int8_t j1_y;
-    int buttonState;
+    volatile int8_t j0_x;
+    volatile int8_t j0_y;
+    volatile int8_t j1_x;
+    volatile int8_t j1_y;
+    volatile int buttonState;
 } input_state_t;
-extern input_state_t g_inputState; 
+extern volatile input_state_t g_inputState; 
 
 
 //void emu_begin_frame(void);
 void mini_end_frame(void);
 void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness); // brightness or color - depending on mode, 0 is always undraw
 void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, uint8_t brightness);
+
 //void vecx_emu (long cycles);
 int getDisplayWidth();
 int getDisplayHeight();
@@ -119,8 +128,14 @@ int getScreenHeight();
 //DRAM_ATTR int16_t audioBuffer[AUDIO_FRAME_SAMPLES];
 /* Callback-Typ: mono, 16 Bit, length = Anzahl Samples */
 typedef void (*audio_sample_callback_t)(void *userdata, int16_t *stream, int length);
+void audio_set_callback(audio_sample_callback_t cb, void *userdata);
 
+bool read_ini_rom_name(char *out_name, int out_size);
+long load_rom_file(const char *rom_name, uint8_t *buffer, long max_size);
 
+bool isKeyDown(uint8_t hid_code);
+bool isAsciiDown(char c);
+esp_err_t loadOverlayRGB(char *name, int img_w, int img_h);
 
 
 

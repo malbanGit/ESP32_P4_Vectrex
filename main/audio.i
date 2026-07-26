@@ -273,8 +273,6 @@ esp_err_t audio_init(void)
 		printf ( "Can't allocate sound buffer\n");
 		return ESP_OK;
 	}
-    void initAY(int freq, int chans, int bits); // libayemu
-    initAY(freq, chans, bits); 
 
     return ESP_OK;
 }

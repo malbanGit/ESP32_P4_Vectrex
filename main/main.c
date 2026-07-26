@@ -1,18 +1,14 @@
-
-
 // karl on LCD demo 1 46 !!!!
 // spike is now very VERY slow???? -> Spike IS so slow!!!
 #include "defines.h"
-
-// from vecx.c
-extern int SCREEN_WIDTH;
-extern int SCREEN_HEIGHT;
-
 
 /*
 Bug:
 
     pole position flimmert bei game over und hat emu fps von 43?
+
+
+ to test - switch when hdmi is not connected?
 
 Highscore saving
 joystick
@@ -125,8 +121,6 @@ Should connect to COM 4, flash and play.
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "esp_log.h"
-#include "esp_err.h"
 #include "esp_check.h"
 #include "esp_clk_tree.h"
 #include "esp_heap_caps.h"
@@ -143,19 +137,13 @@ Should connect to COM 4, flash and play.
 #include "esp_random.h"
 #include "esp_task_wdt.h"
 
-#include <stdlib.h>
-#include <stdio.h>
 #include <math.h>
-#include <stdint.h>
-#include <stdbool.h>
 
 #include "board.h"
-#include "mire.h"
 #include "hdmi.h"
 #include "lvds.h"
 #include "lodepng.h"
 
-#include "vecx\vecx.h"
 #include "draw_line_yuv422.h"
 
 
@@ -164,9 +152,6 @@ char * audio_buf;
 size_t audio_bufsize;
 
 
-char cartName[MAX_ROM_NAME];
-HUGE_DATA_LOCATION unsigned char cartData[MAX_CART_SIZE];
-long cartSize = 0;
 
 DRAM_ATTR uint32_t g_beam_r2_q16;
 DRAM_ATTR int g_line_Rb = (((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH) > 0) ? ((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH - 1) : 0;
@@ -174,7 +159,7 @@ DRAM_ATTR int g_beam_r = LINE_WIDTH >> 1;
 DRAM_ATTR uint32_t g_gs;
 DRAM_ATTR int g_color_mode; // 0 = not color, 1 = color
 DRAM_ATTR int g_fpsToReach=  1000000/MAX_EMU_FPS;
-DRAM_ATTR input_state_t g_inputState={127,127,127,127,255}; 
+DRAM_ATTR volatile input_state_t g_inputState={127,127,127,127,255}; 
 
 void changeGlobalLineValues(int w, int g)
 {
@@ -334,6 +319,7 @@ DRAM_ATTR int overlayEnabled = ENABLE_OVERLAYS;          // default at boot
 #include "sdcard.i"
 #include "usb.i"
 #include "file.i"
+#include "esp_events.i"
 
 // helper functions for optimizing line draws
 // these are used to check whether lines intersect
@@ -469,6 +455,7 @@ static esp_err_t video_start(int mode, bool yuv422,
                              esp_lcd_panel_handle_t *panel, int *w, int *h)
 {
     static const char *TAG = "video";
+
     esp_err_t err = (mode == VIDEO_OUT_LVDS)
                     ? lvds_start(io, dsi, yuv422, panel, w, h)
                     : hdmi_start(io, dsi, yuv422, panel, w, h);
@@ -628,6 +615,15 @@ static void lcd_init(void)
         ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&dsi_bus_cfg, &dsi_bus));
     }
 */
+
+    if (mode == VIDEO_OUT_HDMI)
+    {
+        if (!hdmi_hpd_present(&lt_io))
+        {
+            mode = VIDEO_OUT_LVDS;
+        }
+    }
+
     esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
     esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG();
     if (mode == VIDEO_OUT_LVDS)
@@ -1053,13 +1049,13 @@ void yuv_palette_init(void)
 // ----------------------------------------------------
 // Tasks
 // ----------------------------------------------------
-void mini_taskloop(int cycles);
 int vecsimGame=1;
 #define MAX_VECSIM_GAME 7
 IRAM_ATTR static void application_task(void *arg)
 {
     while (1) 
     {
+/*
         int tempest(void); //ok
         int battlezone(void); //ok
         int blackwidow(void); //ok
@@ -1077,9 +1073,10 @@ IRAM_ATTR static void application_task(void *arg)
         if (vecsimGame==4) spaceDuel();
         if (vecsimGame==5) redbaron();
         if (vecsimGame==6) battlezone();
+*/
 
-
-        mini_taskloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
+//        void vectrex();
+//        vectrex();
     }
 }
 
@@ -1748,7 +1745,7 @@ void clearFramebuffers()
  * full-screen BGRA overlay buffer (LCD_H_RES x LCD_V_RES, 4 bytes/pixel).
  * Surrounding area is filled with transparent black (alpha=0).
  * Pass img_w=0 / img_h=0 to stretch to full screen.                      */
- char lastOverlay[MAX_ROM_NAME];
+char lastOverlay[MAX_ROM_NAME];
 esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 {
     strncpy(lastOverlay, name, MAX_ROM_NAME-1);
@@ -1980,25 +1977,6 @@ void initGlobals()
 
     changeGlobalLineValues( LINE_WIDTH, LINE_GLOW_WIDTH);
 }
-void resizeVectrex()
-{
-    // Vecx
-    void resize(int width, int height);//
-    if (mode == VIDEO_OUT_HDMI)
-    {
-        if (overlayEnabled)
-    		resize( HDMI_IN_OVERLAY_VECX_WIDTH, HDMI_IN_OVERLAY_VECX_HEIGHT);
-        else
-            resize( HDMI_VECX_WIDTH, HDMI_VECX_HEIGHT);
-    }
-    else
-    {
-        if (overlayEnabled)
-    		resize( LCD_IN_OVERLAY_VECX_WIDTH, LCD_IN_OVERLAY_VECX_HEIGHT);
-        else
-            resize( LCD_VECX_WIDTH, LCD_VECX_HEIGHT);
-    }
-}
 
 // ----------------------------------------------------
 // app_main
@@ -2007,8 +1985,6 @@ void app_main(void)
 {
     initGlobals();
     
-    // fill rom with 01, see https://vectrex-emu.blogspot.com/2006/07/
-    memset(cartData, 0x01, MAX_CART_SIZE * sizeof(uint8_t));
 
 #if VECX_DEBUG == 1    
     esp_log_level_set("lcd.dsi.dpi", ESP_LOG_DEBUG);   // show the actual DPI pixel clock achieved
@@ -2044,34 +2020,6 @@ void app_main(void)
     {
         printf("Something went wrong with the SDCard init - did you insert a card?");
     }
-    else
-    {
-        if (!read_ini_rom_name(cartName, sizeof(cartName)))
-        {
-            printf("INI konnte nicht gelesen werden\n");
-        }
-        else
-        {
-            printf("ROM Name in ini: %s\n", cartName);
-//            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
-
-cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
-//cartSize = load_rom_file("VBLADE.NIB", cartData, sizeof(cartData));
-//cartSize = load_rom_file("AKLABETH.BIN", cartData, sizeof(cartData));
-//cartSize = load_rom_file("BERZERKU.BIN", cartData, sizeof(cartData));
-            if (cartSize < 0) {
-                printf("ROM konnte nicht geladen werden (%ld)\n", cartSize);
-                cartSize = 0;
-            }
-            else
-            {
-                printf("ROM geladen: %ld Bytes\n", cartSize);
-                for (int i = 0; i < 16; i++)
-                    printf("$%02x ", cartData[i]);
-                printf("\n");
-            }
-        }
-    }
 
     if (usb_keyboard_init() != ESP_OK)
     {
@@ -2088,12 +2036,6 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
     // Logische Frame-Slots initialisieren
     frames_init();
 
-    if (mode == VIDEO_OUT_HDMI)
-        loadOverlayRGB("/sdcard/KARL.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-    else
-        loadOverlayRGB("/sdcard/KARL.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-
-    ESP_LOGI(TAG, "Start vectrex tasks");
 
 #ifdef CONFIG_ESP_TASK_WDT_EN
     // Task-Watchdog aus (Entwicklung)
@@ -2117,10 +2059,6 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
         esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
     }
 
-    void callbackAY(void *userdata, int16_t *stream, int length);
-#ifndef NO_AUDIO
-    audio_set_callback(callbackAY, NULL);
-#endif
     printf("Audio init done\n");
 
     xTaskCreatePinnedToCore(
@@ -2132,9 +2070,6 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
         &s_audio_task_handle,    // Handle
         1                        // Core 0
     );
-
-    vecx_init();
-    resizeVectrex();
 
     // Emulator task (core 1) — static stack in internal SRAM
     xTaskCreateStaticPinnedToCore(
@@ -2185,7 +2120,7 @@ void toggleOverlay()
         loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
     else
         loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-    resizeVectrex();
+    fireResizeEvent();
 }
 
 void toggleVideoMode()
@@ -2208,14 +2143,8 @@ void toggleVideoMode()
         uint8_t val = 0x01;
         esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
 
-        // Vecx
-		SCREEN_HEIGHT = LCD_V_RES;
-		SCREEN_WIDTH = LCD_H_RES;
-        resizeVectrex();
-
-void init_graphics ();
-init_graphics(); // ONLY WHEN VSIM IS LOADED
         loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+        fireResizeEvent();
     }
     else
     {
@@ -2223,15 +2152,8 @@ init_graphics(); // ONLY WHEN VSIM IS LOADED
         gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
         uint8_t val = 0x00;
         esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-
-        // Vecx
-		SCREEN_HEIGHT = LCD_H_RES;
-		SCREEN_WIDTH = LCD_V_RES;
-        resizeVectrex();
-
-void init_graphics ();
-init_graphics(); // ONLY WHEN VSIM IS LOADED
         loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+        fireResizeEvent();
     }
 }
 
@@ -2273,34 +2195,15 @@ int getDisplayHeight()
     return LCD_VECX_HEIGHT;
 }
 
-static int loadNum = -1;
-int vecx_init();
-char  *name[]={
-	"VECTERX/POLE.BIN", 
-	"POLE.BIN", 
-	"SWEEP.BIN", 
-	"KARL.BIN",
-	"ARMOR.BIN",
-	"BERZERK.BIN",
-	"RELEASE.BIN",
-	"SPIKE.BIN",
-	"BEDLAM.BIN",
-	"CASTLE.BIN",
-	"COSMIC.BIN"
-};
-char  *ov[]={
-	"/sdcard/SWEEP.PNG", 
-	"/sdcard/SWEEP.PNG", 
-	"/sdcard/KARL.PNG",
-	"/sdcard/ARMOR.PNG",
-	"/sdcard/BERZERK.PNG",
-	"",
-	"/sdcard/SPIKE.PNG",
-	"/sdcard/BEDLAM.PNG",
-	"/sdcard/CASTLE.PNG",
-	"/sdcard/COSMIC.PNG"
-}; 
 
+// called during endframe
+// input as expected by vectrex
+// analog from -128 - +127
+// buttons 0 active!
+// one byte
+// 7654 3210 (bits)
+// 2222 1111 (player)
+// 4321 4321 (buttons)
 IRAM_ATTR void readevents()
 {
 	// center is default unless pressed!
@@ -2369,14 +2272,7 @@ IRAM_ATTR void readevents()
     ////////////////////////////////////////
     ////////////////////////////////////////
 
-
-    #if VECX_DEBUG == 1
     static volatile int modeSwitchActive=0;
-    extern int rampOnFractionValue;
-    extern int rampOffFractionValue;
-    extern int blankOnDelay;
-    extern int blankOffDelay;
-    extern int vecsimSigDone;
     if (isAsciiDown('m'))
 	{
 		if (modeSwitchActive==0)
@@ -2390,13 +2286,6 @@ IRAM_ATTR void readevents()
                 setAppFPS(MAX_EMU_FPS);
                 vecsimGame=0;
             }
-            if (vecsimGame==0)
-            {
-                // back to vectrex
-                void callbackAY(void *userdata, int16_t *stream, int length);
-                audio_set_callback(callbackAY, NULL);
-            }
-            vecsimSigDone=1;
             clearFramebuffers();
             frames_init();
             redraw = 3;
@@ -2411,7 +2300,16 @@ IRAM_ATTR void readevents()
 	{
 		if (modeSwitchActive==0)
 		{
-			modeSwitchActive = 1;
+            if (mode == VIDEO_OUT_LVDS)
+            {
+                if (!hdmi_hpd_present(&lt_io))
+                {
+                    mode = VIDEO_OUT_LVDS;
+                    return;
+                }
+            }
+
+            modeSwitchActive = 1;
 			void toggleVideoModeRequest();
 			toggleVideoModeRequest();
 		}
@@ -2449,36 +2347,6 @@ IRAM_ATTR void readevents()
 		if (brightnessLCD<0) brightnessLCD=0;
 		printf("toggleOverlay: %d\n", brightnessLCD);
 	    lvds_backlight(true, brightnessLCD);
-	}
-
-   	if (isAsciiDown('o'))
-	{
-		loadNum--;
-		if (loadNum<0) loadNum = 8;
-		printf("Loading rom: %s\n", name[loadNum]);
-        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-
-		if (mode == VIDEO_OUT_HDMI)
-			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-		else
-			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-		vecx_init();
-        resizeVectrex();
-		vTaskDelay(pdMS_TO_TICKS(100));
-	}
-   	if (isAsciiDown('p'))
-	{
-		loadNum++;
-		if (loadNum>8) loadNum = 0;
-		printf("Loading rom: %s\n", name[loadNum]);
-        cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-		if (mode == VIDEO_OUT_HDMI)
-			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-		else
-			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-		vecx_init();
-        resizeVectrex();
-		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 	if (isKeyDown(HID_KEY_F11))
 	{
@@ -2523,48 +2391,5 @@ IRAM_ATTR void readevents()
 		printf("g_line_glow: %d\n", g_line_glow);
 		changeGlobalLineValues(g_line_width, g_line_glow);
 	}
-	if (isKeyDown(HID_KEY_1))
-	{
-		blankOnDelay = blankOnDelay - 1;
-		printf("blankOnDelay: %d\n", blankOnDelay);
-	}
-	if (isKeyDown(HID_KEY_2))
-	{
-		blankOnDelay = blankOnDelay + 1;
-		printf("blankOnDelay: %d\n", blankOnDelay);
-	}
 
-	if (isKeyDown(HID_KEY_3))
-	{
-		blankOffDelay = blankOffDelay - 1;
-		printf("blankOffDelay: %d\n", blankOffDelay);
-	}
-	if (isKeyDown(HID_KEY_4))
-	{
-		blankOffDelay = blankOffDelay + 1;
-		printf("blankOffDelay: %d\n", blankOffDelay);
-	}
-	if (isKeyDown(HID_KEY_5))
-	{
-		rampOnFractionValue = rampOnFractionValue - 1;
-		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
-	}
-	if (isKeyDown(HID_KEY_6))
-	{
-		rampOnFractionValue = rampOnFractionValue + 1;
-		printf("rampOnFractionValue: %d\n", rampOnFractionValue);
-	}
-	if (isKeyDown(HID_KEY_7))
-	{
-		rampOffFractionValue = rampOffFractionValue - 1;
-		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
-	}
-	if (isKeyDown(HID_KEY_8))
-	{
-		rampOffFractionValue = rampOffFractionValue + 1;
-		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
-	}
-    #endif
 }
-
-
