@@ -684,7 +684,7 @@ void e8910_init_sound(void)
 	PSG.OutputN = 0xff;
 //	e8910_build_mixer_table();
 	PSG.ready   = 1;
-    initAY(freq, chans, bits); 
+    initAY(AY_FREQUENCY, AY_CHANNEL, AY_BITS); 
 }
 
 

@@ -12,6 +12,7 @@
 #include "usb/hid_usage_keyboard.h"
 
 //#define NO_AUDIO 1 just be quiet!
+#define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
 
 #define VECX_DEBUG 1
 #define MAX_EMU_FPS 50
@@ -45,14 +46,10 @@
 
 #define INI_FILE_PATH   "/sdcard/ESP.INI"
 
-// vectrex emu
-#define MAX_ROM_NAME    128
-#define MAX_CART_SIZE   32768*2*4 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
-#define DEFAULT_AUTO_SYNC 1 // !! autosync only works reliably when WaitRecal is used. Spike speach out - does not use WR -> frames are missed!!!
-
 // the overlay
 #define HDMI_OVERLAY_WIDTH 564		
 #define HDMI_OVERLAY_HEIGHT 720		
+#define MAX_OVERLAY_NAME 128
 
 // the vecterx output inside an overlay
 #define HDMI_IN_OVERLAY_VECX_WIDTH 500		
@@ -123,6 +120,7 @@ int getDisplayWidth();
 int getDisplayHeight();
 int getScreenWidth();
 int getScreenHeight();
+void setAppFPS(int fps);
 
 
 //DRAM_ATTR int16_t audioBuffer[AUDIO_FRAME_SAMPLES];

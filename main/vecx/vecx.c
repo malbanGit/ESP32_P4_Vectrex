@@ -2066,7 +2066,7 @@ IRAM_ATTR void vectrex()
 		printf("ROM Name in ini: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
 
-cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
+cartSize = load_rom_file("SPIKE.BIN", cartData, sizeof(cartData));
 //cartSize = load_rom_file("VBLADE.NIB", cartData, sizeof(cartData));
 //cartSize = load_rom_file("AKLABETH.BIN", cartData, sizeof(cartData));
 //cartSize = load_rom_file("BERZERKU.BIN", cartData, sizeof(cartData));
@@ -2082,23 +2082,35 @@ cartSize = load_rom_file("KARL.BIN", cartData, sizeof(cartData));
 			printf("\n");
 		}
 		if (mode == VIDEO_OUT_HDMI)
-			loadOverlayRGB("/sdcard/KARL.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
+			loadOverlayRGB("/sdcard/SPIKE.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
 		else
-			loadOverlayRGB("/sdcard/KARL.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+			loadOverlayRGB("/sdcard/SPIKE.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
 
 		ESP_LOGI("Vectrex", "Start vectrex tasks");
 	}
 
 
 	vecx_init();
-
+	setAppFPS(50);
 	while (1)
 	{
+        uint64_t start = esp_timer_get_time();
 		vecx_emu(30000);
 		readevents();
 		readKeyEvents(); // single key test makes it impractical to do as an event
 		if (tobekilled) break;
+
+        // slow down if we are too fast
+        // emulating 30000 vectrex cycles should take 1/50 of a second...
+        // if MAX_EMU_FPS is 50 and 50 is reached, we run with 100% original speed
+        uint64_t now = esp_timer_get_time();
+        if (now - start <= g_fpsToReach) 
+        {
+            int delay = g_fpsToReach - (now - start);
+            esp_rom_delay_us(delay);  
+        }
 	}
+
 	vecx_deinit();
 }
 
@@ -2154,8 +2166,8 @@ int vecx_init()
 		// a cartridge was loaded!
 	}
 	resize();
-	vecx_reset();
 	e8910_init_sound();
+	vecx_reset();
     void callbackAY(void *userdata, int16_t *stream, int length);
 #ifndef NO_AUDIO
     audio_set_callback(callbackAY, NULL);

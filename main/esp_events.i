@@ -78,6 +78,12 @@ void fireInitEvent()
     e.type = ESP_EVENT_INIT;
     esp_fire_event(&e);
 }
+void fireKillEvent()
+{
+    ESPEvent e;
+    e.type = ESP_EVENT_KILL;
+    esp_fire_event(&e);
+}
 
 void esp_clear_event_listeners(void)
 {

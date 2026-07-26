@@ -7,6 +7,9 @@
 extern "C" {
 #endif
 
+// vectrex emu
+#define MAX_ROM_NAME    128
+#define MAX_CART_SIZE   32768*2*4 // 32768*2*4 for vectorblade only when Data is in PSRAM, otherwise too large!
 
 
 enum {
