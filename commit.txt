@@ -2,6 +2,8 @@
 git add -A
 git commit -m "local changes sync"
 git push origin claude/funny-ptolemy-6tx52k
+git push origin master
+
 
 #fetch
 git fetch origin

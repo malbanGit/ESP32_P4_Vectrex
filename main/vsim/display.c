@@ -1,4 +1,4 @@
-#include "..\defines.h"
+#include "../defines.h"
 
 void avg_reset(unsigned long cyc);
 
@@ -6,6 +6,15 @@ void avg_go(unsigned long cyc);
 int avg_done(unsigned long cyc);
 void avg_draw_vector_list_t();
 void avg_halt(int dummy);
+/*
+void avgdvg_device_base::apply_flipping(int &x, int &y) const
+{
+	if (m_flip_x)
+		x += (m_xcenter - x) << 1;
+	if (m_flip_y)
+		y += (m_ycenter - y) << 1;
+}
+*/
 
 /*
  * display.c: Atari DVG and AVG simulators
@@ -835,15 +844,12 @@ u8 avg_prom[256];
 
 int old_x=0;
 int old_y=0;
-
 extern void draw_line2(int FromX, int FromY, int ToX, int ToY, int Colour15, int z); // z is 0:12 in lunar, colour is always 7
 
 void vg_add_point_buf(int x, int y, int color, int intensity)
 {
   #define SHIFT_T 10
-#ifndef TRANSLATE_ONLY
   draw_line2 ((old_y>>SHIFT_T), -(old_x>>SHIFT_T), (y>>SHIFT_T), -(x>>SHIFT_T), color, intensity>>4);
-#endif
 	old_x = x;
 	old_y = y;
 }
@@ -1184,7 +1190,6 @@ int tempest_handler_6() // tempest_strobe2
 		else
 			m_intensity = (m_dvy >> 4) & 0xf;
 	}
-
 	return avg_common_strobe2();
 }
 
@@ -1196,8 +1201,6 @@ int tempest_handler_6() // tempest_strobe2
 // 4 bit
 // the GB 1 bit values are put into the "front"
 // thus return is :: 0000rrgb
-
-
 unsigned char rgbColorMap[] = 
 {
   /* 0000 */ 0, //black
@@ -1229,8 +1232,8 @@ int rgb_t(u8 r, u8 g, u8 b)
   rgb = rgb | ((r&3)<<2);
   rgb = rgb | ((g&1)<<1);
   rgb = rgb | ((b&1));
-//  return rgbColorMap[rgb];
-  return rgb;
+  return rgbColorMap[rgb];
+//  return rgb;
 //  return ((r+g+b)/3) / 32;
 }
 int tempest_handler_7() // tempest_strobe3
@@ -1239,29 +1242,60 @@ int tempest_handler_7() // tempest_strobe3
 
     if ((m_op & 5) == 0)
 	{
-		const u8 data = rdColor(m_color);
+		u8 data = rdColor(m_color);
 		const u8 bit3 = (~data >> 3) & 1;
 		const u8 bit2 = (~data >> 2) & 1;
 		const u8 bit1 = (~data >> 1) & 1;
 		const u8 bit0 = (~data >> 0) & 1;
 
-		const u8 r = bit1 * 0x01 + bit0 * 0x02;
-		const u8 g = bit3 * 0x01;
+		const u8 r = bit1 * 0x08 + bit0 * 0x04;
+		const u8 g = bit3 * 0x02;
 		const u8 b = bit2 * 0x01;
 
-        
-        
-        
 		int x = m_xpos;
 		int y = m_ypos;
 
 		vg_add_point_buf(y - m_ycenter + m_xcenter,
-							x - m_xcenter + m_ycenter, rgb_t(r, g, b),
+							x - m_xcenter + m_ycenter, (r+g+b),
 							(((m_int_latch >> 1) == 1)? m_intensity: m_int_latch & 0xe) << 4);
 	}
 
 	return cycles;
 }
+/* MAME
+int avg_tempest_device::handler_7() // tempest_strobe3
+{
+	const int cycles = avg_common_strobe3();
+
+	if (!OP0() && !OP2())
+	{
+		const u8 data = m_colorram[m_color];
+		const u8 bit3 = BIT(~data, 3);
+		const u8 bit2 = BIT(~data, 2);
+		const u8 bit1 = BIT(~data, 1);
+		const u8 bit0 = BIT(~data, 0);
+
+		const u8 r = bit1 * 0xf3 + bit0 * 0x0c;
+		const u8 g = bit3 * 0xf3;
+		const u8 b = bit2 * 0xf3;
+
+		int x = m_xpos;
+		int y = m_ypos;
+
+		apply_flipping(x, y);
+
+		vg_add_point_buf(
+				y - m_ycenter + m_xcenter,
+				x - m_xcenter + m_ycenter,
+				rgb_t(r, g, b),
+				(((m_int_latch >> 1) == 1) ? m_intensity : m_int_latch & 0xe) << 4);
+	}
+
+	return cycles;
+}
+
+*/
+
 
 /*************************************
  *
@@ -1387,9 +1421,10 @@ void avg_reset (unsigned long cyc)
 	vgrst();
 	avg_halt(1);
 }
+
 void avg_reset_really()
 {
-
+/*
 dvg = 0;
 portrait = 0;
 vg_busy = 0;
@@ -1407,6 +1442,6 @@ df = 1;
 last_vgo_cyc = 0;
 //void avg_init(u16 vram, u16 cram)
 
-
+*/
 }
 

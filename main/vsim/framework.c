@@ -22,6 +22,7 @@
 #include "debugger.h"
 #include "display.h"
 
+//#define DEBUG_OUT(...) do { if (v_directReadButtons() & 0x08){ disasm_6502(PC);if (!debugf) debugf = fopen("debug-sim.log", "w"); if (debugf) { fprintf(debugf,__VA_ARGS__); fflush(debugf); }} } while(0)
 #define DEBUG_OUT(...) 
 
 #define dobreak(arg) do { \
@@ -89,15 +90,17 @@ byte dopop(unsigned short PC)
 
 
 #ifdef FIFO
- s struct _fifo fifo[0x10000];
+struct _fifo fifo[0x10000];
 unsigned short pcpos=0;
 #endif
 
 
 long icount=0;
+extern char simBrowseModeData2[80];
 
 extern void avg_draw_vector_list_t();
 
+extern uint8_t v_directReadButtons();
 
 extern int browseMode;
 extern char disbuffer [30];
@@ -121,8 +124,8 @@ char *getFlagString(int CC)
 
 int nextDraw = 30000;
 extern int frame;
-long long cyclesAll;
 int vecsimSigDone = 0;
+long long cyclesAll;
 void sim_6502 (void)
 {
   register int PC;
@@ -136,7 +139,7 @@ void sim_6502 (void)
   int oldaddr;
 #endif
   DECLARE_CC;
-  vecsimSigDone = 0;
+
   A = save_A;
   X = save_X;
   Y = save_Y;
@@ -145,7 +148,8 @@ void sim_6502 (void)
   totcycles = save_totcycles;
   
   stepflag = 0;
-  printf("Starting VecSim\n");
+  vecsimSigDone = 0;
+
   //int currentIRQCycles = 6144;
   while(1) 
   {
@@ -233,6 +237,7 @@ void sim_6502 (void)
 // this interferes with landing platforms
 //  they are sometimes drawn WITHIN the lander!
 trans_ok = 0;
+
 	if (vecsimSigDone) return;
     if ((!stepflag) && trans_ok)
     {
@@ -244,7 +249,12 @@ trans_ok = 0;
       }
       
     }
-
+/*
+	if (browseMode)
+    {
+        sprintf(simBrowseModeData2, "     PC=%04x, A=%02x, X=%02x, Y=%02x, SP=%04x\r\n", PC, A, X, Y, SP + 0x100);
+    }
+*/
     opcode = memrd (PC, PC, totcycles); PC++;
     switch(opcode) 			/* execute opcode */ 
 	{

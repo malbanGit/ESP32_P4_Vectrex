@@ -411,14 +411,14 @@ void init_graphics ()
  *   g:  0=G0   1=G255
  *   b:  0=B0   1=B255
  */
-static const uint8_t tempest_color_lut[16] = {
+static const uint8_t tempest_color_lut_old[16] = {
     YUV_PALETTE_BLACK,         /*  0: 0000  R=  0, G=  0, B=  0 */
-    YUV_PALETTE_BLUE,          /*  1: 0001  R=  0, G=  0, B=255 */
-    YUV_PALETTE_BRIGHTGREEN,   /*  2: 0010  R=  0, G=255, B=  0 */
-    YUV_PALETTE_CYAN,          /*  3: 0011  R=  0, G=255, B=255 */
-    YUV_PALETTE_DARKMAROON,    /*  4: 0100  R= 85, G=  0, B=  0 */
-    YUV_PALETTE_BLUEVIOLET,    /*  5: 0101  R= 85, G=  0, B=255 */
-    YUV_PALETTE_CHARTREUSE,    /*  6: 0110  R= 85, G=255, B=  0 */
+    YUV_PALETTE_BLUE,          /*  1: 0001  R=  0, G=  0, B=128 */
+    YUV_PALETTE_BRIGHTGREEN,   /*  2: 0010  R=  0, G=128, B=  0 */
+    YUV_PALETTE_CYAN,          /*  3: 0011  R=  0, G=128, B=128 */
+    YUV_PALETTE_DARKMAROON,    /*  4: 0100  R= 128, G=  0, B=  0 */
+    YUV_PALETTE_BLUEVIOLET,    /*  5: 0101  R= 128, G=  0, B=128 */
+    YUV_PALETTE_CHARTREUSE,    /*  6: 0110  R= 128, G=128, B=  0 */
     YUV_PALETTE_AQUAMARINE,    /*  7: 0111  R= 85, G=255, B=255 */
     YUV_PALETTE_DARKRED,       /*  8: 1000  R=170, G=  0, B=  0 */
     YUV_PALETTE_ELECTRICPURP,  /*  9: 1001  R=170, G=  0, B=255 */
@@ -430,7 +430,24 @@ static const uint8_t tempest_color_lut[16] = {
     YUV_PALETTE_WHITE,         /* 15: 1111  R=255, G=255, B=255 */
 };
 
-
+static const uint8_t tempest_color_lut[16] = {
+    YUV_PALETTE_WHITE,        /*  0: raw 0000 -> active-low all-on,  I+R+G+B */
+    YUV_PALETTE_TURQUOISE,    /*  1: raw 0001 -> I+R+G     (B off)          */
+    YUV_PALETTE_MAGENTA,      /*  2: raw 0010 -> I+R+B     (G off)          */
+    YUV_PALETTE_ROYALBLUE,    /*  3: raw 0011 -> I+R       (G,B off)        */
+    YUV_PALETTE_LIGHTYELLOW,  /*  4: raw 0100 -> I+G+B     (R off)          */
+    YUV_PALETTE_LIGHTGREEN,   /*  5: raw 0101 -> I+G       (R,B off)        */
+    YUV_PALETTE_TOMATO,       /*  6: raw 0110 -> I+B       (R,G off)        */
+    YUV_PALETTE_GRAY,         /*  7: raw 0111 -> I only    (R,G,B off)      */
+    YUV_PALETTE_LIGHTGRAY,    /*  8: raw 1000 -> R+G+B     (I off)          */
+    YUV_PALETTE_DARKCYAN,     /*  9: raw 1001 -> R+G       (I,B off)        */
+    YUV_PALETTE_VIOLET,       /* 10: raw 1010 -> R+B       (I,G off)        */
+    YUV_PALETTE_DARKBLUE,     /* 11: raw 1011 -> R only    (I,G,B off)      */
+    YUV_PALETTE_OLIVE,        /* 12: raw 1100 -> G+B       (I,R off)        */
+    YUV_PALETTE_DARKGREEN,    /* 13: raw 1101 -> G only    (I,R,B off)      */
+    YUV_PALETTE_DARKRED,      /* 14: raw 1110 -> B only    (I,R,G off)      */
+    YUV_PALETTE_BLACK,        /* 15: raw 1111 -> nothing lit (all bits off) */
+};
 void draw_line(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
 {
   if (z == 0) return; // MOVE, possibly to realign at 0,0
@@ -451,11 +468,12 @@ mini_draw_line(
       */      
   if (g_color_mode)
   {
+    printf("Draw Line 0\n"); // black widow
       mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
                       offy + (y0+POS_ADDER_Y) / scl_factory, 
                       offx + (x1+POS_ADDER_X) / scl_factorx, 
                       offy + (y1+POS_ADDER_Y) / scl_factory, 
-                      tempest_color_lut[Colour15],
+                      tempest_color_lut_old[Colour15],
                       z<<4); // For ESP32
   }
   else
@@ -475,6 +493,10 @@ mini_draw_line(
 void draw_line2(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
 {
 
+  if (game==TEMPEST)
+  {
+
+  }
   if (z == 0) return; // MOVE, possibly to realign at 0,0
   
   {
@@ -483,21 +505,23 @@ void draw_line2(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:1
 //      mini_draw_line(FromX, FromY, ToX,ToY, Colour15);
     if (FLIP_Y)
     {
+//    printf("Draw Line 1y\n");
       mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
                       displayHeight-(offy + (y0+POS_ADDER_Y) / scl_factory), 
                       offx + (x1+POS_ADDER_X) / scl_factorx, 
                       displayHeight-(offy + (y1+POS_ADDER_Y) / scl_factory), 
-                      tempest_color_lut[Colour15],
+                      tempest_color_lut_old[Colour15],
                       z<<4); // For ESP32
     }
     else
     {
 //printf("A Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
+    printf("Draw Line 1\n");
       mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
                       offy + (y0+POS_ADDER_Y) / scl_factory, 
                       offx + (x1+POS_ADDER_X) / scl_factorx, 
                       offy + (y1+POS_ADDER_Y) / scl_factory, 
-                      tempest_color_lut[Colour15],
+                      tempest_color_lut_old[Colour15],
                       z<<4); // For ESP32
     }
     }

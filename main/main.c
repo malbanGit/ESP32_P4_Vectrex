@@ -527,9 +527,9 @@ static esp_err_t video_start(int mode, bool yuv422,
 
     ESP_LOGI(TAG, "%s up: test card %dx%d (%s)", mode_name(mode), *w, *h, yuv422 ? "YUV422" : "RGB888");
 
-#if LVDS_SETTLE_SWEEP
+    #if LVDS_SETTLE_SWEEP
     if (mode == VIDEO_OUT_LVDS) lvds_sweep_settle(io);   // diagnostic: find the right settle
-#endif
+    #endif
 
     return ESP_OK;
 }
@@ -668,6 +668,9 @@ static void frames_init(void)
     }
     s_build_frame_index      = 0;
     s_frames[0].state        = FRAME_BUILDING;
+    for (int i = 0; i < NUM_FB; ++i) 
+        s_fb_line_count[i] = 0;
+
 }
 
 // ----------------------------------------------------
@@ -761,7 +764,7 @@ IRAM_ATTR void mini_end_frame(void)
 {
     static uint64_t emu_last_time   = 0;
     static int      emu_frame_count = 0;
-
+//printf("Frame end");
     // EMU FPS
     // note!
     // this FPS displays how many frame ends were recieved from the emulator in 1 second
@@ -1052,30 +1055,32 @@ void yuv_palette_init(void)
 // ----------------------------------------------------
 void mini_taskloop(int cycles);
 int vecsimGame=0;
-#define MAX_VECSIM_GAME 6
+#define MAX_VECSIM_GAME 7
 IRAM_ATTR static void application_task(void *arg)
 {
     while (1) 
     {
         // void sim_6502 (void);
         //  sim_6502 ();
-        int tempest(void);
-        int battlezone(void);
-        int blackwidow(void);
+        int tempest(void); //ok
+        int battlezone(void); //ok
+        int blackwidow(void); //ok
         int deluxe(void); // nw
-        int asteroids(void); // bad roms
-        int gravitar(void);
-        int lunar(void); // Nw?
-        int redbaron(void); //
-        int spaceDuel(void); // 
+        int asteroids(void); // crashes while playing
+        int gravitar(void); //ok
+        int lunar(void); // to slow
+        int redbaron(void); // ok
+        int spaceDuel(void); // ok
         
         //tempest();
-        if (vecsimGame==1) asteroids();
-        if (vecsimGame==1) gravitar();
-        if (vecsimGame==2) blackwidow();
-        if (vecsimGame==3) spaceDuel();
-        if (vecsimGame==4) redbaron();
-        if (vecsimGame==5) battlezone();
+
+        if (vecsimGame==1) deluxe();
+        if (vecsimGame==1) tempest();
+        if (vecsimGame==2) gravitar();
+        if (vecsimGame==3) blackwidow();
+        if (vecsimGame==4) spaceDuel();
+        if (vecsimGame==5) redbaron();
+        if (vecsimGame==6) battlezone();
 
 
         mini_taskloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
@@ -2389,6 +2394,7 @@ IRAM_ATTR void readevents()
             }
             vecsimSigDone=1;
             clearFramebuffers();
+            frames_init();
             redraw = 3;
 		}
 	}

@@ -637,15 +637,11 @@ void setup_game (void)
   {
     case BLACK_WIDOW:
     {
-#ifndef TRANSLATE_ONLY
       int error = setup_roms_and_tags2 (black_widow_roms2, black_widow_tags);
       if (error != 0)
       {
         printf("TROUBLE WITH BLACK WIDOW ROMS!");
       }
-#else
-      setup_roms_and_tags (black_widow_roms2, black_widow_tags);
-#endif      
       /* copy_rom (0xe000, 0xf000, 0x1000); */
       copy_rom (0xeffa, 0xfffa, 6);
 
@@ -893,7 +889,7 @@ printf("Game setup.\n");
 
 
       vector_mem_offset = 0x2000;
-	  avg_init(vector_mem_offset, 0x800);
+	    avg_init(vector_mem_offset, 0x800);
 	  
       
       /* copy_rom (0xc000, 0xe000, 0x2000); */
