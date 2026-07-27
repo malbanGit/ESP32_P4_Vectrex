@@ -972,7 +972,7 @@ void yuv_palette_init(void)
 // ----------------------------------------------------
 // Tasks
 // ----------------------------------------------------
-int vecsimGame=1;
+int vecsimGame=0; // 0 is vectrex
 #define MAX_VECSIM_GAME 8
 IRAM_ATTR static void application_task(void *arg)
 {
