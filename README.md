@@ -53,9 +53,9 @@ An earlier RGB888 code path exists in the repository for reference but is no lon
 ## Architecture Overview
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│                        ESP32-P4 Dual-Core                         │
-│                                                                   │
+┌──────────────────────────────────────────────────────────────────┐
+│                        ESP32-P4 Dual-Core                        │
+│                                                                  │
 │  ┌──────────────────────────┐  ┌──────────────────────────────┐  │
 │  │        CORE 0            │  │           CORE 1             │  │
 │  │      "Renderer"          │  │        "Application"         │  │
@@ -71,21 +71,21 @@ An earlier RGB888 code path exists in the repository for reference but is no lon
 │  │  undraw removed lines    │  │        │                     │  │
 │  │  draw   new    lines     │  │  ── marks slot READY ──►     │  │
 │  │        │                 │  │                              │  │
-│  │  swap front/back buffer  │  │  ┌─────────────────────┐    │  │
-│  │  esp_lcd_draw_bitmap     │  │  │   audio_music_task  │    │  │
-│  └──────────────────────────┘  │  │   priority 20       │    │  │
-│                                │  │   calls audio CB    │    │  │
-│  ┌──────────────────────────┐  │  │   → I²S / codec     │    │  │
-│  │     VSYNC ISR (IRAM)     │  │  └─────────────────────┘    │  │
+│  │  swap front/back buffer  │  │  ┌─────────────────────┐     │  │
+│  │  esp_lcd_draw_bitmap     │  │  │   audio_music_task  │     │  │
+│  └──────────────────────────┘  │  │   priority 20       │     │  │
+│                                │  │   calls audio CB    │     │  │
+│  ┌──────────────────────────┐  │  │   → I²S / codec     │     │  │
+│  │     VSYNC ISR (IRAM)     │  │  └─────────────────────┘     │  │
 │  │  xSemaphoreGiveFromISR   │  └──────────────────────────────┘  │
-│  └──────────────────────────┘                                     │
-│                                                                   │
+│  └──────────────────────────┘                                    │
+│                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │                Triple-Buffered Frame Slots                  │  │
+│  │                Triple-Buffered Frame Slots                 │  │
 │  │   slot[0]  slot[1]  slot[2]   (up to 1000 lines each)      │  │
 │  │   FREE → BUILDING → READY → RENDERING → FREE               │  │
 │  └────────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 The **framework** (Core 0 + the frame pipeline) and the **application** (Core 1) are completely decoupled. The framework has no include, no variable, and no direct knowledge of what the application does. The only coupling is:
