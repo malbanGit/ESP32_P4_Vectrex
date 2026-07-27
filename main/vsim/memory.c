@@ -183,12 +183,12 @@ byte MEMRD(unsigned addr, int PC, unsigned long cyc)
   }
   
   if(tag & BREAKTAG)
-    {
-      breakflag = 1;
-    }
+  {
+    breakflag = 1;
+  }
 
   switch(tag & 0x7f) 
-    {
+  {
     case MEMORY:
       result = mem[addr].cell;
       break;
@@ -197,28 +197,12 @@ byte MEMRD(unsigned addr, int PC, unsigned long cyc)
       result = 0;
       break;
 
-    
-    case TEMP_SOUND_PLAYER_DIES: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_CURSOR_MOVES: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_SCORE: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_ENEMY_SHOT: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_ENEMY_EXPLOSTION: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_LAUNCH_PLAYER_FIRE: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_THRUST_ON_TUBE: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_THRUST_ON_SPACE: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_LINE_DESTRUCTION: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_SLAM: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_3S_WARNING: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_PUKSATION_ON: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    case TEMP_SOUND_PUKSATION_OFF: {if (game == TEMPEST) if (gameCallback != 0) gameCallback((int)(tag & 0x7f));return(mem[addr].cell);}
-    
     case COLORRAM:
       result = mem[addr].cell;
 	  break;
     case COININ:
       result = 	((! check_switch_decr (& cslot_right))) | 	((! check_switch_decr (& cslot_left)) << 1) |  ((! check_switch_decr (& cslot_util)) << 2) |
-                 ((! check_switch_decr (& slam)) << 3) | 	((! self_test) << 4) | 	(1 << 5) | /* signature analysis */ 	(vg_done (cyc) << 6) | 
-                /* clock toggles at 3 KHz */ ((cyc >> 1) & 0x80);
+                 ((! check_switch_decr (& slam)) << 3) | 	((! self_test) << 4) | 	(1 << 5) | /* signature analysis */ 	(vg_done (cyc) << 6) |  /* clock toggles at 3 KHz */ ((cyc >> 1) & 0x80);
       break;
     case EAROMRD:
       result = earom_read();
@@ -292,12 +276,12 @@ byte MEMRD(unsigned addr, int PC, unsigned long cyc)
       result = mem [addr & 0xff].cell;
       break;
     case LUNAR_SW1:
-// Vector generator access...     
-#ifdef ORIGINAL_VERSION
-      result = 0x80 | /* DIAG STEP */ ((cyc >> 2) & 0x40) | /* 3 KHz */ 	((! check_switch_decr (& slam)) << 2) | 	((! self_test) << 1) | 	vg_done (cyc) +0x20+0x10+0x08;   /* gcc warns here about precedence of '|' and '+' and suggests adding brackets ...*/
-#else
-      result = 0x80 | /* DIAG STEP */ ((cyc >> 2) & 0x40) | /* 3 KHz */ 	((! check_switch_decr (& slam)) << 2) | 	((! self_test) << 1) |  vg_done (cyc) |0x20|0x10|0x08;
-#endif
+      // Vector generator access...     
+      #ifdef ORIGINAL_VERSION
+            result = 0x80 | /* DIAG STEP */ ((cyc >> 2) & 0x40) | /* 3 KHz */ 	((! check_switch_decr (& slam)) << 2) | 	((! self_test) << 1) | 	vg_done (cyc) +0x20+0x10+0x08;   /* gcc warns here about precedence of '|' and '+' and suggests adding brackets ...*/
+      #else
+            result = 0x80 | /* DIAG STEP */ ((cyc >> 2) & 0x40) | /* 3 KHz */ 	((! check_switch_decr (& slam)) << 2) | 	((! self_test) << 1) |  vg_done (cyc) |0x20|0x10|0x08;
+      #endif
       break;
     case LUNAR_SW2:
       switch (addr & 0x07)
@@ -330,16 +314,16 @@ byte MEMRD(unsigned addr, int PC, unsigned long cyc)
             result = (! check_switch_decr (& cslot_right)) << 7;
             break;
           case 4: /* game select */
-              if (start2!=0) {start2=0;return 0x80;} else return 0;
+            if (start2!=0) {start2=0;return 0x80;} else return 0;
             result = (! check_switch_decr (& start2)) << 7;
             break;
-          case 5:
-              if (switches [0].abort !=0) 
-              {
-        //        switches [0].abort =0;
-                return 0x80;
-              } 
-              else return 0;
+        case 5:
+            if (switches [0].abort !=0) 
+            {
+      //        switches [0].abort =0;
+              return 0x80;
+            } 
+            else return 0;
             result = switches [0].abort << 7;
             break;
           case 6:
@@ -445,7 +429,7 @@ byte MEMRD(unsigned addr, int PC, unsigned long cyc)
       break;
     }
 
-  if(tag & BREAKTAG)
+    if(tag & BREAKTAG)
     {
       printf ("@%04x Breakpoint read %04x, data %02x\n", PC, addr, result);
     }

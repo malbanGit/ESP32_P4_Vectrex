@@ -57,33 +57,7 @@ void gameCommand(void)
 	printf("Atari Vector game simulator, Copyright 1993, 1996 Eric Smith\r\n");
 }
 
-// for now INI setting just stupidly overwrite other saved settings!
-static int simIniHandler(void* user, const char* section, const char* name, const char* value)
-{
-  // cascading ini files
-  // first check if there are "general" entries
-/*
-  if (iniHandler(user, section, name, value) == 1) return 1;
 
-  
-  #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
-  #define MATCH_NAME(n) strcmp(name, n) == 0
-  
-  if (MATCH("BATTLE_ZONE", "YATES_INPUT")) yates_config = atoi(value); 
-  if (MATCH("BATTLE_ZONE", "STRAMASH_INPUT_1")) stramash_config1 = atoi(value); 
-  if (MATCH("BATTLE_ZONE", "STRAMASH_INPUT_2")) stramash_config2 = atoi(value); 
-  */
-  
-/*
- * No special values as of yet
-  if (MATCH("VECTREX_EXACT", "ROM_FILE")) strcpy(romName, value); else 
-  {
-      printf("Ini-Handler, unkown entry: %s = %s", name, value);
-      return 0;  / * unknown section/name, error * /
-  }
-*/  
-  return 1;
-}
 int OFFSET_X= 500;
 int OFFSET_Y= 300;
 int MUL_X= 35;
@@ -345,6 +319,7 @@ void init_graphics ()
     int sw = getScreenWidth();
     int sh = getScreenHeight();
 
+    // screen type is that of the game/ emulator
     if (SCREEN_TYPE == GAME_PORTRAIT)
     {
       if (sh>sw) // display portait
@@ -357,6 +332,19 @@ void init_graphics ()
           scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
           offx = (sw-displayWidth)/2;
           offy = (sh-displayHeight)/2;
+
+          if (game == TEMPEST)
+          {
+              displayWidth = 480;
+              displayHeight =(int) (((float)displayWidth)*4.0f/3.0f);
+
+              scl_factorx = ((float)ALG_MAX_X) / ((float)displayWidth);
+              scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
+              offx = (sw-displayWidth)/2;
+              offy = (sh-displayHeight)/2;
+              offy-=50;
+              offx+=0;
+          }
           printf("Portrait portait correction\n");
       }
       else // display is Landscape
@@ -367,10 +355,7 @@ void init_graphics ()
           scl_factorx = ((float)ALG_MAX_X) / ((float)displayWidth);
           scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
           offx = (sw-displayWidth)/2;
-          if (FLIP_Y)
-            offy = +100; // I don't know - this is fucking tempest
-          else
-            offy = (sh-displayHeight)/2;
+          offy = (sh-displayHeight)/2+110;
           printf("Portrait Landscape correction\n");
       }
     }
@@ -378,12 +363,12 @@ void init_graphics ()
     {
       if (sw>sh)
       {
-          displayWidth =(int) (((float)sh)*4.0f/3.0f);
-          displayHeight = sh;
+          displayHeight = sh-50;
+          displayWidth =(int) (((float)displayHeight)*4.0f/3.0f);
           scl_factorx = ((float)ALG_MAX_X) / ((float)displayWidth);
           scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
-          offx = (sw-displayWidth)/2;
-          offy = (sh-displayHeight)/2;
+          offx = (sw-displayWidth)/2+100;
+          offy = (sh-displayHeight)/2-110;
 
           printf("Landscape landscape correction\n");
 
@@ -396,11 +381,13 @@ void init_graphics ()
 
           scl_factorx = ((float)ALG_MAX_X) / ((float)displayWidth);
           scl_factory = ((float)ALG_MAX_Y) / ((float)displayHeight);
-          offx = (sw-displayWidth)/2;
-          offy = (sh-displayHeight)/2;
+          offx = (sw-displayWidth)/2+70;
+          offy = (sh-displayHeight)/2-70;
         printf("Landscape portait correction\n");
       }
     }
+printf("POS_ADDER_X: %i, POS_ADDER_Y: %i\n", POS_ADDER_X, POS_ADDER_Y);
+printf("OffsetX: %li, Offsety: %li\n", offx, offy);
 
     printf("scl_factorx:%f, scl_factory: %f, ",scl_factorx, scl_factory);
 }
@@ -451,106 +438,82 @@ static const uint8_t tempest_color_lut[16] = {
 void draw_line(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
 {
   if (z == 0) return; // MOVE, possibly to realign at 0,0
-//printf("Sim Line:x0:%i, y0:%i, x1:%i, y1:%i, color:%i, b:%i\n",x0,y0,x1,y1, Colour15,z);
-/*
-mini_draw_line(
-		  (FromX - OFFSET_X)*MUL_X, 
-		  (FromY - OFFSET_Y)*MUL_Y, 
-		  (ToX- OFFSET_X)*MUL_X,
-		  (ToY- OFFSET_Y)*MUL_Y, 
-		  z*4+Colour15*8);
-
-    mini_draw_line( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                    offy + (y0+POS_ADDER_Y) / scl_factory, 
-                    offx + (x1+POS_ADDER_X) / scl_factorx, 
-                    offy + (y1+POS_ADDER_Y) / scl_factory, 
-                    255); // For ESP32
-      */      
-  if (g_color_mode)
-  {
-    printf("Draw Line 0\n"); // black widow
-      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                      offy + (y0+POS_ADDER_Y) / scl_factory, 
-                      offx + (x1+POS_ADDER_X) / scl_factorx, 
-                      offy + (y1+POS_ADDER_Y) / scl_factory, 
-                      tempest_color_lut_old[Colour15],
+    if (g_color_mode)
+    {
+        mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                        offy + (y0+POS_ADDER_Y) / scl_factory, 
+                        offx + (x1+POS_ADDER_X) / scl_factorx, 
+                        offy + (y1+POS_ADDER_Y) / scl_factory, 
+                        tempest_color_lut_old[Colour15],
+                        z<<4); // For ESP32
+    }
+    else
+    {
+      mini_draw_line( offx + (int) ((x0+POS_ADDER_X) / scl_factorx), 
+                      offy + (int) ((y0+POS_ADDER_Y) / scl_factory), 
+                      offx + (int) ((x1+POS_ADDER_X) / scl_factorx), 
+                      offy + (int) ((y1+POS_ADDER_Y) / scl_factory), 
                       z<<4); // For ESP32
-  }
-  else
-  {
-    mini_draw_line( offx + (int) ((x0+POS_ADDER_X) / scl_factorx), 
-                    offy + (int) ((y0+POS_ADDER_Y) / scl_factory), 
-                    offx + (int) ((x1+POS_ADDER_X) / scl_factorx), 
-                    offy + (int) ((y1+POS_ADDER_Y) / scl_factory), 
-                    z<<4); // For ESP32
-  }
-
-
+    }
 }
 // from addpoint AVG (Tempest)
 // in color is a 4 bit rgb value
 // %0000rrgb
 void draw_line2(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
 {
-
-  if (game==TEMPEST)
-  {
-
-  }
   if (z == 0) return; // MOVE, possibly to realign at 0,0
   
-  {
-   if (z>=12) 
+//   if (z>=12) 
    {
-//      mini_draw_line(FromX, FromY, ToX,ToY, Colour15);
-    if (FLIP_Y)
-    {
-//    printf("Draw Line 1y\n");
-      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                      displayHeight-(offy + (y0+POS_ADDER_Y) / scl_factory), 
-                      offx + (x1+POS_ADDER_X) / scl_factorx, 
-                      displayHeight-(offy + (y1+POS_ADDER_Y) / scl_factory), 
-                      tempest_color_lut_old[Colour15],
-                      z<<4); // For ESP32
-    }
-    else
-    {
-//printf("A Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
-    printf("Draw Line 1\n");
-      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                      offy + (y0+POS_ADDER_Y) / scl_factory, 
-                      offx + (x1+POS_ADDER_X) / scl_factorx, 
-                      offy + (y1+POS_ADDER_Y) / scl_factory, 
-                      tempest_color_lut_old[Colour15],
-                      z<<4); // For ESP32
-    }
-    }
-   else
-   {
-//      mini_draw_line(x0, y0, x1,y1, (int)( ((float)Colour15)*(((float)z)/(15.0) )));
-    if (FLIP_Y)
-    {
-      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                      displayHeight-(offy + (y0+POS_ADDER_X) / scl_factory), 
-                      offx + (x1+POS_ADDER_X) / scl_factorx, 
-                      displayHeight-(offy + (y1+POS_ADDER_X) / scl_factory), 
-                      tempest_color_lut[Colour15],
-                      z<<4); // For ESP32
-    }
-    else
-    {
-printf("B Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
-      mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
-                      offy + (y0+POS_ADDER_X) / scl_factory, 
-                      offx + (x1+POS_ADDER_X) / scl_factorx, 
-                      offy + (y1+POS_ADDER_X) / scl_factory, 
-                      tempest_color_lut[Colour15],
-                      z<<4); // For ESP32
-    }
 
+      if (game==TEMPEST)
+      {
+
+          if (FLIP_Y)
+          {
+            mini_draw_line_color(          offx + (x0+POS_ADDER_X) / scl_factorx, 
+                            displayHeight-(offy + (y0+POS_ADDER_Y) / scl_factory), 
+                                           offx + (x1+POS_ADDER_X) / scl_factorx, 
+                            displayHeight-(offy + (y1+POS_ADDER_Y) / scl_factory), 
+                            tempest_color_lut_old[Colour15],
+                            z<<4); // For ESP32
+          }
+          else
+          {
+            //printf("A Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
+            printf("Draw Line 1\n");
+            mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                                  offy + (y0+POS_ADDER_Y) / scl_factory, 
+                                  offx + (x1+POS_ADDER_X) / scl_factorx, 
+                                  offy + (y1+POS_ADDER_Y) / scl_factory, 
+                            tempest_color_lut_old[Colour15],
+                            z<<4); // For ESP32
+          }
+      }
+      else
+      {
+            if (FLIP_Y)
+            {
+              mini_draw_line_color(          offx + (x0+POS_ADDER_X) / scl_factorx, 
+                              displayHeight-(offy + (y0+POS_ADDER_Y) / scl_factory), 
+                                             offx + (x1+POS_ADDER_X) / scl_factorx, 
+                              displayHeight-(offy + (y1+POS_ADDER_Y) / scl_factory), 
+                              tempest_color_lut[Colour15],
+                              z<<4); // For ESP32
+            }
+            else
+            {
+              printf("B Sim Line col:x0:%i, y0:%i, x1:%i, y1:%i, col:%i, b:%i\n",x0,y0,x1,y1,Colour15,  z);
+              mini_draw_line_color( offx + (x0+POS_ADDER_X) / scl_factorx, 
+                                    offy + (y0+POS_ADDER_Y) / scl_factory, 
+                                    offx + (x1+POS_ADDER_X) / scl_factorx, 
+                                    offy + (y1+POS_ADDER_Y) / scl_factory, 
+                              tempest_color_lut[Colour15],
+                              z<<4); // For ESP32
+            }
+      }
    }
-   
-  }
+  
 }
 
 void open_page (int step)

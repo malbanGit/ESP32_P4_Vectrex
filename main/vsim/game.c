@@ -200,12 +200,12 @@ FLASH_ROM_ATTR tag_info space_duel_tags [] =
 
 FLASH_ROM_ATTR rom_info2 tempest_roms2 [] =
 {
-  { "/sdcard/roms/tempest.zip", "136002-133.d1", 0x9000, 0x1000, 0 , 0x1D0CC503},
-  { "/sdcard/roms/tempest.zip", "136002-134.f1", 0xa000, 0x1000, 0 , 0xC88E3524},
-  { "/sdcard/roms/tempest.zip", "136002-235.j1", 0xb000, 0x1000, 0 , 0xA4B2CE3F},  /* or .235 */
-  { "/sdcard/roms/tempest.zip", "136002-136.lm1", 0xc000, 0x1000, 0 , 0x65A9A9F9},
-  { "/sdcard/roms/tempest.zip", "136002-237.p1", 0xd000, 0x1000, 0 , 0xDE4E9E34},  /* or .237 */
-  { "/sdcard/roms/tempest.zip", "136002-138.np3", 0x3000, 0x1000, 0 , 0x9995256D},
+  { "/sdcard/roms/tempest2.zip", "136002-133.d1", 0x9000, 0x1000, 0 , 0x1D0CC503},
+  { "/sdcard/roms/tempest2.zip", "136002-134.f1", 0xa000, 0x1000, 0 , 0xC88E3524},
+  { "/sdcard/roms/tempest2.zip", "136002-235.j1", 0xb000, 0x1000, 0 , 0xA4B2CE3F},  /* or .235 */
+  { "/sdcard/roms/tempest2.zip", "136002-136.lm1", 0xc000, 0x1000, 0 , 0x65A9A9F9},
+  { "/sdcard/roms/tempest2.zip", "136002-237.p1", 0xd000, 0x1000, 0 , 0xDE4E9E34},  /* or .237 */
+  { "/sdcard/roms/tempest2.zip", "136002-138.np3", 0x3000, 0x1000, 0 , 0x9995256D},
   { NULL,         0,      0,      0 , 0, 0}
 };
 
@@ -239,21 +239,6 @@ FLASH_ROM_ATTR tag_info tempest_tags [] =
 
   { 0x60e0,      1,      WR, TEMP_OUTPUTS },
 
-  
-  { 0xCCB0,      1,      RD, TEMP_SOUND_PLAYER_DIES },
-  { 0xCCB5,      1,      RD, TEMP_SOUND_CURSOR_MOVES },
-  { 0xCCB9,      1,      RD, TEMP_SOUND_SCORE },
-  { 0xCCBD,      1,      RD, TEMP_SOUND_ENEMY_SHOT },
-  { 0xCCC1,      1,      RD, TEMP_SOUND_ENEMY_EXPLOSTION },
-  { 0xCCE9,      1,      RD, TEMP_SOUND_LAUNCH_PLAYER_FIRE },
-  { 0xCCED,      1,      RD, TEMP_SOUND_THRUST_ON_TUBE },
-  { 0xCCF1,      1,      RD, TEMP_SOUND_THRUST_ON_SPACE },
-  { 0xCCF5,      1,      RD, TEMP_SOUND_LINE_DESTRUCTION },
-  { 0xCCF9,      1,      RD, TEMP_SOUND_SLAM },
-  { 0xCCFD,      1,      RD, TEMP_SOUND_3S_WARNING },
-  { 0xCD01,      1,      RD, TEMP_SOUND_PUKSATION_ON },
-  { 0xCD05,      1,      RD, TEMP_SOUND_PUKSATION_OFF },
-  
   { 0,           0, 0,       0 }
 };
 
@@ -576,6 +561,9 @@ void setup_game (void)
 
       optionreg [0] = 0x02;  /* switch D4, 1..8, off = 0, on = 1 */
       optionreg [1] = 0xcf;  /* switch B4, 1..8, off = 0, on = 1 */
+      pokey_set_count (2);
+      pokey_init();
+
 /*
     -------------------------------------------------------------------------------
     Settings of 8-Toggle Switch on Black Widow CPU PCB (at D4)
@@ -660,6 +648,8 @@ void setup_game (void)
 
       vector_mem_offset = 0x2000;
 
+      pokey_set_count (2);
+      pokey_init();
 
       optionreg [0] = 0x10;  /* switch D4, 1..8, off = 0, on = 1 */
       optionreg [1] = 0x02;  /* switch B4, 1..8, off = 0, on = 1 */
@@ -684,6 +674,8 @@ void setup_game (void)
 
       optionreg [2] = 0x00; /* switch P10/11 4..2, off = 0, on = 1 */
 
+      pokey_set_count (2);
+      pokey_init();
 /*
 
     -------------------------------------------------------------------------------
@@ -773,11 +765,13 @@ void setup_game (void)
       copy_rom (0xdffa, 0xfffa, 6);
 
 
-        pokey_set_count (2);
-        pokey_init();
+      pokey_set_count (2);
+      pokey_init();
 
-      optionreg [0] = 0x02;//N13 INVERTED and backwards
-      optionreg [1] = 0x00;//L12 INVERTED and backwards
+      optionreg [0] = 0x02;//L12 INVERTED and backwards // free play
+      optionreg [1] = 0x00;//N13 INVERTED and backwards
+
+
 /*
    
     GAME OPTIONS:
@@ -859,6 +853,8 @@ void setup_game (void)
 
       optionreg [0] = 0x15; /* M10 8..1 */
       optionreg [1] = 0x60; /* P10 8..1 */
+      pokey_set_count (1);
+      pokey_init();
 
       use_nmi = 1;
     }
@@ -878,6 +874,9 @@ void setup_game (void)
 
       optionreg [0] = 0xff; /* M10 8..1 coins/credit */
       optionreg [1] = 0xeb; /* P10 8..1 language/# planes/bonus points*/
+
+      pokey_set_count (1);
+      pokey_init();
 /*
  * 
     RED BARON DIP SWITCH SETTINGS
@@ -993,6 +992,7 @@ void setup_game (void)
       optionreg [0] = 0xd0;
       dvg = 1;
       use_nmi = 1;
+      pokey_set_count (0);
     }
       break;
 
@@ -1013,6 +1013,7 @@ void setup_game (void)
 
       dvg = 1;
       use_nmi = 1;
+      pokey_set_count (0);
     }
       break;
 
@@ -1028,6 +1029,8 @@ void setup_game (void)
 
       vector_mem_offset = 0x4000;
 
+      pokey_set_count (1);
+      pokey_init();
 
       optionreg [0] = (~0xD3) & 0xff;
 

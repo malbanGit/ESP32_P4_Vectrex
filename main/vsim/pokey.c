@@ -560,10 +560,16 @@ static IRAM_ATTR int pokey_skip_idle_clocks(pokey_device *d, int remaining)
     if (skip <= 0) return 0;
 
     /* Advance poly counters by 'skip' steps (modular) */
-    d->m_p4  += skip; if (d->m_p4  >= 0x0000fu) d->m_p4  -= 0x0000fu;
-    d->m_p5  += skip; if (d->m_p5  >= 0x0001fu) d->m_p5  -= 0x0001fu;
-    d->m_p9  += skip; if (d->m_p9  >= 0x001ffu) d->m_p9  -= 0x001ffu;
-    d->m_p17 += skip; if (d->m_p17 >= 0x1ffffu) d->m_p17 -= 0x1ffffu;
+//    d->m_p4  += skip; if (d->m_p4  >= 0x0000fu) d->m_p4  -= 0x0000fu;
+//    d->m_p5  += skip; if (d->m_p5  >= 0x0001fu) d->m_p5  -= 0x0001fu;
+//    d->m_p9  += skip; if (d->m_p9  >= 0x001ffu) d->m_p9  -= 0x001ffu;
+//    d->m_p17 += skip; if (d->m_p17 >= 0x1ffffu) d->m_p17 -= 0x1ffffu;
+
+    d->m_p4  = (d->m_p4+skip) & 0x0000fu;
+    d->m_p5  = (d->m_p5+skip) & 0x0001fu;
+    d->m_p9  = (d->m_p9+skip) & 0x001ffu;
+    d->m_p17  = (d->m_p17+skip) & 0x1ffffu;
+
 
     /* Advance clock dividers — no wrap needed: skip < to_clk <= DIV_64/DIV_15 */
     d->m_clock_cnt[CLK_28]  += skip;
@@ -724,16 +730,37 @@ byte pokey_read(int pokeynum, int reg, int PC, unsigned long cyc)
 {
     if (pokeynum < 0 || pokeynum >= MAX_POKEY) return 0xff;
 
+
+    if ((((UINT8)reg) & 15) == RANDOM_C)
+    {
+        int data = 0xff;
+        if (s_dev[pokeynum].m_AUDCTL & POLY9)
+        {
+            s_dev[pokeynum].m_p9  = (s_dev[pokeynum].m_p9+5) & 0x001ffu;
+            data = s_poly9[s_dev[pokeynum].m_p9] & 0xff;
+            return data;
+        }
+        else
+        {
+            s_dev[pokeynum].m_p17  = (s_dev[pokeynum].m_p17+7) & 0x1ffffu;
+            data = (s_poly17[s_dev[pokeynum].m_p17] >> 8) & 0xff;  /* full PSRAM value needed here */
+            return data;
+        }
+    }
+
     /* Tempest overrides — kept from original vsim pokey.c */
-    if (game == TEMPEST) {
-        if (reg == (RANDOM_C & 0x0f) && pokeynum == 1) return 0xff;
-        if (reg == (ALLPOT_C & 0x0f) && pokeynum == 0) {
+    if (game == TEMPEST) 
+    {
+        // if (reg == (RANDOM_C & 0x0f) && pokeynum == 1)  return 0xff;
+        
+        if (reg == (ALLPOT_C & 0x0f) && pokeynum == 0) 
+        {
             signed char spin = (signed char)joystick.x;
             if (spin > 0)       spin = (spin - 30) / 30;
             else if (spin < 0)  spin = (spin + 30) / 30;
             s_spinnerSum += spin;
-            if (s_spinnerSum >  7) { s_oldSpinner += spin; s_spinnerSum -= 7; }
-            if (s_spinnerSum < -7) { s_oldSpinner += spin; s_spinnerSum += 7; }
+            if (s_spinnerSum >  7) { s_oldSpinner -= spin; s_spinnerSum += 7; }
+            if (s_spinnerSum < -7) { s_oldSpinner -= spin; s_spinnerSum -= 7; }
             return (byte)(s_oldSpinner & 0x0f);
         }
         if (reg == (ALLPOT_C & 0x0f) && pokeynum == 1) {

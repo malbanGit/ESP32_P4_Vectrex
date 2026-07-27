@@ -314,8 +314,8 @@ void dumpregs (void)
 #ifdef WRAP_CYC_COUNT
     printf ("  wrap: %lu", cyc_wraps);
 #endif
-    printf ("  cyc: %lu", save_totcycles);
-    printf ("  irq_cyc: %lu", irq_cycle);
+//    printf ("  cyc: %lu", save_totcycles);
+//    printf ("  irq_cyc: %lu", irq_cycle);
     printf ("\r\n");
     fflush(stdout);
 }

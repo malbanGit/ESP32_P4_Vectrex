@@ -35,7 +35,7 @@ void audio_set_callback(audio_sample_callback_t cb, void *userdata);
 void callbackPokey(void *userdata, int16_t *stream, int length);
 
 HUGE_DATA_LOCATION char gameMemory[4*65536];
-DRAM_ATTR int tobekilled = 0;
+static DRAM_ATTR int tobekilled = 0;
 int a_fps = 60;
 
 void init_graphics (); // framework.c
@@ -68,6 +68,7 @@ void initArcadia()
 
   init_graphics();
   setAppFPS(a_fps);
+  printf("Game picked: %i\n", game);
   setup_game();
   
 
@@ -107,8 +108,139 @@ int tempest(void)
   POS_ADDER_Y = 14000;
   FLIP_Y=1;
   SCREEN_TYPE = GAME_PORTRAIT;
-  a_fps = 600; // sets g_fpsToReach
+  a_fps = 60; // sets g_fpsToReach
 
+  initArcadia();
+  g_color_mode = 1;
+  yuv_palette_init();
+
+  PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  irq_cycle = 4173; // tempest 
+
+	while (1)
+	{
+      uint64_t start = esp_timer_get_time();
+      sim_6502 (25200); // 1512000 Mhz / 60 FPS
+
+      // slow down if we are too fast
+      // emulating 1 frame should take 1/50 of a second...
+      // if MAX_EMU_FPS is 60 and 60 is reached, we run with 100% original speed
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= g_fpsToReach) 
+      {
+        int delay = g_fpsToReach - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+      
+      if (tobekilled) break;
+	}
+  deinitArcadia();
+  return 0;
+}
+int deluxe(void)
+{
+  ProgName = "deluxe"; // defined in display.h
+  ALG_XMIN=0;
+  ALG_XMAX=1000;
+  ALG_YMIN=0;
+  ALG_YMAX=750;
+  ALG_MAX_X=1000; // wid
+  ALG_MAX_Y=750;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+  a_fps = 42; // sets g_fpsToReach
+
+  initArcadia();
+  g_color_mode = 0;
+  
+  PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  irq_cycle = 8192; // deluxe 
+
+	while (1)
+	{
+      uint64_t start = esp_timer_get_time();
+      sim_6502 (36000); // 1512000 Mhz / 42 FPS
+
+      // slow down if we are too fast
+      // emulating 1 frame should take 1/50 of a second...
+      // if MAX_EMU_FPS is 60 and 60 is reached, we run with 100% original speed
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= g_fpsToReach) 
+      {
+          int delay = g_fpsToReach - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+      
+      if (tobekilled) break;
+	}
+  deinitArcadia();
+  return 0;
+
+}
+int battlezone(void)
+{
+  ProgName = "battlezone"; // defined in display.h
+  ALG_XMIN=0;
+  ALG_XMAX=1000;
+  ALG_YMIN=0;
+  ALG_YMAX=750;
+  ALG_MAX_X=1000; // wid
+  ALG_MAX_Y=750;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+  a_fps = 42; // sets g_fpsToReach
+
+  initArcadia();
+  g_color_mode = 0;
+  
+  PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  irq_cycle = 8192; // deluxe 
+
+	while (1)
+	{
+      uint64_t start = esp_timer_get_time();
+      sim_6502 (36000); // 1512000 Mhz / 42 FPS
+
+      // slow down if we are too fast
+      // emulating 1 frame should take 1/50 of a second...
+      // if MAX_EMU_FPS is 60 and 60 is reached, we run with 100% original speed
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= g_fpsToReach) 
+      {
+          int delay = g_fpsToReach - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+      
+      if (tobekilled) break;
+	}
+  deinitArcadia();
+  return 0;
+}
+int blackwidow(void)
+{
+  ProgName = "blackwidow"; // defined in display.h
+  
+  ALG_XMIN=0;
+  ALG_XMAX=1100;
+  ALG_YMIN=0;
+  ALG_YMAX=850;
+  ALG_MAX_X=1100; // wid
+  ALG_MAX_Y=850;
+
+  POS_ADDER_X = 0;
+  POS_ADDER_Y = 0;
+  FLIP_Y=0;
+  SCREEN_TYPE = GAME_LANDSCAPE;
+
+  a_fps = 60;
   initArcadia();
   g_color_mode = 1;
   yuv_palette_init();
@@ -135,14 +267,11 @@ int tempest(void)
 	}
   deinitArcadia();
   return 0;
+
 }
-
-int battlezone(void)
+int asteroids(void)
 {
-  ProgName = "battlezone"; // defined in display.h
-  mem = (elem *) gameMemory;
-  game = pick_game (ProgName);
-
+  ProgName = "asteroids"; // defined in display.h
   ALG_XMIN=0;
   ALG_XMAX=1000;
   ALG_YMIN=0;
@@ -155,118 +284,38 @@ int battlezone(void)
   FLIP_Y=0;
   SCREEN_TYPE = GAME_LANDSCAPE;
 
+  a_fps = 60; // sets g_fpsToReach
 
-  init_graphics ();
-  setAppFPS(41);
-  printf("Game picked: %i\n", game);
-  setup_game();
+  initArcadia();
   g_color_mode = 0;
- 
-  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
-  save_A = 0;
-  save_X = 0;
-  save_Y = 0;
-  save_flags = 0;
-  save_totcycles = 0;
-  irq_cycle = 8192; // battlezone
-
-  avg_reset_really();
-  while (1)
-  {
-  sim_6502 (25200); // 1512000 Mhz / 60 FPS
-  }
-  return 0;
-}
-int blackwidow(void)
-{
-  ProgName = "blackwidow"; // defined in display.h
   
-  mem = (elem *) gameMemory;
-  game = pick_game (ProgName);
+  PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  irq_cycle = 8192; // deluxe 
 
-  ALG_XMIN=0;
-  ALG_XMAX=1100;
-  ALG_YMIN=0;
-  ALG_YMAX=850;
-  ALG_MAX_X=1100; // wid
-  ALG_MAX_Y=850;
+	while (1)
+	{
+      uint64_t start = esp_timer_get_time();
+      sim_6502 (25200); // 1512000 Mhz / 60 FPS
 
-  POS_ADDER_X = 0;
-  POS_ADDER_Y = 0;
-  FLIP_Y=0;
-  SCREEN_TYPE = GAME_LANDSCAPE;
-
-  init_graphics ();
-  setAppFPS(60);
-  setup_game();
-  g_color_mode = 1;
-  yuv_palette_init();
-  // from pokey.c
-  //  void enablePokeyOutput(int e);
-  //  enablePokeyOutput(0); // false
-  
-  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
-  save_A = 0;
-  save_X = 0;
-  save_Y = 0;
-  save_flags = 0;
-  save_totcycles = 0;
-  irq_cycle = 8192; // blackwidow
-
-  avg_reset_really();
-  while (1)
-  {
-  sim_6502 (25200); // 1512000 Mhz / 60 FPS
-  }
+      // slow down if we are too fast
+      // emulating 1 frame should take 1/50 of a second...
+      // if MAX_EMU_FPS is 60 and 60 is reached, we run with 100% original speed
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= g_fpsToReach) 
+      {
+          int delay = g_fpsToReach - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+      
+      if (tobekilled) break;
+	}
+  deinitArcadia();
   return 0;
 }
-int deluxe(void)
-{
-  ProgName = "deluxe"; // defined in display.h
-  mem = (elem *) gameMemory;
-  game = pick_game (ProgName);
 
-  ALG_XMIN=0;
-  ALG_XMAX=1000;
-  ALG_YMIN=0;
-  ALG_YMAX=750;
-  ALG_MAX_X=1000; // wid
-  ALG_MAX_Y=750;
-
-  POS_ADDER_X = 0;
-  POS_ADDER_Y = 0;
-  FLIP_Y=0;
-  SCREEN_TYPE = GAME_LANDSCAPE;
-
-
-  init_graphics ();
-  setAppFPS(41);
-  printf("Game picked: %i\n", game);
-  setup_game();
-  g_color_mode = 0;
- 
-  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
-  save_A = 0;
-  save_X = 0;
-  save_Y = 0;
-  save_flags = 0;
-  save_totcycles = 0;
-  irq_cycle = 8192; // battlezone
-
-  avg_reset_really();
-  while (1)
-  {
-  sim_6502 (25200); // 1512000 Mhz / 60 FPS
-  }
-  return 0;
-}
 int gravitar(void)
 {
   ProgName = "gravitar"; // defined in display.h
-  
-  mem = (elem *) gameMemory;
-  game = pick_game (ProgName);
-
   ALG_XMIN=0;
   ALG_XMAX=1100;
   ALG_YMIN=0;
@@ -278,37 +327,38 @@ int gravitar(void)
   POS_ADDER_Y = 0;
   FLIP_Y=0;
   SCREEN_TYPE = GAME_LANDSCAPE;
+  a_fps = 60; // sets g_fpsToReach
 
-  init_graphics ();
-  setAppFPS(60);
-  setup_game();
+  initArcadia();
   g_color_mode = 1;
   yuv_palette_init();
-  // from pokey.c
-  //  void enablePokeyOutput(int e);
-  //  enablePokeyOutput(0); // false
-  
-  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
-  save_A = 0;
-  save_X = 0;
-  save_Y = 0;
-  save_flags = 0;
-  save_totcycles = 0;
-  irq_cycle = 8192; // blackwidow
 
-  avg_reset_really();
-  while (1)
-  {
-  sim_6502 (25200); // 1512000 Mhz / 60 FPS
-  }
+  PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  irq_cycle = 8192; //  
+
+	while (1)
+	{
+      uint64_t start = esp_timer_get_time();
+      sim_6502 (25200); // 1512000 Mhz / 60 FPS
+
+      // slow down if we are too fast
+      // emulating 1 frame should take 1/50 of a second...
+      // if MAX_EMU_FPS is 60 and 60 is reached, we run with 100% original speed
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= g_fpsToReach) 
+      {
+          int delay = g_fpsToReach - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+      
+      if (tobekilled) break;
+	}
+  deinitArcadia();
   return 0;
 }
 int lunar(void)
 {
   ProgName = "lunar"; // defined in display.h
-  mem = (elem *) gameMemory;
-  game = pick_game (ProgName);
-
   ALG_XMIN=0;
   ALG_XMAX=1000;
   ALG_YMIN=0;
@@ -321,34 +371,38 @@ int lunar(void)
   FLIP_Y=0;
   SCREEN_TYPE = GAME_LANDSCAPE;
 
+  a_fps = 41; // sets g_fpsToReach
 
-  init_graphics ();
-  setAppFPS(41);
-  printf("Game picked: %i\n", game);
-  setup_game();
+  initArcadia();
   g_color_mode = 0;
- 
-  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
-  save_A = 0;
-  save_X = 0;
-  save_Y = 0;
-  save_flags = 0;
-  save_totcycles = 0;
-  irq_cycle = 6136; // battlezone
+  
+  PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  irq_cycle = 6136; // 
 
-  avg_reset_really();
-  while (1)
-  {
-  sim_6502 (25200); // 1512000 Mhz / 60 FPS
-  }
+	while (1)
+	{
+      uint64_t start = esp_timer_get_time();
+      sim_6502 (36000); // 1512000 Mhz / 41 FPS
+
+      // slow down if we are too fast
+      // emulating 1 frame should take 1/50 of a second...
+      // if MAX_EMU_FPS is 60 and 60 is reached, we run with 100% original speed
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= g_fpsToReach) 
+      {
+          int delay = g_fpsToReach - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+      
+      if (tobekilled) break;
+	}
+  deinitArcadia();
   return 0;
+
 }
 int redbaron(void)
 {
   ProgName = "redbaron"; // defined in display.h
-  mem = (elem *) gameMemory;
-  game = pick_game (ProgName);
-
   ALG_XMIN=0;
   ALG_XMAX=1000;
   ALG_YMIN=0;
@@ -361,75 +415,38 @@ int redbaron(void)
   FLIP_Y=0;
   SCREEN_TYPE = GAME_LANDSCAPE;
 
+  a_fps = 60; // sets g_fpsToReach
 
-  init_graphics ();
-  setAppFPS(62);
-  printf("Game picked: %i\n", game);
-  setup_game();
+  initArcadia();
   g_color_mode = 0;
- 
-  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
-  save_A = 0;
-  save_X = 0;
-  save_Y = 0;
-  save_flags = 0;
-  save_totcycles = 0;
-  irq_cycle = 8192; // battlezone
-
-  avg_reset_really();
-  while (1)
-  {
-  sim_6502 (25200); // 1512000 Mhz / 60 FPS
-  }
-  return 0;
-}
-int asteroids(void)
-{
-  ProgName = "asteroids"; // defined in display.h
-  mem = (elem *) gameMemory;
-  game = pick_game (ProgName);
-
-  ALG_XMIN=0;
-  ALG_XMAX=1000;
-  ALG_YMIN=0;
-  ALG_YMAX=750;
-  ALG_MAX_X=1000; // wid
-  ALG_MAX_Y=750;
-
-  POS_ADDER_X = 0;
-  POS_ADDER_Y = 0;
-  FLIP_Y=0;
-  SCREEN_TYPE = GAME_LANDSCAPE;
-
-
-  init_graphics ();
-  setAppFPS(62);
-  printf("Game picked: %i\n", game);
-  setup_game();
-  g_color_mode = 0;
- 
-  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
-  save_A = 0;
-  save_X = 0;
-  save_Y = 0;
-  save_flags = 0;
-  save_totcycles = 0;
+  
+  PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
   irq_cycle = 8192; // 
 
-  avg_reset_really();
-  while (1)
-  {
-  sim_6502 (25200); // 1512000 Mhz / 60 FPS
-  }
+	while (1)
+	{
+      uint64_t start = esp_timer_get_time();
+      sim_6502 (25200); // 1512000 Mhz / 60 FPS
+
+      // slow down if we are too fast
+      // emulating 1 frame should take 1/50 of a second...
+      // if MAX_EMU_FPS is 60 and 60 is reached, we run with 100% original speed
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= g_fpsToReach) 
+      {
+          int delay = g_fpsToReach - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+      
+      if (tobekilled) break;
+	}
+  deinitArcadia();
   return 0;
+
 }
 int spaceDuel(void)
 {
   ProgName = "spaceduel"; // defined in display.h
-  
-  mem = (elem *) gameMemory;
-  game = pick_game (ProgName);
-
   ALG_XMIN=0;
   ALG_XMAX=1100;
   ALG_YMIN=0;
@@ -441,29 +458,33 @@ int spaceDuel(void)
   POS_ADDER_Y = 0;
   FLIP_Y=0;
   SCREEN_TYPE = GAME_LANDSCAPE;
+  a_fps = 60; // sets g_fpsToReach
 
-  init_graphics ();
-  setAppFPS(60);
-  setup_game();
+  initArcadia();
   g_color_mode = 1;
   yuv_palette_init();
-  // from pokey.c
-  //  void enablePokeyOutput(int e);
-  //  enablePokeyOutput(0); // false
-  
-  save_PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
-  save_A = 0;
-  save_X = 0;
-  save_Y = 0;
-  save_flags = 0;
-  save_totcycles = 0;
-  irq_cycle = 8192; // blackwidow
 
-  avg_reset_really();
-  while (1)
-  {
-  sim_6502 (25200); // 1512000 Mhz / 60 FPS
-  }
+  PC = (memrd(0xfffd,0,0) << 8) | memrd(0xfffc,0,0);
+  irq_cycle = 8192; //  
+
+	while (1)
+	{
+      uint64_t start = esp_timer_get_time();
+      sim_6502 (25200); // 1512000 Mhz / 60 FPS
+
+      // slow down if we are too fast
+      // emulating 1 frame should take 1/50 of a second...
+      // if MAX_EMU_FPS is 60 and 60 is reached, we run with 100% original speed
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= g_fpsToReach) 
+      {
+          int delay = g_fpsToReach - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+      
+      if (tobekilled) break;
+	}
+  deinitArcadia();
   return 0;
 }
 

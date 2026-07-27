@@ -187,14 +187,45 @@ ABS
 #define EA_ABS_Y_C do { addr = memrdwd (PC,PC,totcycles) + Y; PAGE_CHECK(addr-Y, addr); PC += 2; } while (0)
 
 
-#define EA_IND_X do { addr = (memrd (PC,PC,totcycles) + X) & 0xff; addr = memrdwd (addr,PC,totcycles); PC++; } while (0)
+#define EA_IND_X_old do { addr = (memrd (PC,PC,totcycles) + X) & 0xff; addr = memrdwd (addr,PC,totcycles); PC++; } while (0)
 /* Note that indirect indexed will do the wrong thing if the zero page address
    plus X is $FF, because the 6502 doesn't generate a carry */
-
-#define EA_IND_Y   do { addr = memrd (PC,PC,totcycles); addr = memrdwd (addr,PC,totcycles) + Y; PC++; } while (0)
-#define EA_IND_Y_C do { addr = memrd (PC,PC,totcycles); addr = memrdwd (addr,PC,totcycles) + Y; PAGE_CHECK(addr-Y, addr); PC++; } while (0)
+#define EA_IND_Y_old   do { addr = memrd (PC,PC,totcycles); addr = memrdwd (addr,PC,totcycles) + Y; PC++; } while (0)
+#define EA_IND_Y_C_old do { addr = memrd (PC,PC,totcycles); addr = memrdwd (addr,PC,totcycles) + Y; PAGE_CHECK(addr-Y, addr); PC++; } while (0)
 /* Note that indexed indirect will do the wrong thing if the zero page address
    is $FF, because the 6502 doesn't generate a carry */
+
+#define EA_IND_X do { \
+    byte zp; \
+    word ptr; \
+    zp = (memrd (PC,PC,totcycles) + X) & 0xff; \
+    ptr = memrd (zp, PC, totcycles); \
+    ptr |= memrd ((zp+1)&0xff, PC, totcycles) << 8; \
+    addr = ptr; \
+    PC++; \
+  } while (0)
+
+#define EA_IND_Y   do { \
+    byte zp; \
+    word ptr; \
+    zp = memrd (PC,PC,totcycles); \
+    ptr = memrd (zp, PC, totcycles); \
+    ptr |= memrd ((zp+1)&0xff, PC, totcycles) << 8; \
+    addr = ptr + Y; \
+    PC++; \
+  } while (0)
+
+#define EA_IND_Y_C do { \
+    byte zp; \
+    word ptr; \
+    zp = memrd (PC,PC,totcycles); \
+    ptr = memrd (zp, PC, totcycles); \
+    ptr |= memrd ((zp+1)&0xff, PC, totcycles) << 8; \
+    addr = ptr + Y; \
+    PAGE_CHECK(addr-Y, addr); \
+    PC++; \
+  } while (0)
+
 
 #define EA_IND   do { addr = memrdwd (PC,PC,totcycles); addr = memrdwd (addr,PC,totcycles); PC += 2; } while (0)
 /* Note that this doesn't handle the NMOS 6502 indirect bug, where the low
@@ -320,8 +351,44 @@ ABS
 * arithmetic instructions
 *
 ***********************************************************************/
-
 #define DO_ADCI(data) \
+  do { \
+    if (TST_D) \
+    { \
+      word AL, A_temp; \
+      byte carryIn = TST_C; \
+      byte binResult = (byte)(A + (data) + carryIn); \
+      /* Z: NMOS quirk - computed from plain binary addition, not BCD */ \
+      STO_Z (binResult == 0); \
+      /* Low nibble, BCD-corrected */ \
+      AL = (A & 0x0f) + ((data) & 0x0f) + carryIn; \
+      if (AL >= 0x0a) \
+        AL = ((AL + 0x06) & 0x0f) + 0x10; \
+      /* Combine with high nibble - NOT yet decimal-corrected */ \
+      A_temp = (A & 0xf0) + ((data) & 0xf0) + AL; \
+      /* N and V: read from this pre-final-correction intermediate value */ \
+      STO_N (A_temp & 0x80); \
+      STO_V ((((A ^ (data)) & 0x80) == 0) && (((A ^ A_temp) & 0x80) != 0)); \
+      /* Final decimal correction of high nibble */ \
+      if (A_temp >= 0xa0) \
+        A_temp += 0x60; \
+      STO_C (A_temp >= 0x100); \
+      A = A_temp & 0xff; \
+    } \
+    else \
+    { \
+      word wtemp; \
+      wtemp = A; \
+      wtemp += TST_C;    /* add carry */ \
+      wtemp += (data);		       \
+      STO_C (wtemp & 0x100); \
+      STO_V ((((A ^ (data)) & 0x80) == 0) && (((A ^ wtemp) & 0x80) != 0)); \
+      A = wtemp & 0xff; \
+      setflags (A); \
+    } \
+  } while (0)
+
+#define DO_ADCI_old(data) \
   do { \
     word wtemp; \
     if(TST_D) \
@@ -367,55 +434,6 @@ ABS
       setflags (A); \
     } \
   } while (0)
-
-#define DO_SBCI(data) \
-  do { \
-    word wtemp; \
-    if (TST_D) \
-    { \
-      int nib1, nib2; \
-      int result1, result2; \
-      int result3, result4; \
-      wtemp = A; \
-      nib1 = (data) & 0xf;			\
-      nib2 = wtemp & 0xf; \
-      result1 = nib2-nib1-!TST_C; /* Sub borrow */ \
-      if(result1 < 0) \
-      { \
-        result1 += 10; \
-        result2 = 1; \
-      } \
-      else \
-        result2 = 0; \
-      nib1 = ((data) & 0xf0) >> 4;		\
-      nib2 = (wtemp & 0xf0) >> 4; \
-      result3 = nib2-nib1-result2; \
-      if(result3 < 0) \
-      { \
-        result3 += 10; \
-        result4 = 1; \
-      } \
-      else \
-        result4 = 0; \
-      STO_C (!result4); \
-      CLR_V; \
-      wtemp = (result3 << 4) | (result1); \
-      A = wtemp & 0xff; \
-      setflags (A); \
-    } \
-    else \
-    { \
-      wtemp = A; \
-      wtemp += TST_C; \
-      wtemp += ((data) ^ 0xff);			\
-      STO_C (wtemp & 0x100); \
-      STO_V ((((A ^ (data)) & 0x80) == 0) && (((A ^ wtemp) & 0x80) != 0)); \
-      A = wtemp & 0xff; \
-      setflags (A); \
-    } \
-  } while (0)
-
-  
 
 #define DO_SBCI_MAME(val) \
   do { \

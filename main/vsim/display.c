@@ -108,7 +108,6 @@ static int vector_timer (long deltax, long deltay)
   return max (deltax, deltay) >> 17;
 }
 
-
 int vg_step =0;
 int vg_print = 1;
 int vgo_count =0;
@@ -148,38 +147,38 @@ static void dvg_draw_vector_list (void)
 	// statz = 0;
 	if (portrait)
 	{
-	currentx = 1023 * 8192;
-	currenty = 512 * 8192;
+		currentx = 1023 * 8192;
+		currenty = 512 * 8192;
 	}
 	else
 	{
-	currentx = 512 * 8192;
-	currenty = 1023 * 8192;
+		currentx = 512 * 8192;
+		currenty = 1023 * 8192;
 	}
 
-  open_page (0);
+ 	 open_page (0);
 
-  while (!done)
-    {
+ 	while (!done)
+	{
       vg_done_cyc += 1;//8;
       firstwd = memrdwd (map_addr (pc), 0, 0);
       opcode = firstwd >> 12;
       pc++;
       if ((opcode >= 0 /* DVCTR */) && (opcode <= DLABS))
-	{
-	  secondwd = memrdwd (map_addr (pc), 0, 0);
-	  pc++;
-	}
+		{
+		secondwd = memrdwd (map_addr (pc), 0, 0);
+		pc++;
+		}
 
 
       switch (opcode)
 	{
 	case 0:
-#ifdef DVG_OP_0_ERR
+	#ifdef DVG_OP_0_ERR
 	  printf ("Error: DVG opcode 0!  Addr %4x Instr %4x %4x\r\n", map_addr (pc-2), firstwd, secondwd);
 	  done = 1;
 	  break;
-#endif
+	#endif
 	case 1:
 	case 2:
 	case 3:
@@ -204,12 +203,12 @@ static void dvg_draw_vector_list (void)
 	  deltay = (y << 21) >> (30 - temp);
 	  currentx += deltax;
 	  currenty -= deltay;
-//---------
+		//---------
 		int _scale = (scale + opcode) & 0xf;
 		int fin = 0xfff - (((2 << _scale) & 0x7ff) ^ 0xfff);
 		const int cycles = 8 * fin;
 		vg_done_cyc += cycles/8;
-//---------
+		//---------
       
 	  draw_line (oldx, oldy, currentx, currenty, 7, z);
 	  break;
@@ -274,14 +273,14 @@ static void dvg_draw_vector_list (void)
 	  deltay = (y << 21) >> (30 - temp);
 	  currentx += deltax;
 	  currenty -= deltay;
-//	  dvg_vector_timer (temp);
+		//	  dvg_vector_timer (temp);
       
       
-//--------------------
-	vg_done_cyc += ((4 << temp)*4)/8;
-	DEBUG_OUT("short cycles: %i\n",(4 << temp)*4);
+		//--------------------
+		vg_done_cyc += ((4 << temp)*4)/8;
+		DEBUG_OUT("short cycles: %i\n",(4 << temp)*4);
 
-//--------------------
+		//--------------------
       
 	  draw_line (oldx, oldy, currentx, currenty, 7, z);
 	  break;
@@ -318,10 +317,10 @@ static void avg_draw_vector_list()
   int opcode;
 
   int x, y, z, b, l, a;
-#ifdef VG_DEBUG
-  int d;
-#endif
-//int displayCount=0;
+	#ifdef VG_DEBUG
+	int d;
+	#endif
+	//int displayCount=0;
 
   
   
@@ -484,7 +483,6 @@ static void avg_draw_vector_list()
 	  printf ("display: 2 internal error\r\n");
 	}
     }
-
   close_page ();
 }
 
@@ -544,11 +542,10 @@ void vg_reset (unsigned long cyc)
 }
 
 
-
-#define OP0 (m_op & 1)
-#define OP1 (m_op & 2)
-#define OP2 (m_op & 4)
-#define OP3 (m_op & 8)
+#define OP0 (((m_op & 1)==1)?1:0)
+#define OP1 (((m_op & 2)==2)?1:0)
+#define OP2 (((m_op & 4)==4)?1:0)
+#define OP3 (((m_op & 8)==8)?1:0)
 
 #define ST3 (m_state_latch & 8)
 
@@ -785,7 +782,7 @@ int handler_4() // avg_strobe0
 			m_dvy = (m_dvy & 0x1000) | ((m_dvy << 1) & 0x1fff);
 			m_dvx = (m_dvx & 0x1000) | ((m_dvx << 1) & 0x1fff);
 			m_timer >>= 1;
-			m_timer |= 0x4000 | (OP1 << 6);
+			m_timer |= 0x4000 | (OP1 << 7); 
 		}
 
 		if (OP1)
@@ -815,7 +812,7 @@ int handler_5() // avg_strobe1
 		for (int i = m_bin_scale; i > 0; i--)
 		{
 			m_timer >>= 1;
-			m_timer |= 0x4000 | (OP1 << 6);
+			m_timer |= 0x4000 | (OP1 << 7);
 		}
 		if (OP1)
 			m_timer &= 0xff;
@@ -1033,8 +1030,8 @@ void avg_draw_vector_list_t()
 				  case 3 : cycles += handler_3(); break;
 				  case 4 : cycles += handler_4(); break;
 				  case 5 : cycles += handler_5(); break;
-				  case 6 : cycles += tempest_handler_6() /*handler_6()*/; break;
-				  case 7 : cycles += tempest_handler_7() /*handler_7()*/; break;
+   				  case 6 : if (game == TEMPEST){cycles += tempest_handler_6();}else {handler_6();} ; break;
+   				  case 7 : if (game == TEMPEST){cycles += tempest_handler_7();}else {handler_7();} ; break;
 			  }
 		  }
 
@@ -1051,7 +1048,6 @@ void avg_draw_vector_list_t()
 	  }
 	  while ((m_pc!=0) && (!m_halt));
 	}
-//    printf("vg did run for: %i\n", cycles);
   close_page ();
 }
 

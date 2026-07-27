@@ -15,6 +15,8 @@
 
 #include <stdio.h>
 
+#include "defines.h"
+
 #include "memory.h"
 #include "game.h"
 #include "sim6502.h"
@@ -60,7 +62,7 @@ DRAM_ATTR byte save_X;
 DRAM_ATTR byte save_Y;
 DRAM_ATTR byte save_flags= I_BIT;// 0x36;
 DRAM_ATTR word save_PC;
-DRAM_ATTR unsigned long save_totcycles;
+DRAM_ATTR long long unsigned save_totcycles;
 DRAM_ATTR byte SP=0xfd;
 DRAM_ATTR unsigned long irq_cycle;
 DRAM_ATTR long icount=0;
@@ -71,7 +73,7 @@ DRAM_ATTR int addr;
 DRAM_ATTR int A;
 DRAM_ATTR int X;
 DRAM_ATTR int Y;
-DRAM_ATTR long totcycles;
+DRAM_ATTR long long unsigned totcycles;
 DRAM_ATTR int CC = I_BIT;
 
 
@@ -114,13 +116,34 @@ char *getFlagString(int CC)
   return flagsString;
 }
 
+
+
+// sim is sometimes so fast, that 
+// when run with the number of cycles - it
+// produces to "closePage()" calls in only one frame!
 void sim_6502 (int cyc_todo)
 {
   stepflag = 0;
 
-  int outCycles = totcycles +cyc_todo;
+  unsigned long long  outCycles = totcycles +cyc_todo;
+//  uint64_t start = esp_timer_get_time();
+  //unsigned long long cyclesAtDelay = totcycles + 10000/2;
   while(1) 
   {
+/*
+	if (totcycles>=cyclesAtDelay)
+	{
+      uint64_t now = esp_timer_get_time();
+      if (now - start <= 6613/2)  // 10000000 / 1512000 *10000 // 10000 cyclen benüten 6613 us
+      {
+          int delay = 6613/2 - (now - start);
+          esp_rom_delay_us(delay);  
+      }
+
+  		cyclesAtDelay = totcycles + 10000/2;
+  		start = esp_timer_get_time();
+	}
+*/
 	if (totcycles>=outCycles) 
 	{
 		if (game == TEMPEST) avg_draw_vector_list_t();
@@ -128,7 +151,10 @@ void sim_6502 (int cyc_todo)
 	}
 
     if (stepflag) 
+	{
       dobreak(STEP);
+	  printf("Stepping");
+	}
     else if (breakflag) 
     {
 		printf("BP!!!\n");
@@ -137,7 +163,7 @@ void sim_6502 (int cyc_todo)
 
     if (totcycles > irq_cycle)
 	{
-      if (use_nmi)
+      if (use_nmi) 
       {
 	      if (! self_test)
           {
@@ -376,7 +402,7 @@ void sim_6502 (int cyc_todo)
 		printf ("@%x Illegal opcode %2x\r\n", PC, opcode);
 		breakflag = 1;
 		break;
-		}
 	}
+  }
   dobreak(INTBREAK);
 }

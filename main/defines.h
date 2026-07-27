@@ -7,6 +7,8 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_attr.h"
+#include "esp_timer.h"
 
 #include "esp_events.h"
 #include "usb/hid_usage_keyboard.h"

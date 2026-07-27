@@ -43,7 +43,7 @@ extern byte save_Y;
 extern byte save_flags;
 extern word save_PC;
 extern byte SP;
-extern unsigned long save_totcycles;
+extern unsigned long long save_totcycles;
 
 #define WRAP_CYC_COUNT 1000000000
 #ifdef WRAP_CYC_COUNT

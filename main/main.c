@@ -7,8 +7,15 @@ Bug:
 
     pole position flimmert bei game over und hat emu fps von 43?
     done: spike speaks too fast - 17 is correct!
-    Tempest emulation - the "B" is not correctly drawn!!!!
-    Tempest - to slow!
+
+    lunar lander, red baron, Asteroids and battlezone analog sounds
+    For BattleZone clipping!
+    gravitar to fast???
+
+    lunar lander after first live - slow, joystick does not center
+    red baron joystick does not center
+
+    reboot "m" does not always work (asteroids, lunar)
 
 
     ->
@@ -164,10 +171,6 @@ Should connect to COM 4, flash and play.
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_lt8912b.h"
 
-#include "esp_attr.h"
-#include "esp_timer.h"
-#include "esp_random.h"
-#include "esp_task_wdt.h"
 
 #include <math.h>
 
@@ -404,6 +407,9 @@ IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint
     int b = brightness+brightnessAdjust;
     if (s_overlay == NULL)
     {
+        if ((x0==x1) && (y0==y1))
+        undraw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b+800);
+        else
         undraw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
     }
     else        
@@ -417,7 +423,14 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
     int b = brightness+brightnessAdjust;
     if (s_overlay == NULL)
     {
+        //draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+
+        if ((x0==x1) && (y0==y1))
+        draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b+800);
+        else
         draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
+
+
     }
     else
     {
@@ -1086,16 +1099,17 @@ void yuv_palette_init(void)
 // Tasks
 // ----------------------------------------------------
 int vecsimGame=1;
-#define MAX_VECSIM_GAME 7
+#define MAX_VECSIM_GAME 8
 IRAM_ATTR static void application_task(void *arg)
 {
     while (1) 
     {
-/*
+        int vectrex(void); //ok
+
         int tempest(void); //ok
         int battlezone(void); //ok
         int blackwidow(void); //ok
-        int deluxe(void); // rand seems broken
+        int deluxe(void); // ok
         int asteroids(void); // crashes while playing
         int gravitar(void); //ok
         int lunar(void); // to slow
@@ -1109,12 +1123,9 @@ IRAM_ATTR static void application_task(void *arg)
         if (vecsimGame==4) spaceDuel();
         if (vecsimGame==5) redbaron();
         if (vecsimGame==6) battlezone();
-*/
-        int tempest(void); //ok
-        tempest(); 
+        if (vecsimGame==7) deluxe();
 
-//        void vectrex();
-//        vectrex();
+        vectrex();
     }
 }
 

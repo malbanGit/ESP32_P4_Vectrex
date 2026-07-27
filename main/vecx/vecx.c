@@ -31,7 +31,7 @@ HUGE_DATA_LOCATION unsigned char cartData[MAX_CART_SIZE];
 long cartSize = 0;
 
 DRAM_ATTR int isBedlam = 0;
-DRAM_ATTR int tobekilled = 0;
+static DRAM_ATTR int tobekilled = 0;
 
 
 
