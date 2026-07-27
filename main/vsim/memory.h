@@ -33,11 +33,7 @@ typedef struct _elem {
     byte cell;
     byte tagr;
     byte tagw;
-#ifdef MAGIC_PC
-    byte magic;  /* flag indicating interrupt OK here */
-#else
     byte pad;
-#endif
 } elem;
 
 extern elem *mem;

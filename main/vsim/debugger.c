@@ -82,11 +82,7 @@ static int dumpworld (char *name)
   h.y = save_Y;
   h.sp = SP;
   h.flags = save_flags;
-#ifdef INST_COUNT
-  h.icount = icount;
-#else
   h.icount = 0;
-#endif
   h.totcycles = save_totcycles;
 #ifdef WRAP_CYC_COUNT
   h.cyc_wraps = cyc_wraps;
@@ -153,9 +149,6 @@ int reload (char *name)
   save_Y = h.y;
   SP = h.sp;
   save_flags = h.flags;
-#ifdef INST_COUNT
-  icount = h.icount;
-#endif
   irq_cycle = h.irq_cycle;
   save_totcycles = h.totcycles;
 #ifdef WRAP_CYC_COUNT
@@ -813,11 +806,6 @@ int debugger (int type)
     traceflag = 0;
 
   breakflag = 0;
-
-#ifdef COUNT_INTERRUPTS
-  printf ("Interrupts: %d\r\n", int_count);
-    fflush(stdout);
-#endif
 
   switch(type) 
     {

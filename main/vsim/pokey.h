@@ -25,7 +25,7 @@
 #include "memory.h"
 
 #define MAX_POKEY 4  /* POKEYs are numbered 0 .. MAX_POKEY - 1 */
-
+ 
 void pokey_init (void);
 
 /* Set how many POKEY chips are active for this game (1..MAX_POKEY).

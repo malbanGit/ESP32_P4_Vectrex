@@ -11,6 +11,7 @@
 #include <stdbool.h>
 
 #include "../defines.h"
+#include "memory.h"
 #include "pokey.h"
 #include "game.h"
 
@@ -115,6 +116,11 @@ static UINT32 s_poly4 [0x0f];
 static UINT32 s_poly5 [0x1f];
 static UINT32 s_poly9 [0x1ff];
 HUGE_DATA_LOCATION UINT32 s_poly17[0x1ffff];
+
+/* Packed bit array of (s_poly17[i] & 1) stored in DRAM — avoids PSRAM hit
+ * in the audio hot path. 0x1ffff bits = 4096 uint32_t words = 16 KB. */
+static DRAM_ATTR uint32_t s_poly17_bits[(0x1ffff / 32) + 1];
+
 static bool s_poly_inited = false;
 
 /* ---- per-channel state ---- */
@@ -176,31 +182,31 @@ static int s_pokey_count = 1;  /* active chips — set by pokey_set_count() */
 /* ---- forward declarations ---- */
 static void pokey_dev_write(pokey_device *d, UINT8 offset, UINT8 data);
 static void pokey_potgo(pokey_device *d);
-static void pokey_step_one_clock(pokey_device *d);
+static IRAM_ATTR void pokey_step_one_clock(pokey_device *d);
 static void pokey_step_pot(pokey_device *d);
-static void pokey_step_keyboard(pokey_device *d);
-INLINE void pokey_process_channel(pokey_device *d, int ch);
+static IRAM_ATTR void pokey_step_keyboard(pokey_device *d);
+INLINE IRAM_ATTR void pokey_process_channel(pokey_device *d, int ch);
 
 /* ---- channel helpers ---- */
-INLINE void pokey_channel_sample(pokey_channel *c)
+INLINE IRAM_ATTR void pokey_channel_sample(pokey_channel *c)
 {
     c->m_filter_sample = c->m_output;
 }
 
-INLINE void pokey_channel_reset_channel(pokey_channel *c)
+INLINE IRAM_ATTR void pokey_channel_reset_channel(pokey_channel *c)
 {
     c->m_counter   = c->m_AUDF ^ 0xff;
     c->m_borrow_cnt = 0;
 }
 
-INLINE void pokey_channel_inc_chan(pokey_channel *c, pokey_device *host, int cycles)
+INLINE IRAM_ATTR void pokey_channel_inc_chan(pokey_channel *c, pokey_device *host, int cycles)
 {
     c->m_counter = (c->m_counter + 1) & 0xff;
     if (c->m_counter == 0 && c->m_borrow_cnt == 0)
         c->m_borrow_cnt = cycles;
 }
 
-INLINE int pokey_channel_check_borrow(pokey_channel *c)
+INLINE IRAM_ATTR int pokey_channel_check_borrow(pokey_channel *c)
 {
     if (c->m_borrow_cnt > 0) {
         c->m_borrow_cnt--;
@@ -296,6 +302,14 @@ void pokey_init(void)
         poly_init_4_5(s_poly5, 5);
         poly_init_9_17(s_poly9,  9);
         poly_init_9_17(s_poly17, 17);
+
+        /* Build packed DRAM bit-array from s_poly17 (LSB only) */
+        memset(s_poly17_bits, 0, sizeof(s_poly17_bits));
+        for (i = 0; i < 0x1ffff; i++) {
+            if (s_poly17[i] & 1)
+                s_poly17_bits[i >> 5] |= (1u << (i & 31));
+        }
+
         s_poly_inited = true;
     }
     for (i = 0; i < MAX_POKEY; i++)
@@ -325,8 +339,8 @@ static void pokey_step_pot(pokey_device *d)
         d->m_ALLPOT |= upd;
 }
 
-/* ---- keyboard stub ---- */
-static void pokey_step_keyboard(pokey_device *d)
+/* ---- keyboard stub (IRAM_ATTR: called from IRAM hot path) ---- */
+static IRAM_ATTR void pokey_step_keyboard(pokey_device *d)
 {
     if (++d->m_kbd_cnt > 63)
         d->m_kbd_cnt = 0;
@@ -334,7 +348,7 @@ static void pokey_step_keyboard(pokey_device *d)
 }
 
 /* ---- process channel output ---- */
-INLINE void pokey_process_channel(pokey_device *d, int ch)
+INLINE IRAM_ATTR void pokey_process_channel(pokey_device *d, int ch)
 {
     if ((d->m_channel[ch].m_AUDC & NOTPOLY5) || (s_poly5[d->m_p5] & 1)) {
         if (d->m_channel[ch].m_AUDC & PURE)
@@ -344,19 +358,21 @@ INLINE void pokey_process_channel(pokey_device *d, int ch)
         else if (d->m_AUDCTL & POLY9)
             d->m_channel[ch].m_output = (s_poly9[d->m_p9] & 1);
         else
-            d->m_channel[ch].m_output = (s_poly17[d->m_p17] & 1);
+            /* Use packed DRAM bit array — avoids PSRAM access */
+            d->m_channel[ch].m_output =
+                (s_poly17_bits[d->m_p17 >> 5] >> (d->m_p17 & 31)) & 1;
         d->m_old_raw_inval = 1;
     }
 }
 
 /* ---- step one chip clock ---- */
-static void pokey_step_one_clock(pokey_device *d)
+static IRAM_ATTR void pokey_step_one_clock(pokey_device *d)
 {
     UINT8 toggle_iclk = 0;
     UINT8 toggle_oclk = 0;
 
     if (d->m_SKCTL & SK_RESET) {
-        int clock_triggered[3] = {1, 0, 0};
+        int clk28_trig = 0, clk114_trig = 0;
         int base_clock;
         UINT8 async_reset;
 
@@ -367,14 +383,15 @@ static void pokey_step_one_clock(pokey_device *d)
 
         if (++d->m_clock_cnt[CLK_28] >= DIV_64) {
             d->m_clock_cnt[CLK_28] = 0;
-            clock_triggered[CLK_28] = 1;
+            clk28_trig = 1;
         }
         if (++d->m_clock_cnt[CLK_114] >= DIV_15) {
             d->m_clock_cnt[CLK_114] = 0;
-            clock_triggered[CLK_114] = 1;
+            clk114_trig = 1;
         }
 
-        if ((d->m_AUDCTL & CH1_HICLK) && clock_triggered[CLK_1]) {
+        /* CLK_1 always fires — CH1_HICLK / CH3_HICLK path */
+        if (d->m_AUDCTL & CH1_HICLK) {
             if (d->m_AUDCTL & CH12_JOINED)
                 pokey_channel_inc_chan(&d->m_channel[CHAN1], d, 7);
             else
@@ -382,24 +399,25 @@ static void pokey_step_one_clock(pokey_device *d)
         }
 
         base_clock = (d->m_AUDCTL & CLK_15KHZ) ? CLK_114 : CLK_28;
+        int base_trig = (base_clock == CLK_114) ? clk114_trig : clk28_trig;
 
-        if (!(d->m_AUDCTL & CH1_HICLK) && clock_triggered[base_clock])
+        if (!(d->m_AUDCTL & CH1_HICLK) && base_trig)
             pokey_channel_inc_chan(&d->m_channel[CHAN1], d, 1);
 
         async_reset = (d->m_SKCTL & SK_ASYNC) && !(d->m_SKSTAT & (SK_BUSY | SK_SERIN));
         if (async_reset)
             d->m_ser_iclk = 1;
 
-        if ((d->m_AUDCTL & CH3_HICLK) && clock_triggered[CLK_1] && !async_reset) {
+        if ((d->m_AUDCTL & CH3_HICLK) && !async_reset) {
             if (d->m_AUDCTL & CH34_JOINED)
                 pokey_channel_inc_chan(&d->m_channel[CHAN3], d, 7);
             else
                 pokey_channel_inc_chan(&d->m_channel[CHAN3], d, 4);
         }
-        if (!(d->m_AUDCTL & CH3_HICLK) && clock_triggered[base_clock] && !async_reset)
+        if (!(d->m_AUDCTL & CH3_HICLK) && base_trig && !async_reset)
             pokey_channel_inc_chan(&d->m_channel[CHAN3], d, 1);
 
-        if (clock_triggered[base_clock]) {
+        if (base_trig) {
             if (!(d->m_AUDCTL & CH12_JOINED)) {
                 if (d->m_channel[CHAN2].m_counter == 0xff && (d->m_SKCTL & SK_OCLK) == 0x60)
                     toggle_oclk = 1;
@@ -415,9 +433,9 @@ static void pokey_step_one_clock(pokey_device *d)
             }
         }
 
-        if ((clock_triggered[CLK_114] || (d->m_SKCTL & SK_PADDLE)) && (d->m_pot_counter < 228))
+        if ((clk114_trig || (d->m_SKCTL & SK_PADDLE)) && (d->m_pot_counter < 228))
             pokey_step_pot(d);
-        if (clock_triggered[CLK_114] && (d->m_SKCTL & SK_KEYSCAN))
+        if (clk114_trig && (d->m_SKCTL & SK_KEYSCAN))
             pokey_step_keyboard(d);
     }
 
@@ -503,16 +521,80 @@ static void pokey_step_one_clock(pokey_device *d)
         d->m_ser_oclk = !d->m_ser_oclk;
 }
 
-/* ---- generate one sample from a device (LEGACY_LINEAR) ---- */
-static INT32 pokey_get_sample(pokey_device *d)
+/* ---- skip idle clocks when no state changes can occur ---- */
+/*
+ * When neither HICLK is active (channels 1/3 not clocked every cycle),
+ * nothing changes between CLK_28 / CLK_114 edge events except borrow
+ * counters counting down.  We can mathematically advance poly counters,
+ * clock dividers, and borrow counters without calling step_one_clock.
+ *
+ * Returns the number of clocks skipped (may be 0 if skip is not safe).
+ */
+static IRAM_ATTR int pokey_skip_idle_clocks(pokey_device *d, int remaining)
 {
-    INT32 out = 0;
+    int skip, i;
+    int to_clk28, to_clk114, to_clk;
+
+    /* Skip-ahead is only safe when neither channel uses CLK_1 directly */
+    if (d->m_AUDCTL & (CH1_HICLK | CH3_HICLK))
+        return 0;
+
+    /* Clocks until the next CLK_28 edge (it fires when counter reaches DIV_64) */
+    to_clk28  = DIV_64  - d->m_clock_cnt[CLK_28];
+    to_clk114 = DIV_15  - d->m_clock_cnt[CLK_114];
+    to_clk = (to_clk28 < to_clk114) ? to_clk28 : to_clk114;
+
+    /* Stop one clock before the edge so step_one_clock fires it */
+    skip = to_clk - 1;
+
+    /* Also stop before any active borrow countdown reaches zero */
+    for (i = 0; i < POKEY_CHANNELS; i++) {
+        if (d->m_channel[i].m_borrow_cnt > 0) {
+            int to_borrow = d->m_channel[i].m_borrow_cnt - 1;
+            if (to_borrow < skip) skip = to_borrow;
+        }
+    }
+
+    /* Never skip more clocks than we have left */
+    if (skip > remaining - 1) skip = remaining - 1;
+    if (skip <= 0) return 0;
+
+    /* Advance poly counters by 'skip' steps (modular) */
+    d->m_p4  += skip; if (d->m_p4  >= 0x0000fu) d->m_p4  -= 0x0000fu;
+    d->m_p5  += skip; if (d->m_p5  >= 0x0001fu) d->m_p5  -= 0x0001fu;
+    d->m_p9  += skip; if (d->m_p9  >= 0x001ffu) d->m_p9  -= 0x001ffu;
+    d->m_p17 += skip; if (d->m_p17 >= 0x1ffffu) d->m_p17 -= 0x1ffffu;
+
+    /* Advance clock dividers — no wrap needed: skip < to_clk <= DIV_64/DIV_15 */
+    d->m_clock_cnt[CLK_28]  += skip;
+    d->m_clock_cnt[CLK_114] += skip;
+
+    /* Decrement active borrow counters */
+    for (i = 0; i < POKEY_CHANNELS; i++) {
+        if (d->m_channel[i].m_borrow_cnt > 0)
+            d->m_channel[i].m_borrow_cnt -= skip;
+    }
+
+    return skip;
+}
+
+/* ---- generate one sample from a device (LEGACY_LINEAR) ---- */
+static IRAM_ATTR INT32 pokey_get_sample(pokey_device *d)
+{
+    INT32 out;
     int i;
-    do {
+
+    while (d->m_icount > 0) {
+        if (d->m_SKCTL & SK_RESET) {
+            int skipped = pokey_skip_idle_clocks(d, d->m_icount);
+            d->m_icount -= skipped;
+            if (d->m_icount <= 0) break;
+        }
         pokey_step_one_clock(d);
         d->m_icount--;
-    } while (d->m_icount > 0);
+    }
 
+    out = 0;
     for (i = 0; i < 4; i++)
         out += ((d->m_out_raw >> (4 * i)) & 0x0f);
     out *= POKEY_DEFAULT_GAIN;
@@ -540,7 +622,7 @@ static UINT8 pokey_dev_read(pokey_device *d, UINT8 offset)
         if (d->m_AUDCTL & POLY9)
             data = s_poly9[d->m_p9] & 0xff;
         else
-            data = (s_poly17[d->m_p17] >> 8) & 0xff;
+            data = (s_poly17[d->m_p17] >> 8) & 0xff;  /* full PSRAM value needed here */
         break;
     case SERIN_C:
         data = d->m_SERIN;
@@ -680,7 +762,7 @@ void pokey_write(int pokeynum, int reg, byte val, int PC, unsigned long cyc)
  * clocks_per_sample = FREQ_17_EXACT / sample_rate (e.g. 40 for 44100 Hz).
  * POKEY is mono; both channels receive the same mixed value.
  */
-void pokey_generate_samples(int16_t *buf, int n_samples, int clocks_per_sample)
+IRAM_ATTR void pokey_generate_samples(int16_t *buf, int n_samples, int clocks_per_sample)
 {
     int i, p;
     for (i = 0; i < n_samples; i++) {
@@ -711,5 +793,4 @@ IRAM_ATTR void callbackPokey(void *userdata, uint8_t *stream, int length)
   // some noises do not fade if  regs are set with the batch!
   //	ayemu_set_regs(&ay, snd_regs);
   pokey_generate_samples((int16_t *)stream, 882, 1789790 / 44100);
-
 }

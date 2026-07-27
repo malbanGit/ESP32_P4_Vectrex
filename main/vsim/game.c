@@ -30,6 +30,7 @@
 #include "pokey.h"
 
 
+extern unsigned long irq_cycle;
 
 int use_nmi;
 int game = 0;
@@ -59,56 +60,6 @@ FLASH_ROM_ATTR  game_info game_names [] =
 };
 
 
-int pick_game (char *name)
-{
-  int i;
-
-  for (i = FIRST_GAME; i <= LAST_GAME; i++)
-
-
-    if ((strcasecmp (name, game_names [i].kw1) == 0) || (strcasecmp (name, game_names [i].kw2) == 0))
-      {
-	return (i);
-      }
-
-  fprintf (stderr, "ERROR: Unknown game \"%s\"\n", name);
-  exit (1);
-}
-
-
-void show_games (void)
-{
-  int i;
-
-  for (i = FIRST_GAME; i <= LAST_GAME; i++)
-    if (game_names [i].show)
-      fprintf (stderr, "    %-10s    %s\n", game_names [i].kw1, game_names [i].name);
-}
-
-
-char *game_name (int game)
-{
-  return (game_names [game].name);
-}
-
-/*
-rom_info black_widow_roms [] =
-{
-  { "/sdcard/roms/BlackWidow/136017.101", 0x9000, 0x1000, 0 },
-  { "/sdcard/roms/BlackWidow/136017.102", 0xa000, 0x1000, 0 },
-  { "/sdcard/roms/BlackWidow/136017.103", 0xb000, 0x1000, 0 },
-  { "/sdcard/roms/BlackWidow/136017.104", 0xc000, 0x1000, 0 },
-  { "/sdcard/roms/BlackWidow/136017.105", 0xd000, 0x1000, 0 },
-  { "/sdcard/roms/BlackWidow/136017.106", 0xe000, 0x1000, 0 },
-
-  { "/sdcard/roms/BlackWidow/136017.107", 0x2800, 0x0800, 0 },
-  { "/sdcard/roms/BlackWidow/136017.108", 0x3000, 0x1000, 0 },
-  { "/sdcard/roms/BlackWidow/136017.109", 0x4000, 0x1000, 0 },
-  { "/sdcard/roms/BlackWidow/136017.110", 0x5000, 0x1000, 0 },
-
-  { NULL,   0,      0,      0 }
-};
-*/
 FLASH_ROM_ATTR rom_info2  black_widow_roms2 [] =
 {
   { "/sdcard/roms/bwidow.zip","136017-101.d1", 0x9000, 0x1000, 0  , 0xFE3FEBB7},
@@ -122,7 +73,7 @@ FLASH_ROM_ATTR rom_info2  black_widow_roms2 [] =
   { "/sdcard/roms/bwidow.zip","136017-109.np7", 0x4000, 0x1000, 0 , 0x2FC4CE79},
   { "/sdcard/roms/bwidow.zip","136017-110.r7", 0x5000, 0x1000, 0  , 0x0DD52987},
 
-  { NULL,   0,      0,      0, 0 }
+  { NULL,   0,      0,      0, 0, 0 }
 };
 
 FLASH_ROM_ATTR tag_info black_widow_tags [] =
@@ -172,7 +123,7 @@ FLASH_ROM_ATTR rom_info2 gravitar_roms2 [] =
   { "/sdcard/roms/gravitar.zip", "136010-208.np7", 0x4000, 0x1000, 0, 0x358F25D9 },
   { "/sdcard/roms/gravitar.zip", "136010-309.r7", 0x5000, 0x1000, 0, 0x4AC78DF4 },
 
-  { NULL,   0,      0,      0, 0 }
+  { NULL,   0,      0,      0, 0, 0 }
 };
 
 FLASH_ROM_ATTR tag_info gravitar_tags [] =
@@ -214,7 +165,7 @@ FLASH_ROM_ATTR rom_info2 space_duel_roms2 [] =
   { "/sdcard/roms/spacduel.zip", "136006-106.r7", 0x2800, 0x0800, 0 , 0x85EB9802},
   { "/sdcard/roms/spacduel.zip", "136006-107.np7", 0x3000, 0x1000, 0 , 0xD8DD0461},
 
-  { NULL,         0,      0,      0, 0 }
+  { NULL,         0,      0,      0, 0 , 0}
 };
 
 FLASH_ROM_ATTR tag_info space_duel_tags [] =
@@ -255,20 +206,9 @@ FLASH_ROM_ATTR rom_info2 tempest_roms2 [] =
   { "/sdcard/roms/tempest.zip", "136002-136.lm1", 0xc000, 0x1000, 0 , 0x65A9A9F9},
   { "/sdcard/roms/tempest.zip", "136002-237.p1", 0xd000, 0x1000, 0 , 0xDE4E9E34},  /* or .237 */
   { "/sdcard/roms/tempest.zip", "136002-138.np3", 0x3000, 0x1000, 0 , 0x9995256D},
-  { NULL,         0,      0,      0 , 0}
+  { NULL,         0,      0,      0 , 0, 0}
 };
-/*
-rom_info tempest_roms [] =
-{
-  { "/sdcard/roms/Tempest/136002-133.d1", 0x9000, 0x1000, 0 },
-  { "/sdcard/roms/Tempest/136002-134.f1", 0xa000, 0x1000, 0 },
-  { "/sdcard/roms/Tempest/136002-235.j1", 0xb000, 0x1000, 0 },  / * or .235 * /
-  { "/sdcard/roms/Tempest/136002-136.lm1", 0xc000, 0x1000, 0 },
-  { "/sdcard/roms/Tempest/136002-237.p1", 0xd000, 0x1000, 0 },  / * or .237 * /
-  { "/sdcard/roms/Tempest/136002-138.np3", 0x3000, 0x1000, 0 },
-  { NULL,         0,      0,      0 }
-};
-*/
+
 FLASH_ROM_ATTR tag_info tempest_tags [] =
 {
   { 0x0000, 0x0800, RD | WR, MEMORY }, /* RAM */
@@ -317,21 +257,6 @@ FLASH_ROM_ATTR tag_info tempest_tags [] =
   { 0,           0, 0,       0 }
 };
 
-/*
-rom_info battlezone_roms [] =
-{
-  { "/sdcard/roms/Battlezone/036414.01", 0x5000, 0x0800, 0 },
-  { "/sdcard/roms/Battlezone/036413.01", 0x5800, 0x0800, 0 },
-  { "/sdcard/roms/Battlezone/036412.01", 0x6000, 0x0800, 0 },
-  { "/sdcard/roms/Battlezone/036411.01", 0x6800, 0x0800, 0 },
-  { "/sdcard/roms/Battlezone/036410.01", 0x7000, 0x0800, 0 },
-  { "/sdcard/roms/Battlezone/036409.01", 0x7800, 0x0800, 0 },
-  { "/sdcard/roms/Battlezone/036422.01", 0x3000, 0x0800, 0 },
-  { "/sdcard/roms/Battlezone/036421.01", 0x3800, 0x0800, 0 },
-
-  { NULL,   0,      0,           0 }
-};
-*/
 FLASH_ROM_ATTR rom_info2 battlezone_roms2 [] =
 {
   { "/sdcard/roms/bzone.zip","036414-02.e1", 0x5000, 0x0800, 0, 0x07BF9BF4 },
@@ -343,7 +268,7 @@ FLASH_ROM_ATTR rom_info2 battlezone_roms2 [] =
   { "/sdcard/roms/bzone.zip","036422-01.bc3", 0x3000, 0x0800, 0,0x0C2486B0 },
   { "/sdcard/roms/bzone.zip","036421-01.a3", 0x3800, 0x0800, 0, 0x50EA80FA },
 
-  { NULL,   0,      0,           0 ,0}
+  { NULL,   0,      0,           0 ,0, 0}
 };
 
 FLASH_ROM_ATTR tag_info battlezone_tags [] =
@@ -385,7 +310,7 @@ FLASH_ROM_ATTR rom_info2 red_baron_roms2 [] =
   { "/sdcard/roms/redbaron.zip","037006-01.bc3", 0x3000, 0x0800, 0, 0x890ED1A9},
   { "/sdcard/roms/redbaron.zip","037007-01.a3", 0x3800, 0x0800, 0 , 0xB83994DA},
 
-  { NULL,         0,      0,      0 , 0 }
+  { NULL,         0,      0,      0 , 0, 0}
 };
 
 FLASH_ROM_ATTR tag_info red_baron_tags [] =
@@ -422,20 +347,6 @@ FLASH_ROM_ATTR tag_info red_baron_tags [] =
   { 0,           0, 0,       0 }
 };
 
-/*
-rom_info lunar_lander_roms [] =
-{
-  { "/sdcard/roms/LunarLander/034572.02", 0x6000, 0x0800, 0 },
-  { "/sdcard/roms/LunarLander/034571.02", 0x6800, 0x0800, 0 },
-  { "/sdcard/roms/LunarLander/034570.02", 0x7000, 0x0800, 0 },
-  { "/sdcard/roms/LunarLander/034569.02", 0x7800, 0x0800, 0 },
-  { "/sdcard/roms/LunarLander/034599.01", 0x4800, 0x0800, 0 },
-  { "/sdcard/roms/LunarLander/034598.01", 0x5000, 0x0800, 0 },
-  { "/sdcard/roms/LunarLander/034597.01", 0x5800, 0x0800, 0 },
-
-  { NULL,        0,      0,      0 }
-};
-*/
 FLASH_ROM_ATTR rom_info lunar_lander_roms3 [] =
 {
   { "/sdcard/roms/lunar/034572-02.f1", 0x6000, 0x0800, 0},
@@ -446,7 +357,7 @@ FLASH_ROM_ATTR rom_info lunar_lander_roms3 [] =
   { "/sdcard/roms/lunar/034598-01.np3", 0x5000, 0x0800, 0},
   { "/sdcard/roms/lunar/034597-01.m3", 0x5800, 0x0800, 0}, // newer MAME rom differs in two bytes!
 
-  { NULL,        0,      0,      0 }
+  { NULL,        0,      0,        0}
 };
 
 FLASH_ROM_ATTR rom_info2 lunar_lander_roms2 [] =
@@ -459,7 +370,7 @@ FLASH_ROM_ATTR rom_info2 lunar_lander_roms2 [] =
   { "/sdcard/roms/llander.zip", "034598-01.np3", 0x5000, 0x0800, 0, 0x26701CC2 },
   { "/sdcard/roms/llander.zip", "034597-01.m3", 0x5800, 0x0800, 0, 0x08A8F775 }, // newer MAME rom differs in two bytes!
 
-  { NULL,        0,      0,      0, 0 }
+  { NULL,        0,      0,      0, 0 , 0}
 };
 
 FLASH_ROM_ATTR tag_info lunar_lander_tags [] =
@@ -494,7 +405,7 @@ FLASH_ROM_ATTR rom_info2 asteroids_roms2 [] =
   { "/sdcard/roms/ast2.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
   { "/sdcard/roms/ast2.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
   { "/sdcard/roms/ast2.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
-  { NULL,   0,      0,           0, 0 }
+  { NULL,   0,      0,           0, 0, 0 }
 };
 FLASH_ROM_ATTR rom_info2 asteroids_roms3 [] =
 {
@@ -502,20 +413,9 @@ FLASH_ROM_ATTR rom_info2 asteroids_roms3 [] =
   { "/sdcard/roms/ast2a.zip", "035144-02.h2", 0x7000, 0x0800, 0, 0x49E9BB86 },
   { "/sdcard/roms/ast.zip", "035143-02.j2", 0x7800, 0x0800, 0, 0x1902ADE7 },
   { "/sdcard/roms/ast.zip", "035127-02.np3", 0x5000, 0x0800, 0, 0x526FC45A },
-  { NULL,   0,      0,           0, 0 }
+  { NULL,   0,      0,           0, 0, 0 }
 };
-/*
-rom_info asteroids_roms [] =
-{
-  { "/sdcard/roms/Asteroids/035145.02", 0x6800, 0x0800, 0 },
-  { "/sdcard/roms/Asteroids/035144.02", 0x7000, 0x0800, 0 },
-  { "/sdcard/roms/Asteroids/035143.02", 0x7800, 0x0800, 0 },
 
-  { "/sdcard/roms/Asteroids/035127.02", 0x5000, 0x0800, 0 },
-
-  { NULL,   0,      0,           0 }
-};
-*/
 FLASH_ROM_ATTR tag_info asteroids_tags [] =
 {
   { 0x0000, 0x0400, RD | WR, MEMORY },  /* RAM */
@@ -555,7 +455,7 @@ FLASH_ROM_ATTR rom_info2 asteroidsdx_roms2 [] =
   { "/sdcard/roms/astdelux.zip", "036433-03.j1", 0x7800, 0x0800, 0, 0xB851E618 },
   {  "/sdcard/roms/astdelux.zip", "036800-02.r2", 0x4800, 0x0800, 0, 0x42AC00ED },
   {  "/sdcard/roms/astdelux.zip", "036799-01.np2", 0x5000, 0x0800, 0, 0x8098F60E },
-  { NULL,          0,      0,      0, 0 }
+  { NULL,          0,      0,      0, 0 , 0}
 };
 
 FLASH_ROM_ATTR tag_info asteroidsdx_tags [] =
@@ -629,7 +529,33 @@ FLASH_ROM_ATTR tag_info major_havoc_tags [] =
   { 0,           0, 0,       0 }
 };
 
-extern unsigned long irq_cycle;
+int pick_game (char *name)
+{
+  int i;
+  for (i = FIRST_GAME; i <= LAST_GAME; i++)
+  if ((strcasecmp (name, game_names [i].kw1) == 0) || (strcasecmp (name, game_names [i].kw2) == 0))
+  {
+    return (i);
+  }
+  fprintf (stderr, "ERROR: Unknown game \"%s\"\n", name);
+  exit (1);
+}
+
+void show_games (void)
+{
+  int i;
+
+  for (i = FIRST_GAME; i <= LAST_GAME; i++)
+    if (game_names [i].show)
+      fprintf (stderr, "    %-10s    %s\n", game_names [i].kw1, game_names [i].name);
+}
+
+
+char *game_name (int game)
+{
+  return (game_names [game].name);
+}
+
 void setup_game (void)
 {
   tag_area (0x0000, 0x10000, RD | WR, UNKNOWN);
@@ -647,12 +573,6 @@ void setup_game (void)
       copy_rom (0xeffa, 0xfffa, 6);
 
       vector_mem_offset = 0x2000;
-
-#ifdef MAGIC_PC
-      mem [0x963c].magic = 1;
-      mem [0x98a6].magic = 1;
-      mem [0x9a4c].magic = 1;
-#endif
 
       optionreg [0] = 0x02;  /* switch D4, 1..8, off = 0, on = 1 */
       optionreg [1] = 0xcf;  /* switch B4, 1..8, off = 0, on = 1 */
@@ -728,7 +648,6 @@ void setup_game (void)
 
     case GRAVITAR:
     {
-//      setup_roms_and_tags (gravitar_roms, gravitar_tags);
       int error = setup_roms_and_tags2 (gravitar_roms2, gravitar_tags);
       if (error != 0)
       {
@@ -741,11 +660,6 @@ void setup_game (void)
 
       vector_mem_offset = 0x2000;
 
-#ifdef MAGIC_PC
-      mem [0xe8a6].magic = 1;
-      mem [0xcd66].magic = 1;
-      /* magicPC3 = 0xeccb; tried this for self-test, doesn't seem to help */
-#endif
 
       optionreg [0] = 0x10;  /* switch D4, 1..8, off = 0, on = 1 */
       optionreg [1] = 0x02;  /* switch B4, 1..8, off = 0, on = 1 */
@@ -754,32 +668,15 @@ void setup_game (void)
 
     case SPACE_DUEL:
     {
-//      setup_roms_and_tags (space_duel_roms, space_duel_tags);
       int error = setup_roms_and_tags2 (space_duel_roms2, space_duel_tags);
       if (error != 0)
       {
         printf("TROUBLE WITH SPACE DUEL ROMS!\n");
       }
 
-      /*
-      copy_rom (0x8000, 0x9000, 0x1000);
-      copy_rom (0x8000, 0xa000, 0x1000);
-      copy_rom (0x8000, 0xb000, 0x1000);
-      copy_rom (0x8000, 0xc000, 0x1000);
-      copy_rom (0x8000, 0xd000, 0x1000);
-      copy_rom (0x8000, 0xe000, 0x1000);
-      copy_rom (0x8000, 0xf000, 0x1000);
-      */
       copy_rom (0x8ffa, 0xfffa, 6);
 
       vector_mem_offset = 0x2000;
-//irq_cycle = 931918;
-
-#ifdef MAGIC_PC
-      mem [0x4027].magic = 1;
-      mem [0x80ae].magic = 1;
-#endif
-
 
       optionreg [0] = 0x84; /* switch D4 8..1, off = 0, on = 1 */
       optionreg [1] = 0x02; /* switch B4 8..1, off = 0, on = 1 */
@@ -856,52 +753,26 @@ void setup_game (void)
 
     case TEMPEST:
     {
-//      setup_roms_and_tags (tempest_roms, tempest_tags);
-
-printf("Init Tempest game.\n");
       init_earom();
       int error = setup_roms_and_tags2 (tempest_roms2, tempest_tags);
       if (error != 0)
       {
         printf("TROUBLE WITH TEMPEST ROMS!\n");
       }
-printf("Game setup.\n");
-      
-      
-      
+
       mem [0x11b].tagr = TEMPEST_PROTECTTION_0;
       mem [0x455].tagr = TEMPEST_PROTECTTION_0;
       mem [0x11f].tagr = TEMPEST_PROTECTTION_0;
       mem [0x720].tagr = TEMPEST_PROTECTTION_0;
-/*      
-00011B  1  xx           copyr_vid_cksum1
-000455  1  xx           copyr_vid_cksum2
 
-00011F  1  xx           pokey_piracy_detected
-000720  1  xx           pokey_piracy_detected2
-*/
-      
-      
-      
-      
-	  int zipLoad = read_rom_image_zip_to("/sdcard/roms/tempest.zip","136002-125.d7", 0, 256, 0, avg_prom);
-    if (zipLoad == 0) printf("Game loaded.\n");
-    else printf("Game not loaded!\n");
-
+      read_rom_image_zip_to("/sdcard/roms/tempest.zip","136002-125.d7", 0, 256, 0, avg_prom);
 
       vector_mem_offset = 0x2000;
 	    avg_init(vector_mem_offset, 0x800);
-	  
       
-      /* copy_rom (0xc000, 0xe000, 0x2000); */
       copy_rom (0xdffa, 0xfffa, 6);
 
 
-#ifdef MAGIC_PC
-      mem[0xc7a7].magic = 1;
-#endif
-
-      
         pokey_set_count (2);
         pokey_init();
 
@@ -977,7 +848,6 @@ printf("Game setup.\n");
 
     case BATTLEZONE:
     {
-//      setup_roms_and_tags (battlezone_roms, battlezone_tags);
       int error = setup_roms_and_tags2 (battlezone_roms2, battlezone_tags);
       if (error != 0)
       {
@@ -986,10 +856,6 @@ printf("Game setup.\n");
       copy_rom (0x7ffa, 0xfffa, 6);
 
       vector_mem_offset = 0x2000;
-
-#ifdef MAGIC_PC
-      mem [0x5000].magic = 1;
-#endif
 
       optionreg [0] = 0x15; /* M10 8..1 */
       optionreg [1] = 0x60; /* P10 8..1 */
@@ -1000,15 +866,11 @@ printf("Game setup.\n");
 
     case RED_BARON:
     {
-
-//      setup_roms_and_tags (red_baron_roms, red_baron_tags);
       int error = setup_roms_and_tags2 (red_baron_roms2, red_baron_tags);
       if (error != 0)
       {
         printf("TROUBLE WITH RED BARON ROMS!\n");
       }
-      
-      
 
       copy_rom (0x7ffa, 0xfffa, 6);
 
@@ -1123,14 +985,11 @@ printf("Game setup.\n");
       vector_mem_offset = 0x4000;
 
       /* they try to increment 0x5800 to test for presence of the 
-	 French/German/Spanish message ROM */
+	      French/German/Spanish message ROM */
       /*
       mem [0x5800].cell = 0xff;
       */
 
-#ifdef MAGIC_PC
-      mem [0x652d].magic = 1;
-#endif
       optionreg [0] = 0xd0;
       dvg = 1;
       use_nmi = 1;
@@ -1145,17 +1004,10 @@ printf("Game setup.\n");
       {
         printf("TROUBLE WITH ASTEROIDS ROMS!\n");
       }
-
-
-      
       
       copy_rom (0x7ffa, 0xfffa, 6);
 
       vector_mem_offset = 0x4000;
-
-#ifdef MAGIC_PC
-      mem [0x680c].magic = 1;
-#endif
 
       optionreg [0] = 0x00;
 
@@ -1176,29 +1028,11 @@ printf("Game setup.\n");
 
       vector_mem_offset = 0x4000;
 
-#ifdef MAGIC_PC
-      mem [0x601c].magic = 1;
-      mem [0x601e].magic = 1;
-#endif
 
       optionreg [0] = (~0xD3) & 0xff;
 
       dvg = 1;
       use_nmi = 1;
-
-#ifdef OLD_AD
-      if (mem [0x7cf8].cell != 0x9d)
-	{
-	  fprintf (stderr, "Bad opcode at 7cf8!\n");
-	  mem [0x7cf8].cell = 0x9d;
-	}
-
-      if (mem [0x7d15].cell != 0xc9)
-	{
-	  fprintf (stderr, "Bad branch offset at 7d15!\n");
-	  mem [0x7d15].cell = 0xc9;
-	}
-#endif
     }
       break;
 

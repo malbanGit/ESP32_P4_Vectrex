@@ -34,10 +34,6 @@ extern struct _fifo fifo[0x10000];
 extern unsigned short pcpos;
 #endif
 
-#ifdef INST_COUNT
-extern unsigned long icount;
-#endif
-
 extern int stepflag;
 extern int traceflag;
 
@@ -55,11 +51,6 @@ extern unsigned long cyc_wraps;
 #endif
 
 extern unsigned long irq_cycle;
-
-#ifdef COUNT_INTERRUPTS
-extern unsigned long int_count;
-extern unsigned long int_quit;
-#endif
 
 void sim_6502 (int cycles);
 

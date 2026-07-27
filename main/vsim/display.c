@@ -108,12 +108,6 @@ static int vector_timer (long deltax, long deltay)
   return max (deltax, deltay) >> 17;
 }
 
-#ifdef NEVER_USED
-static void dvg_vector_timer (int scale)
-{
-  vg_done_cyc += 4 << scale;
-}
-#endif
 
 int vg_step =0;
 int vg_print = 1;
@@ -122,20 +116,15 @@ int trace_vgo = 0;
 extern FILE *debugf;
 #define DEBUG_OUT2(...) do { ; } while(0)
 #define DEBUG_OUT(...) do { ; } while(0)
-//#define DEBUG_OUT(...) do { if (!debugf) debugf = fopen("debug-sim.log", "w"); if (debugf) { fprintf(debugf,__VA_ARGS__); fflush(debugf); } } while(0)
-//#define DEBUG_OUT2(...) do { if (!debugf) debugf = fopen("debug-sim.log", "w"); if (debugf) { fprintf(debugf,__VA_ARGS__); fflush(debugf); } } while(0)
-//#define VG_DEBUG
 
 static void dvg_draw_vector_list (void)
 {
   frame++;
-//  printf("Frame: %i\r\n", frame);
   static int pc;
   static int sp;
   static int stack [MAXSTACK];
 
   static long scale;
-//static int statz;
 
   static long currentx;
   static long currenty;
@@ -153,65 +142,35 @@ static void dvg_draw_vector_list (void)
   long oldx, oldy;
   long deltax, deltay;
 
-#if 0
-  if (!cont)
-#endif
-    {
-      pc = 0;
-      sp = 0;
-      scale = 0;
-      // statz = 0;
-      if (portrait)
+	pc = 0;
+	sp = 0;
+	scale = 0;
+	// statz = 0;
+	if (portrait)
 	{
-	  currentx = 1023 * 8192;
-	  currenty = 512 * 8192;
+	currentx = 1023 * 8192;
+	currenty = 512 * 8192;
 	}
-      else
+	else
 	{
-	  currentx = 512 * 8192;
-	  currenty = 1023 * 8192;
+	currentx = 512 * 8192;
+	currenty = 1023 * 8192;
 	}
-    }
 
-#ifdef VG_DEBUG
-  open_page (vg_step);
-#else
   open_page (0);
-#endif
 
   while (!done)
     {
       vg_done_cyc += 1;//8;
-DEBUG_OUT( "      vg_done at: %i (+ loop)\r\n", vg_done_cyc);
-#ifdef VG_DEBUG
-      if (vg_step)
-	{
-	  printf ("Current beam position: (%d, %d)\r\n", , currenty);
-	  getchar();
-	}
-#endif
       firstwd = memrdwd (map_addr (pc), 0, 0);
       opcode = firstwd >> 12;
-#ifdef VG_DEBUG
-      if (vg_print) 	printf ("%4x: %4x ", map_addr (pc), firstwd);
-#endif
       pc++;
       if ((opcode >= 0 /* DVCTR */) && (opcode <= DLABS))
 	{
 	  secondwd = memrdwd (map_addr (pc), 0, 0);
 	  pc++;
-#ifdef VG_DEBUG
-	  if (vg_print) printf ("%4x  ", secondwd);
-#endif
 	}
-#ifdef VG_DEBUG
-      else
-	if (vg_print)  printf ("      ");
-#endif
 
-#ifdef VG_DEBUG
-      if (vg_print) printf ("%s ", dvg_mnem [opcode]);
-#endif
 
       switch (opcode)
 	{
@@ -237,41 +196,20 @@ DEBUG_OUT( "      vg_done at: %i (+ loop)\r\n", vg_done_cyc);
 	  if (secondwd & 0x400)
 	    x = -x;
 	  z = secondwd >> 12;
-#ifdef VG_DEBUG
-	  if (vg_print)
-	    {
-	      printf ("(%d,%d) z: %d scal: %d", x, y, z, opcode);
-	    }
-#endif
-#if 0
-	  if (vg_step)
-	    {
-	      printf ("\nx: %x  x<<21: %x  (x<<21)>>%d: %x\r\n", x, x<<21, 30-(scale+opcode), (x<<21)>>(30-(scale+opcode)));
-	      printf ("y: %x  y<<21: %x  (y<<21)>>%d: %x\r\n", y, y<<21, 30-(scale+opcode), (y<<21)>>(30-(scale+opcode)));
-	    }
-#endif
 	  oldx = currentx; oldy = currenty;
 	  temp = (scale + opcode) & 0x0f;
 	  if (temp > 9)
 	    temp = -1;
 	  deltax = (x << 21) >> (30 - temp);
 	  deltay = (y << 21) >> (30 - temp);
-#if 0
-	  if (vg_step)
-	    {
-	      printf ("deltax: %x  deltay: %x\r\n", deltax, deltay);
-	    }
-#endif
 	  currentx += deltax;
 	  currenty -= deltay;
-//	  dvg_vector_timer (temp);
 //---------
-    int _scale = (scale + opcode) & 0xf;
-    int fin = 0xfff - (((2 << _scale) & 0x7ff) ^ 0xfff);
-    const int cycles = 8 * fin;
-    vg_done_cyc += cycles/8;
+		int _scale = (scale + opcode) & 0xf;
+		int fin = 0xfff - (((2 << _scale) & 0x7ff) ^ 0xfff);
+		const int cycles = 8 * fin;
+		vg_done_cyc += cycles/8;
 //---------
-  DEBUG_OUT("long cycles: %i\n",cycles);
       
 	  draw_line (oldx, oldy, currentx, currenty, 7, z);
 	  break;
@@ -279,40 +217,17 @@ DEBUG_OUT( "      vg_done at: %i (+ loop)\r\n", vg_done_cyc);
 	case DLABS:
 	  x = twos_comp_val (secondwd, 12);
 	  y = twos_comp_val (firstwd, 12);
-/*
-	  x = secondwd & 0x07ff;
-	  if (secondwd & 0x0800)
-	    x = x - 0x1000;
-	  y = firstwd & 0x07ff;
-	  if (firstwd & 0x0800)
-	    y = y - 0x1000;
-*/
 	  scale = secondwd >> 12;
 	  currentx = x;
 	  currenty = (896 - y);
-#ifdef VG_DEBUG
-	  if (vg_print)
-	    {
-	      printf ("(%d,%d) scal: %d", x, y, secondwd >> 12);
-	    }
-#endif
 	  break;
 
 	case DHALT:
-#ifdef VG_DEBUG
-	  if (vg_print)
-	    if ((firstwd & 0x0fff) != 0)
-	      printf ("(%d?)", firstwd & 0x0fff);
-#endif
 	  done = 1;
 	  break;
 
 	case DJSRL:
 	  a = firstwd & 0x0fff;
-#ifdef VG_DEBUG
-	  if (vg_print)
-	    printf ("%4x", map_addr(a));
-#endif
 	  stack [sp] = pc;
 	  if (sp == (MAXSTACK - 1))
 	    {
@@ -326,11 +241,6 @@ DEBUG_OUT( "      vg_done at: %i (+ loop)\r\n", vg_done_cyc);
 	  break;
 	
 	case DRTSL:
-#ifdef VG_DEBUG
-	  if (vg_print)
-	    if ((firstwd & 0x0fff) != 0)
-	      printf ("(%d?)", firstwd & 0x0fff);
-#endif
 	  if (sp == 0)
 	    {
 	      printf ("\n*** Vector generator stack underflow! ***\r\n");
@@ -344,10 +254,6 @@ DEBUG_OUT( "      vg_done at: %i (+ loop)\r\n", vg_done_cyc);
 
 	case DJMPL:
 	  a = firstwd & 0x0fff;
-#ifdef VG_DEBUG
-	  if (vg_print)
-	    printf ("%4x", map_addr(a));
-#endif
 	  pc = a;
 	  break;
 	
@@ -360,61 +266,22 @@ DEBUG_OUT( "      vg_done at: %i (+ loop)\r\n", vg_done_cyc);
 	    x = -x;
 	  z = (firstwd >> 4) & 0x0f;
 	  temp = 2 + ((firstwd >> 2) & 0x02) + ((firstwd >> 11) & 0x01);
-#ifdef VG_DEBUG3000
-	  if (vg_print)
-	    {
-	      printf ("(%d,%d) z: %d scal: %d", x, y, z, temp);
-	    }
-#endif
-#if 0
-	  if (vg_step)
-	    {
-	      printf ("\nx: %x  x<<21: %x  (x<<21)>>%d: %x\r\n", x, x<<21, 30-(scale+temp), (x<<21)>>(30-(scale+temp)));
-	      printf ("y: %x  y<<21: %x  (y<<21)>>%d: %x\r\n", y, y<<21, 30-(scale+temp), (y<<21)>>(30-(scale+temp)));
-	    }
-#endif
 	  oldx = currentx; oldy = currenty;
 	  temp = (scale + temp) & 0x0f;
 	  if (temp > 9)
 	    temp = -1;
 	  deltax = (x << 21) >> (30 - temp);
 	  deltay = (y << 21) >> (30 - temp);
-#if 0
-	  if (vg_step)
-	    {
-	      printf ("deltax: %x  deltay: %x\r\n", deltax, deltay);
-	    }
-#endif
 	  currentx += deltax;
 	  currenty -= deltay;
 //	  dvg_vector_timer (temp);
       
       
 //--------------------
-#ifdef NEVER_USED
-    int _scale2 = (scale +
-                    (((deltay & 0x800) >> 11)
-                    | (((deltax & 0x800) ^ 0x800) >> 10)
-                    | ((deltax & 0x800)  >> 9))) & 0xf;
-
-    int fin2 = 0xfff - (((2 << _scale2) & 0x7ff) ^ 0xfff);
-    const int cycles2 = 8 * fin2;
-//  vg_done_cyc += cycles2;
-#endif
-    vg_done_cyc += ((4 << temp)*4)/8;
-  DEBUG_OUT("short cycles: %i\n",(4 << temp)*4);
+	vg_done_cyc += ((4 << temp)*4)/8;
+	DEBUG_OUT("short cycles: %i\n",(4 << temp)*4);
 
 //--------------------
-      
-      
-      
-      
-
-      
-      
-      
-      
-      
       
 	  draw_line (oldx, oldy, currentx, currenty, 7, z);
 	  break;
@@ -431,7 +298,6 @@ DEBUG_OUT( "      vg_done at: %i (+ loop)\r\n", vg_done_cyc);
   close_page ();
 }
 
-//#define VG_DEBUG
 static void avg_draw_vector_list()
 {
   frame++;
@@ -489,43 +355,23 @@ static void avg_draw_vector_list()
   }
     
 
-#ifdef VG_DEBUG
-  open_page (vg_step);
-#else
   open_page (0);
-#endif
   while (!done)
     {
       vg_done_cyc += 8;
       
-#ifdef VG_DEBUG
-      if (vg_step) getchar();
-#endif
       firstwd = memrdwd (map_addr (pc), 0, 0);
       opcode = firstwd >> 13;
-#ifdef VG_DEBUG
-      if (vg_print) printf ("%4x: %4x ", map_addr (pc), firstwd);
-#endif
       pc++;
       if (opcode == VCTR)
 	{
 	  secondwd = memrdwd (map_addr (pc), 0, 0);
 	  pc++;
-#ifdef VG_DEBUG
-	  if (vg_print)  printf ("%4x  ", secondwd);
-#endif
 	}
-#ifdef VG_DEBUG
-      else
-	if (vg_print)  printf ("      ");
-#endif
 
       if ((opcode == STAT) && ((firstwd & 0x1000) != 0))
 	opcode = SCAL;
 
-#ifdef VG_DEBUG
-      if (vg_print) 	printf ("%s ", avg_mnem [opcode]);
-#endif
 
       switch (opcode)
 	{
@@ -533,26 +379,13 @@ static void avg_draw_vector_list()
 	  x = twos_comp_val (secondwd,13);
 	  y = twos_comp_val (firstwd,13);
 	  z = 2 * (secondwd >> 13);
-#ifdef VG_DEBUG
-	  if (vg_print)    printf ("%d,%d,", x, y);
-#endif
 	  if (z == 0)
 	    {
-#ifdef VG_DEBUG
-	      if (vg_print) printf ("blank");
-#endif
 	    }
 	  else if (z == 2)
 	    {
 	      z = statz;
-#ifdef VG_DEBUG
-	      if (vg_print) printf ("stat (%d)", z);
-#endif
 	    }
-#ifdef VG_DEBUG
-	  else
-	    if (vg_print)   printf ("%d", z);
-#endif
 	  oldx = currentx; oldy = currenty;
 	  deltax = x * scale; deltay = y * scale;
 	  currentx += deltax;
@@ -562,33 +395,19 @@ static void avg_draw_vector_list()
       
       
 	  draw_line (oldx>>13, oldy>>13, currentx>>13, currenty>>13, color, z);
-//printf("\nline color: %i, intensity: %i\n", color, z);
 	  break;
 	
 	case SVEC:
 	  x = twos_comp_val (firstwd, 5) << 1;
 	  y = twos_comp_val (firstwd >> 8, 5) << 1;
 	  z = 2 * ((firstwd >> 5) & 7);
-#ifdef VG_DEBUG
-	  if (vg_print)   printf ("%d,%d,", x, y);
-#endif
 	  if (z == 0)
 	    {
-#ifdef VG_DEBUG
-	      if (vg_print) printf ("blank");
-#endif
 	    }
 	  else if (z == 2)
 	    {
 	      z = statz;
-#ifdef VG_DEBUG
-	      if (vg_print) 	printf ("stat");
-#endif
 	    }
-#ifdef VG_DEBUG
-	  else
-	    if (vg_print)   printf ("%d", z);
-#endif
 	  oldx = currentx; oldy = currenty;
 	  deltax = x * scale; deltay = y * scale;
 	  currentx += deltax;
@@ -603,9 +422,6 @@ static void avg_draw_vector_list()
 	case STAT:
 	  color = firstwd & 0x0f;
 	  statz = (firstwd >> 4) & 0x0f;
-#ifdef VG_DEBUG
-	  if (vg_print)   printf ("z: %d color: %d", statz, color);
-#endif
 	  /* should do e, h, i flags here! */
 	  break;
       
@@ -614,25 +430,9 @@ static void avg_draw_vector_list()
 	  l = firstwd & 0xff;
 	  scale = (16384 - (l << 6)) >> b;
 	  /* scale = (1.0-(l/256.0)) * (2.0 / (1 << b)); */
-#ifdef VG_DEBUG
-	  if (vg_print)
-      {
-        printf ("bin: %d, lin: ", b);
-        if (l > 0x80) printf ("(%d?)", l);
-        else printf ("%d", l);
-        printf (" scale: %f", (scale/8192.0));
-      }
-#endif
 	  break;
 	
 	case CNTR:
-#ifdef VG_DEBUG
-	  d = firstwd & 0xff;
-	  if (vg_print)
-      {
-        if (d != 0x40) 	printf ("%d", d);
-      }
-#endif
 	  if (portrait)
       {
         currentx = 384 * 8192;
@@ -646,10 +446,6 @@ static void avg_draw_vector_list()
 	  break;
 	
 	case RTSL:
-#ifdef VG_DEBUG
-	  if (vg_print)
-	    if ((firstwd & 0x1fff) != 0)     printf ("(%d?)", firstwd & 0x1fff);
-#endif
 	  if (sp == 0)
       {
         printf ("\n*** Vector generator stack underflow! ***\r\n");
@@ -662,26 +458,16 @@ static void avg_draw_vector_list()
 	  break;
 
 	case HALT:
-#ifdef VG_DEBUG
-	  if (vg_print)
-	    if ((firstwd & 0x1fff) != 0)     printf ("(%d?)", firstwd & 0x1fff);
-#endif
 	  done = 1;
 	  break;
 
 	case JMPL:
 	  a = firstwd & 0x1fff;
-#ifdef VG_DEBUG
-	  if (vg_print)     printf ("%4x", map_addr(a));
-#endif
 	  pc = a;
 	  break;
 	
 	case JSRL:
 	  a = firstwd & 0x1fff;
-#ifdef VG_DEBUG
-	  if (vg_print)  printf ("%4x", map_addr(a));
-#endif
 	  stack [sp] = pc;
 	  if (sp == (MAXSTACK - 1))
       {
@@ -697,9 +483,6 @@ static void avg_draw_vector_list()
 	default:
 	  printf ("display: 2 internal error\r\n");
 	}
-#ifdef VG_DEBUG
-      if (vg_print) 	printf ("\n");
-#endif
     }
 
   close_page ();
@@ -733,12 +516,6 @@ void vg_go (unsigned long cyc)
 {
   vg_busy = 1;
   vg_done_cyc = cyc + 8;
-DEBUG_OUT( "vg_go: start %i, vg_done at: %i\r\n",cyc, vg_done_cyc);
-#ifdef VG_DEBUG
-  vgo_count++;
-  if (trace_vgo) printf("VGO #%d at cycle %d, delta %d\r\n", vgo_count, cyc, cyc-last_vgo_cyc);
-  last_vgo_cyc = cyc;
-#endif
 
   if (--df == 0)
   {
@@ -762,18 +539,9 @@ DEBUG_OUT( "vg_go: start %i, vg_done at: %i\r\n",cyc, vg_done_cyc);
 void vg_reset (unsigned long cyc)
 {
   vg_busy = 0;
-#ifdef _VG_DEBUG
-  if (trace_vgo)
-    printf ("vector generator reset @%04x\r\n", PC);
-#endif
   if (game ==TEMPEST)
 	avg_reset(0);
 }
-
-
-
-
-
 
 
 
@@ -867,17 +635,8 @@ void vg_add_point_buf(int x, int y, int color, int intensity)
  *******************************************************************/
 void avg_init(u16 vram, u16 cram)
 {
-	/* AVG PROM */
-//	ROM_REGION( 0x100, "avg:prom", 0 )
-//	ROM_LOAD( "136002-125.d7",   0x0000, 0x0100, CRC(5903af03) SHA1(24bc0366f394ad0ec486919212e38be0f08d0239) )
 	m_prom = avg_prom;
-
-//    2000-2FFF  R/W   D  D  D  D  D  D  D  D   Vector Ram (4K)
-//    3000-3FFF   R    D  D  D  D  D  D  D  D   Vector Rom (4K)
 	m_vectorram_offset=vram;
-	
-
-//    0800-080F   W                D  D  D  D   Colour ram
 	m_colorram_offset=cram;
 		
 	m_pc = 0;
@@ -921,11 +680,6 @@ void avg_init(u16 vram, u16 cram)
 	m_ycenter = 0;
     old_x=0;
     old_y=0;
-	
-
-//    m_xcenter = ((m_xmax - m_xmin) / 2) << 15;
-//    m_ycenter = ((m_ymax - m_ymin) / 2) << 15;
-
     
     /*
      * The x and y DACs use 10 bit of the counter values which are in
@@ -1193,49 +947,7 @@ int tempest_handler_6() // tempest_strobe2
 	return avg_common_strobe2();
 }
 
-// Encoded
-// but it is actually
-// R xx
-// G  x
-// B  x
-// 4 bit
-// the GB 1 bit values are put into the "front"
-// thus return is :: 0000rrgb
-unsigned char rgbColorMap[] = 
-{
-  /* 0000 */ 0, //black
-  /* 0001 */ 0x38, //blue
-  /* 0010 */ 0x40, //green
-  /* 0011 */ 0x50, //blue+green = braun
 
-  /* 0100 */ 0x50, //red 0
-  /* 1100 */ 0x50, //red 1
-  /* 1000 */ 0x50, //red 2
-
-  /* 0110 */ 0x65, //red+green = yellow
-  /* 1010 */ 0x65, //red+green = yellow
-  /* 1110 */ 0x65, //red+green = yellow
-
-  /* 0101 */ 0x50, // red and blue = "cyan"?
-  /* 1001 */ 0x50, // red and blue = "cyan"?
-  /* 1101 */ 0x50, // red and blue = "cyan"?
-
-  /* 0111 */ 0x7f, // white
-  /* 1011 */ 0x7f, // white
-  /* 1111 */ 0x7f // white
-};
-
-
-int rgb_t(u8 r, u8 g, u8 b)
-{
-  int rgb = 0;
-  rgb = rgb | ((r&3)<<2);
-  rgb = rgb | ((g&1)<<1);
-  rgb = rgb | ((b&1));
-  return rgbColorMap[rgb];
-//  return rgb;
-//  return ((r+g+b)/3) / 32;
-}
 int tempest_handler_7() // tempest_strobe3
 {
 	const int cycles = avg_common_strobe3();
@@ -1262,39 +974,6 @@ int tempest_handler_7() // tempest_strobe3
 
 	return cycles;
 }
-/* MAME
-int avg_tempest_device::handler_7() // tempest_strobe3
-{
-	const int cycles = avg_common_strobe3();
-
-	if (!OP0() && !OP2())
-	{
-		const u8 data = m_colorram[m_color];
-		const u8 bit3 = BIT(~data, 3);
-		const u8 bit2 = BIT(~data, 2);
-		const u8 bit1 = BIT(~data, 1);
-		const u8 bit0 = BIT(~data, 0);
-
-		const u8 r = bit1 * 0xf3 + bit0 * 0x0c;
-		const u8 g = bit3 * 0xf3;
-		const u8 b = bit2 * 0xf3;
-
-		int x = m_xpos;
-		int y = m_ypos;
-
-		apply_flipping(x, y);
-
-		vg_add_point_buf(
-				y - m_ycenter + m_xcenter,
-				x - m_xcenter + m_ycenter,
-				rgb_t(r, g, b),
-				(((m_int_latch >> 1) == 1) ? m_intensity : m_int_latch & 0xe) << 4);
-	}
-
-	return cycles;
-}
-
-*/
 
 
 /*************************************
@@ -1387,7 +1066,6 @@ int avg_done(unsigned long cyc)
 {
   
     return m_halt ? 1 : 0;
-//    return m_sync_halt ? 1 : 0;
 }
 
 void avg_go(unsigned long cyc)

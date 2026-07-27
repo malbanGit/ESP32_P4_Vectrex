@@ -6,7 +6,11 @@
 Bug:
 
     pole position flimmert bei game over und hat emu fps von 43?
-    spike speaks too fast - 17 is correct!
+    done: spike speaks too fast - 17 is correct!
+    Tempest emulation - the "B" is not correctly drawn!!!!
+    Tempest - to slow!
+
+
     ->
     DER THROTTLE
     MUSS in bezug auf 3000 Zyklen sein, NICHT
@@ -1520,7 +1524,7 @@ IRAM_ATTR static void renderer_task(void *arg)
 //
 // the audio callback fills the buffer for exactly 1/50 of a secons
 // see audio setup
-static void audio_music_task(void *arg)
+IRAM_ATTR static void audio_music_task(void *arg)
 {
     while (1)
     {
