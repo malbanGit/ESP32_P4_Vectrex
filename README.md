@@ -188,7 +188,7 @@ All drawing goes through one of three **variant families**, each with a C refere
 |---|---|---|
 | **Brightness** | `mini_draw_line()` | Greyscale / white. Writes only the Y (luma) channel. |
 | **Color** | `mini_draw_line_color()` | Fixed palette of 127 colours. Writes Y + U/V chroma. |
-| **Overlay** | (automatic, via `mini_draw_line`) | Same as Brightness on draw; restores overlay background pixels on undraw. |
+| **Overlay** | (automatic, via `mini_draw_line`) | Additiv to overlay as Brightness on draw; restores overlay background pixels on undraw. |
 
 For each draw function there is a matching internal `undraw` function. The renderer calls undraw automatically for lines that no longer appear in the new frame — the application never needs to manage this.
 
