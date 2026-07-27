@@ -304,14 +304,7 @@ IRAM_ATTR static inline void drawLine_raw(int x0, int y0, int x1, int y1, uint8_
     int b = brightness+brightnessAdjust;
     if (s_overlay == NULL)
     {
-        //draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-
-        if ((x0==x1) && (y0==y1))
-        draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b+800);
-        else
         draw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
-
-
     }
     else
     {
