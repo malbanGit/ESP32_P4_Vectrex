@@ -5,116 +5,26 @@
 /*
 Bug:
 
-    pole position flimmert bei game over und hat emu fps von 43?
-    done: spike speaks too fast - 17 is correct!
+    - pole position flimmert bei game over und hat emu fps von 43?
 
-    lunar lander, red baron, Asteroids and battlezone analog sounds
-    For BattleZone clipping!
-    gravitar to fast???
+    - lunar lander, red baron, Asteroids and battlezone analog sounds
+    - clipping for sim emulations
+    - lunar lander after first live - slow, joystick does not center
+    - red baron joystick does not center
+    - reboot "m" does not always work (asteroids, lunar)
 
-    lunar lander after first live - slow, joystick does not center
-    red baron joystick does not center
+    VECX TODO
+    - Highscore saving
+    - joystick
+    - settings save ti ini
+    - sound volume
+    - Calibration Ala Tuts
 
-    reboot "m" does not always work (asteroids, lunar)
-
-
-    ->
-    DER THROTTLE
-    MUSS in bezug auf 3000 Zyklen sein, NICHT
-    in Bezug auf End frame!!!!
-TODO    
-void mini_taskloop(int cycles);
-IRAM_ATTR static void application_task(void *arg)
-{
-    while (1) 
-    {
-        uint64_t start = esp_timer_get_time();
-
-        mini_taskloop(30000);  // internal vecx loop; calls emu_draw_line/emu_end_frame
-
-        // slow down if we are too fast
-        // emulating 30000 vectrex cycles should take 1/50 of a second...
-        // if MAX_EMU_FPS is 50 and 50 is reached, we run with 100% original speed
-        uint64_t now = esp_timer_get_time();
-        if (now - start <= 1000000/MAX_EMU_FPS) 
-        {
-            int delay = (1000000/MAX_EMU_FPS) - (now - start);
-            esp_rom_delay_us(delay);  
-        }
-    }
-}
-
-
-
-
- to test - switch when hdmi is not connected?
-
-Highscore saving
-joystick
-settings save ti ini
-sound volume
-
-TODO: Calibration Ala Tuts
-
- build a audio mixer for samples - which should be "stackable"
-int playWAV();
-setSoundCallback(*functionPointer)
-
-
-1) 6909 to slow in new version
-Karl Quappe 47 statt 50 fps in emulation
-
-SLOW1: Vectorblade demo last level reached 46 emu speed -> to slow! -> without overlay
-SLOW1: Karl Quappe on LCD is still about 5 FPS slower then on HDMI out... FUCK WHY???
-
-YUV is about 2 FPS faster (emulator)
-YUV
-
-Optimizing steps:
-a) 
-        via_sstep0(); 
-        removed, gain 3 FPS! - this would be needed for imager and lightpen emulation!
-
-b) 
-        in via_sstep1 ();
-            if (via_srb >= 8u) ,return
-        inserted - minimalistic gain
-
-c) 
-        Following was not done, since for some reason or another, long uncalled for lines appeared in output
-        Even only setting scl_factorx to uint32_t does this, despite the fact that the scale factor is NEVER negative
-        Don't know why this does what it does.
-        Theoretically a unsigned division is faster then a signed division!
-
-        If you're doing division, unsigned variants are cheaper than signed on RISC-V 
-        (signed division needs extra sign-handling instructions) — 
-        if these are always non-negative in practice, uint32_t instead of long/int could
-        be a real, measurable win, unlike the long-vs-int question itself.
-        int32_t/uint32_t
-        scl_factorx
-        offy
-        long x0, long y0, long x1, long y1
-
-        IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
-        {
-            if (intensityDrift>100000)
-            {
-                double degradePercent = (180000000.0-((double)intensityDrift))/180000000.0; // two minutes
-                if (degradePercent<0) degradePercent = 0;
-                color = (int)(((double)color)*degradePercent);
-            }
-
-            emu_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
-            return;
-        }
-
-
-
+    Framework todo
+    - build a audio mixer for samples - which should be "stackable"
+    - int playWAV();
 
 Try out ESP IDF 6 with 400 Mhz -> not working with my chip!!!
-
-
-
 
 Pessimism to free DRAM
     - moved CART_ROM to PSRAM
@@ -128,32 +38,6 @@ returns the Hz of display of the Vectrex.
 If a game runs too slow - I mean if one round of display takes longer then 30000 cycles,
 the the EMU FPS drops also. 
 This is like the real vectrex - and no slowdown of emulation!
-
-
-
-2. Two-layer PPA compositing (eliminate overlay from CPU entirely)
-ESP32-P4 has a Pixel Processing Accelerator (PPA) hardware block that does alpha blending. The idea:
-
-Emulator renders Vectrex lines on a pure-black fb — no overlay involvement at all
-PPA blends the black fb + overlay → final display fb in hardware, asynchronously
-Core 1 emulator never touches overlay PSRAM at all during rendering
-Draw/undraw becomes trivial: write colored pixels or black. No palette lookup, no alpha, no bbox guards. The CPU completely exits the compositing business.
-
-3. Frame-diff line caching (near-zero cost for static screens)
-Many Vectrex frames are identical or nearly identical to the previous frame. Cache the line list (x0, y0, x1, y1, brightness, thickness) from last frame. If a line is unchanged, skip its draw+undraw entirely. For title screens, menus, or slow-moving games this could eliminate 80%+ of render work.
-
-
-
-To start the current version connect USB POW/UART to computer (directly)
-Connect USB (mid /down) to keyboard - the keyboard can be used to control the vectrex
-Start
-Should connect to COM 4, flash and play.
- 
-
-  BUG - no!
-  FCYCLES_INIT = 50000
-  should be 30000 for one round -> Nope the 50000 is fallback for "not" autosyncable... 
-  watch it "flicker" when spike speaks!
 
 */
 
@@ -269,7 +153,7 @@ typedef struct {
     int16_t y1;
     uint8_t brightness;
     uint32_t color; // 
-    uint8_t  _pad[2];
+    uint8_t  _pad[3];
 } vectrex_line_t; // power of 2 length
 
 typedef struct {
@@ -407,9 +291,6 @@ IRAM_ATTR static inline void undrawLine_raw(int x0, int y0, int x1, int y1, uint
     int b = brightness+brightnessAdjust;
     if (s_overlay == NULL)
     {
-        if ((x0==x1) && (y0==y1))
-        undraw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b+800);
-        else
         undraw_line_yuv422_brightness(s_fb_back, LCD_H_RES, LCD_V_RES, x0, y0, x1, y1, b);
     }
     else        
