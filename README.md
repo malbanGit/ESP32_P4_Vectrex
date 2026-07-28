@@ -453,15 +453,8 @@ IRAM_ATTR void my_app(void)
     tobekilled = 0;
     while (!tobekilled)
     {
-        // read physical joystick if available, otherwise keyboard fallback
-        // (g_inputState is already populated from keyboard by mini_end_frame)
-        if (isJoystickAvailable())
-        {
-            g_inputState.j0_x = (int8_t)getAnalogX();
-            g_inputState.j0_y = (int8_t)getAnalogY();
-        }
-
         // update simulation state …
+        // react on input which is available in g_inputState
 
         mini_draw_line(x0, y0, x1, y1, brightness);
         mini_draw_line_color(x0, y0, x1, y1, YUV_PALETTE_GREEN, brightness);
