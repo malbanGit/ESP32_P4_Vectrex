@@ -355,6 +355,8 @@ int  getAnalogY();          // Y axis: -128 … +127, 0 = center
 
 `isJoystickAvailable()` should be checked before reading axis values. If it returns `false`, fall back to the keyboard-mapped `g_inputState`.
 
+The 'readevents()' function which is called with every FrameEnd respects this. If joystick is connected, the four buttons are read and inserted in the g_inputState, as are the joystick analog values. If a joystick is connected the keyboard variants for player 1 or not queried. The player 2 can still use a keyboard.
+
 The analog values are read from the ADC, calibrated to millivolts, and mapped to the signed byte range using per-axis min/center/max reference voltages with a configurable dead zone around center. The dead zone suppresses jitter when the stick is at rest — without it a motionless joystick would produce a small non-zero value that causes the Vectrex integrators to drift.
 
 ```c
@@ -365,7 +367,7 @@ if (isJoystickAvailable())
 }
 ```
 
-> **Note:** The GPIO pinout for the 9-pin connector and Bluetooth controller support are not yet fully documented. This section will be updated when that information becomes available.
+> **Note:** A Bluetooth controller support is not yet available. This section will be updated when that information becomes available.
 
 ---
 
@@ -732,4 +734,4 @@ The AVG is a 256 × 4-bit PROM-driven state machine clocked at 1.5 MHz. The simu
 
 ---
 
-*Contributions, bug reports, and hardware notes (especially GPIO pinout for the 9-pin retro connector) welcome via [GitHub Issues](https://github.com/malbanGit/ESP32_P4_Vectrex/issues).*
+*Contributions, bug reports, and hardware notes welcome via [GitHub Issues](https://github.com/malbanGit/ESP32_P4_Vectrex/issues).*
