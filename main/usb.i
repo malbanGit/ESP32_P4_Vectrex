@@ -7,7 +7,7 @@
 //     usb_keyboard_init();
 //
 // ═══════════════════════════════════════════════════════════════════════════
-//  HOW HID JOYSTICK DETECTION WORKS (Approach 2 — descriptor parsing)
+//  HOW HID JOYSTICK DETECTION WORKS
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // Every USB HID device carries a "Report Descriptor" — a compact byte stream

@@ -694,6 +694,10 @@ ESP32_P4_Vectrex/
     ├── main.c                  task setup, renderer, frame pipeline,
     │                           line API (mini_draw_line*), input,
     │                           event dispatch, yuv_palette_init
+    ├── gpio.i                  functions to access gpio of the CPU. Mainly joystick
+    │                           buttons, and "special" buttons (switch video output)
+    ├── adc2_oneshot.i          functions to access analog GPIO, analog joystick in9Pin port
+    │                           and volume control
     ├── audio.i                 ES8311 / I²S audio init and task
     ├── overlay.i               PNG load, palettise, blit
     ├── usb.i                   USB HID keyboard + joystick (hot-plug, descriptor parsing)
@@ -732,6 +736,7 @@ ESP32_P4_Vectrex/
         ├── pokey.c / pokey.h       Atari POKEY sound chip
         └── dis6502.c / dis6502.h   6502 disassembler (debug)
 ```
+(*.i files are directly included in the main.c, not seperate object files)
 
 ---
 
