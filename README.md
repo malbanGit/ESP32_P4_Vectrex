@@ -327,7 +327,7 @@ typedef struct {
 ### Button bit layout
 
 ```
-Bit:    7    6    5    4    3    2    1    0
+Bit:    7    6    5    4         3    2    1    0
         ──── Port 1 buttons ────  ── Port 0 buttons ──
         B4   B3   B2   B1        B4   B3   B2   B1
 
