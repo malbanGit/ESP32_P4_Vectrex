@@ -96,7 +96,6 @@ extern int g_line_Rb;
 extern int g_beam_r;
 extern long unsigned int g_gs;
 
-
 extern int brightnessLCD;
 extern const uint8_t gauss_lut[];
 extern uint8_t s_overlay_palette[128][3];
@@ -110,12 +109,6 @@ typedef struct {
     volatile int buttonState;
 } input_state_t;
 extern volatile input_state_t g_inputState; 
-
-extern int miniButton; // zero active
-extern int miniVideoButton;
-extern int miniResetButton;
-extern int miniHPD;
-extern int miniSD;
 
 
 //void emu_begin_frame(void);
@@ -143,13 +136,32 @@ bool isKeyDown(uint8_t hid_code);
 bool isAsciiDown(char c);
 esp_err_t loadOverlayRGB(char *name, int img_w, int img_h);
 
+
+// different input devices can be plugged in at the same time
+// following is the order in which they are read
+// if a value is read the "next" device is not queried anymore!
+// Joystick_9Pin > USBJoystick > USBKeyboard
+
+extern int mini9PinButton; // zero active
+extern int miniVideoButton;
+extern int miniResetButton;
+extern int miniHPD;
+extern int miniSD;
+
 // Analog Joystick in 9 pin plug
-int getAnalogX(); // values from -128 - +127
-int getAnalogY();
-bool isJoystickAvailable();
+// you probably do not need them
+// values are read in FrameEnd 
+// and are available in g_inputState
+bool is9PinJoystickAvailable(void);
+void get9PinAnalog(void);
+int get9PinAnalogX(void); // values from -128 - +127
+int get9PinAnalogY(void);
+int getSwitches(void); // retunrs 9pin buttons if available, but sets all 8 GPIO
 
-
-
+extern int miniUSBButton; // zero active
+bool isUSBJoystickAvailable(void);
+int getUSBAnalogX(void); // values from -128 - +127
+int getUSBAnalogY(void);
 
 
 

@@ -117,10 +117,11 @@ IRAM_ATTR static void p3v_en(void)
 	gpio_set_level(BOARD_PIN_CTRL_P3V_EN, 1);
 }
 
-IRAM_ATTR static int get_switches(void)
+IRAM_ATTR int getSwitches(void) // includes 9 pin if available
 {
+    mini9PinButton = 0xf;// non pressed
 //    ESP_LOGI(TAG, "%d%d%d%d%d%d%d%d\n", 
-    miniButton  =   gpio_get_level(BOARD_PIN_CTRL_SW1)*0x1
+    mini9PinButton  =   gpio_get_level(BOARD_PIN_CTRL_SW1)*0x1
                   + gpio_get_level(BOARD_PIN_CTRL_SW2)*0x2
                   + gpio_get_level(BOARD_PIN_CTRL_SW3)*0x4
                   + gpio_get_level(BOARD_PIN_CTRL_SW4)*0x8;
@@ -128,6 +129,6 @@ IRAM_ATTR static int get_switches(void)
     miniResetButton = gpio_get_level(BOARD_PIN_SOFT_RESET);
     miniHPD = gpio_get_level(BOARD_PIN_HPH_DET_P);
     miniSD = gpio_get_level(BOARD_PIN_SD_DET);
-    return miniButton;
+    return mini9PinButton;
 }
 

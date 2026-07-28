@@ -77,16 +77,16 @@ void initADC(void)
 
 // needs to be called after
 // void get_analog()
-IRAM_ATTR static inline bool _isJoystickAvailable()
+IRAM_ATTR static inline bool _is9PinJoystickAvailable()
 {
     return (dataXAxis+dataYAxis > 200);
 }
-IRAM_ATTR bool isJoystickAvailable()
+IRAM_ATTR bool is9PinJoystickAvailable(void)
 {
     return (dataXAxis+dataYAxis > 200);
 }
 
-IRAM_ATTR int getAnalogX()
+IRAM_ATTR int get9PinAnalogX(void)
 {
     int mv = dataXAxis;
     int mid = midV_X;
@@ -116,7 +116,7 @@ IRAM_ATTR int getAnalogX()
         return 0;  // within tolerance band — dead zone
     }
 }
-IRAM_ATTR int getAnalogY()
+IRAM_ATTR int get9PinAnalogY(void)
 {
     int mv = dataYAxis;
     int mid = midV_Y;
@@ -155,7 +155,7 @@ IRAM_ATTR int getAnalogY()
 // min is about 560 mv
 // max is about 2800 mv
 
-IRAM_ATTR void get_analog()
+IRAM_ATTR void get9PinAnalog(void)
 {
     int dataVolumeRaw;
     int dataXAxisRaw;
@@ -194,17 +194,23 @@ IRAM_ATTR void get_analog()
         // ESP_LOGI(TAG, "dataYAxis Voltage: %d mV", dataYAxis);
     }
     // self calibrating
-    if (isJoystickAvailable())
+    if (is9PinJoystickAvailable())
     {
         if(dataXAxis<minV_X)
         {
-            minV_X=dataXAxis;
-            midV_X = (maxV_X+minV_X)>>1;
+            if (minV_X>200) // no NON joytick!
+            {
+                minV_X=dataXAxis;
+                midV_X = (maxV_X+minV_X)>>1;
+            }
         }
         if(dataYAxis<minV_Y) 
         {
-            minV_Y=dataYAxis;
-            midV_Y = (maxV_Y+minV_Y)>>1;
+            if (minV_Y>200) // no NON joytick!
+            {
+                minV_Y=dataYAxis;
+                midV_Y = (maxV_Y+minV_Y)>>1;
+            }
         }
         if(dataXAxis>maxV_X) 
         {

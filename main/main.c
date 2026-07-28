@@ -16,8 +16,7 @@ Bug:
 
     VECX TODO
     - Highscore saving
-    - joystick
-    - settings save ti ini
+    - settings save to ini
     - sound volume
     - Calibration Ala Tuts
 
@@ -129,7 +128,8 @@ DRAM_ATTR uint8_t  s_overlay_alpha_val = GLOBAL_OVERLAY_ALPHA;  /* representativ
 //hdmi 1280x720
 //vdsl 480x800
 
-DRAM_ATTR int miniButton; // zero active
+DRAM_ATTR int mini9PinButton; // zero active
+DRAM_ATTR int miniUSBButton; // zero active
 DRAM_ATTR int miniVideoButton; // bool
 DRAM_ATTR int miniResetButton; // bool
 DRAM_ATTR int miniHPD; // bool
@@ -1714,43 +1714,52 @@ IRAM_ATTR void readevents()
 
 
     // if there is a joystick available - use it, not the keyboard!
-    get_analog(); // ADC Joystick and volume control 
-    if (isJoystickAvailable())
+    get9PinAnalog(); // ADC Joystick and volume control 
+    if (is9PinJoystickAvailable())
     {
-        g_inputState.buttonState = get_switches(); // GPIO, just the four buttons
-        g_inputState.j0_x = getAnalogX(); // values from -128 - +127
-        g_inputState.j0_y = getAnalogY();
+        g_inputState.buttonState = getSwitches(); // GPIO, just the four buttons
+        g_inputState.j0_x = get9PinAnalogX(); // values from -128 - +127
+        g_inputState.j0_y = get9PinAnalogY();
     }
     else
     {
-        // attached keyboard (slow due to pulls!)
-        // mapping as in Vide
-        /* Player 1 */
-        if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = -128;
-        if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 127;
-        if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 127;
-        if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = -128;
-
-        /* Player 1 */
-        if (isAsciiDown('a'))
-            g_inputState.buttonState &= ~1;
+        if (isUSBJoystickAvailable())
+        {
+            g_inputState.buttonState = miniUSBButton; // just the four buttons
+            g_inputState.j0_x = getUSBAnalogX(); // values from -128 - +127
+            g_inputState.j0_y = getUSBAnalogY();
+        }
         else
-            g_inputState.buttonState |= 1;
+        {
+            // attached keyboard (slow due to pulls!)
+            // mapping as in Vide
+            /* Player 1 */
+            if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = -128;
+            if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 127;
+            if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 127;
+            if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = -128;
 
-        if (isAsciiDown('s'))
-            g_inputState.buttonState &= ~2;
-        else
-            g_inputState.buttonState |= 2;
+            /* Player 1 */
+            if (isAsciiDown('a'))
+                g_inputState.buttonState &= ~1;
+            else
+                g_inputState.buttonState |= 1;
 
-        if (isAsciiDown('d'))
-            g_inputState.buttonState &= ~4;
-        else
-            g_inputState.buttonState |= 4;
+            if (isAsciiDown('s'))
+                g_inputState.buttonState &= ~2;
+            else
+                g_inputState.buttonState |= 2;
 
-        if (isAsciiDown('f'))
-            g_inputState.buttonState &= ~8;
-        else
-            g_inputState.buttonState |= 8;
+            if (isAsciiDown('d'))
+                g_inputState.buttonState &= ~4;
+            else
+                g_inputState.buttonState |= 4;
+
+            if (isAsciiDown('f'))
+                g_inputState.buttonState &= ~8;
+            else
+                g_inputState.buttonState |= 8;
+        }
     }
 
 
