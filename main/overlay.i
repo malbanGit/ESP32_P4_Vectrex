@@ -1,3 +1,175 @@
+void set_yuv(int i, int r, int g, int b)
+{
+    s_overlay_palette_yuv[i][0] = (uint8_t)((77*r + 150*g + 29*b) >> 8);
+    int u = 128 + ((-43*r - 85*g + 128*b) >> 8);
+    int v = 128 + ((128*r - 107*g - 21*b) >> 8);
+    s_overlay_palette_yuv[i][1] = (uint8_t)(u < 0 ? 0 : u > 255 ? 255 : u);
+    s_overlay_palette_yuv[i][2] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
+void yuv_palette_init(void)
+{
+    /* Neutrals */
+    set_yuv(YUV_PALETTE_BLACK,          0,   0,   0);
+    set_yuv(YUV_PALETTE_DARKGRAY,      45,  45,  45);
+    set_yuv(YUV_PALETTE_GRAY,         100, 100, 100);
+    set_yuv(YUV_PALETTE_MIDGRAY,      128, 128, 128);
+    set_yuv(YUV_PALETTE_LIGHTGRAY,    180, 180, 180);
+    set_yuv(YUV_PALETTE_SILVER,       210, 210, 210);
+    set_yuv(YUV_PALETTE_OFFWHITE,     240, 240, 240);
+    set_yuv(YUV_PALETTE_WHITE,        255, 255, 255);
+
+    /* Reds */
+    set_yuv(YUV_PALETTE_DARKMAROON,    64,   0,   0);
+    set_yuv(YUV_PALETTE_MAROON,       128,   0,   0);
+    set_yuv(YUV_PALETTE_DARKRED,      180,   0,   0);
+    set_yuv(YUV_PALETTE_RED,          255,   0,   0);
+    set_yuv(YUV_PALETTE_BRIGHTRED,    255,  40,  40);
+    set_yuv(YUV_PALETTE_CORAL,        255, 127,  80);
+    set_yuv(YUV_PALETTE_SALMON,       250, 128, 114);
+    set_yuv(YUV_PALETTE_LIGHTCORAL,   240, 128, 128);
+
+    /* Oranges / Yellows */
+    set_yuv(YUV_PALETTE_DARKORANGE,   180,  80,   0);
+    set_yuv(YUV_PALETTE_ORANGE,       255, 128,   0);
+    set_yuv(YUV_PALETTE_BRIGHTORANGE, 255, 160,   0);
+    set_yuv(YUV_PALETTE_GOLD,         255, 200,   0);
+    set_yuv(YUV_PALETTE_YELLOW,       255, 255,   0);
+    set_yuv(YUV_PALETTE_LIGHTYELLOW,  255, 255, 128);
+    set_yuv(YUV_PALETTE_AMBER,        255, 180,   0);
+    set_yuv(YUV_PALETTE_KHAKI,        200, 200, 100);
+
+    /* Greens */
+    set_yuv(YUV_PALETTE_DARKFOREST,     0,  50,   0);
+    set_yuv(YUV_PALETTE_FOREST,         0, 100,   0);
+    set_yuv(YUV_PALETTE_DARKGREEN,      0, 150,   0);
+    set_yuv(YUV_PALETTE_GREEN,          0, 200,   0);
+    set_yuv(YUV_PALETTE_BRIGHTGREEN,    0, 255,   0);
+    set_yuv(YUV_PALETTE_LIGHTGREEN,   100, 255, 100);
+    set_yuv(YUV_PALETTE_PALEGREEN,    180, 255, 180);
+    set_yuv(YUV_PALETTE_YELLOWGREEN,  150, 220,  50);
+
+    /* Cyans / Teals */
+    set_yuv(YUV_PALETTE_DARKTEAL,       0,  64,  64);
+    set_yuv(YUV_PALETTE_TEAL,           0, 128, 128);
+    set_yuv(YUV_PALETTE_DARKCYAN,       0, 180, 180);
+    set_yuv(YUV_PALETTE_CYAN,           0, 255, 255);
+    set_yuv(YUV_PALETTE_LIGHTCYAN,    180, 255, 255);
+    set_yuv(YUV_PALETTE_AQUAMARINE,   100, 230, 200);
+    set_yuv(YUV_PALETTE_TURQUOISE,     64, 224, 208);
+    set_yuv(YUV_PALETTE_MEDTURQUOISE,  72, 209, 204);
+
+    /* Blues */
+    set_yuv(YUV_PALETTE_DARKNAVY,       0,   0,  64);
+    set_yuv(YUV_PALETTE_NAVY,           0,   0, 128);
+    set_yuv(YUV_PALETTE_DARKBLUE,       0,   0, 180);
+    set_yuv(YUV_PALETTE_BLUE,           0,   0, 255);
+    set_yuv(YUV_PALETTE_ROYALBLUE,     65, 105, 225);
+    set_yuv(YUV_PALETTE_CORNFLOWER,   100, 149, 237);
+    set_yuv(YUV_PALETTE_SKYBLUE,      135, 206, 235);
+    set_yuv(YUV_PALETTE_LIGHTBLUE,    180, 220, 255);
+
+    /* Purples / Violets */
+    set_yuv(YUV_PALETTE_DARKINDIGO,    40,   0,  80);
+    set_yuv(YUV_PALETTE_INDIGO,        75,   0, 130);
+    set_yuv(YUV_PALETTE_DARKPURPLE,   100,   0, 150);
+    set_yuv(YUV_PALETTE_PURPLE,       128,   0, 128);
+    set_yuv(YUV_PALETTE_VIOLET,       150,   0, 200);
+    set_yuv(YUV_PALETTE_BLUEVIOLET,   138,  43, 226);
+    set_yuv(YUV_PALETTE_MEDIUMPURPLE, 147, 112, 219);
+    set_yuv(YUV_PALETTE_LAVENDER,     200, 180, 255);
+
+    /* Pinks / Magentas */
+    set_yuv(YUV_PALETTE_DARKMAGENTA,  139,   0, 139);
+    set_yuv(YUV_PALETTE_MAGENTA,      255,   0, 255);
+    set_yuv(YUV_PALETTE_FUCHSIA,      255,   0, 180);
+    set_yuv(YUV_PALETTE_DEEPPINK,     255,  20, 147);
+    set_yuv(YUV_PALETTE_HOTPINK,      255, 105, 180);
+    set_yuv(YUV_PALETTE_PINK,         255, 180, 210);
+    set_yuv(YUV_PALETTE_LIGHTPINK,    255, 210, 230);
+    set_yuv(YUV_PALETTE_ROSE,         255,   0, 100);
+
+    /* Browns / Earth */
+    set_yuv(YUV_PALETTE_DARKBROWN,     80,  30,   0);
+    set_yuv(YUV_PALETTE_BROWN,        139,  69,  19);
+    set_yuv(YUV_PALETTE_SADDLEBROWN,  160,  90,  40);
+    set_yuv(YUV_PALETTE_CHOCOLATE,    210, 105,  30);
+    set_yuv(YUV_PALETTE_PERU,         205, 133,  63);
+    set_yuv(YUV_PALETTE_TAN,          210, 180, 140);
+    set_yuv(YUV_PALETTE_WHEAT,        245, 222, 179);
+    set_yuv(YUV_PALETTE_SANDYBROWN,   244, 164,  96);
+
+    /* Olive / Sea greens */
+    set_yuv(YUV_PALETTE_OLIVEDARK,     60,  60,   0);
+    set_yuv(YUV_PALETTE_OLIVE,        128, 128,   0);
+    set_yuv(YUV_PALETTE_DARKOLIVE,    100, 110,  30);
+    set_yuv(YUV_PALETTE_OLIVEDRAB,    107, 142,  35);
+    set_yuv(YUV_PALETTE_SEAGREEN,      46, 139,  87);
+    set_yuv(YUV_PALETTE_MEDSEAGREEN,   60, 179, 113);
+    set_yuv(YUV_PALETTE_SPRINGGREEN,    0, 255, 127);
+    set_yuv(YUV_PALETTE_MINTGREEN,    100, 255, 160);
+
+    /* Blue-greens / Slate */
+    set_yuv(YUV_PALETTE_CADETBLUE,     95, 158, 160);
+    set_yuv(YUV_PALETTE_STEELBLUE,     70, 130, 180);
+    set_yuv(YUV_PALETTE_DODGERBLUE,    30, 144, 255);
+    set_yuv(YUV_PALETTE_DEEPSKYBLUE,    0, 191, 255);
+    set_yuv(YUV_PALETTE_POWDERBLUE,   176, 224, 230);
+    set_yuv(YUV_PALETTE_SLATEBLUE,    106,  90, 205);
+    set_yuv(YUV_PALETTE_MIDNIGHTBLUE,  25,  25, 112);
+    set_yuv(YUV_PALETTE_DARKSLATEBLUE, 72,  61, 139);
+
+    /* Warm reds */
+    set_yuv(YUV_PALETTE_CRIMSON,      220,  20,  60);
+    set_yuv(YUV_PALETTE_SCARLET,      255,  36,   0);
+    set_yuv(YUV_PALETTE_TOMATO,       255,  99,  71);
+    set_yuv(YUV_PALETTE_FIREBRICK,    178,  34,  34);
+    set_yuv(YUV_PALETTE_INDIANRED,    205,  92,  92);
+    set_yuv(YUV_PALETTE_ROSEWOOD,     100,   0,  20);
+    set_yuv(YUV_PALETTE_RUBY,         155,  17,  30);
+    set_yuv(YUV_PALETTE_BURGUNDY,     128,   0,  32);
+
+    /* Pastels */
+    set_yuv(YUV_PALETTE_PASTELRED,    255, 180, 180);
+    set_yuv(YUV_PALETTE_PASTELORANGE, 255, 210, 170);
+    set_yuv(YUV_PALETTE_PASTELYELLOW, 255, 255, 190);
+    set_yuv(YUV_PALETTE_PASTELGREEN,  180, 255, 180);
+    set_yuv(YUV_PALETTE_PASTELCYAN,   180, 255, 255);
+    set_yuv(YUV_PALETTE_PASTELBLUE,   180, 210, 255);
+    set_yuv(YUV_PALETTE_PASTELPURPLE, 220, 180, 255);
+    set_yuv(YUV_PALETTE_PASTELPINK,   255, 180, 230);
+
+    /* Neons */
+    set_yuv(YUV_PALETTE_NEONRED,      255,  20,  20);
+    set_yuv(YUV_PALETTE_NEONORANGE,   255, 140,   0);
+    set_yuv(YUV_PALETTE_NEONYELLOW,   240, 255,   0);
+    set_yuv(YUV_PALETTE_NEONGREEN,     57, 255,  20);
+    set_yuv(YUV_PALETTE_NEONCYAN,       0, 255, 240);
+    set_yuv(YUV_PALETTE_NEONBLUE,      30,  80, 255);
+    set_yuv(YUV_PALETTE_NEONPURPLE,   180,   0, 255);
+    set_yuv(YUV_PALETTE_NEONPINK,     255,   0, 180);
+
+    /* Electric / Saturated */
+    set_yuv(YUV_PALETTE_ELECTRICBLUE,   0,  80, 255);
+    set_yuv(YUV_PALETTE_ELECTRICGREEN,  0, 220,   0);
+    set_yuv(YUV_PALETTE_ELECTRICPURP, 160,   0, 255);
+    set_yuv(YUV_PALETTE_ELECTRICCYAN,   0, 230, 230);
+    set_yuv(YUV_PALETTE_ELECTRICYELL,  220, 220,  0);
+    set_yuv(YUV_PALETTE_ELECTRICORANG, 255, 100,  0);
+    set_yuv(YUV_PALETTE_ELECTRICRED,   220,   0,  0);
+    set_yuv(YUV_PALETTE_ELECTRICPINK,  220,   0, 150);
+
+    /* Misc warm */
+    set_yuv(YUV_PALETTE_OCHRE,        200, 150,  20);
+    set_yuv(YUV_PALETTE_TERRACOTTA,   200,  90,  50);
+    set_yuv(YUV_PALETTE_RUST,         180,  70,  20);
+    set_yuv(YUV_PALETTE_COPPER,       185, 115,  50);
+    set_yuv(YUV_PALETTE_BRONZE,       160, 100,  30);
+    set_yuv(YUV_PALETTE_BRASS,        180, 160,  50);
+    set_yuv(YUV_PALETTE_CHARTREUSE,   127, 255,   0);
+    set_yuv(YUV_PALETTE_LIMEGREEN,     50, 205,  50);
+}
+
 
 /* Write s_overlay (BGRA, 4 bytes/pixel) into s_fb_back (BGR, 3 bytes/pixel).
  * Destination is assumed to be black, so partial-alpha pixels scale the source

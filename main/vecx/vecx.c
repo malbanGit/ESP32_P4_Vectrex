@@ -24,6 +24,8 @@ this must be "restored"
 #include "freertos/semphr.h"
 
 #define einline __inline
+DRAM_ATTR int dotProtection = 0;
+DRAM_ATTR long protectionStart = 0;
 
 // from main
 char cartName[MAX_ROM_NAME];
@@ -34,10 +36,13 @@ DRAM_ATTR int isBedlam = 0;
 static DRAM_ATTR int tobekilled = 0;
 
 
+#define BANK_SWITCH_NONE 0
+#define BANK_SWITCH_PB6 1
+#define BANK_SWITCH_PB6_48K_RAM 2
+#define BANK_SWITCH_PB6_IRQ_48K 3
 
-//DRAM_ATTR static long xChange = 0;
-//DRAM_ATTR static long rChange = 0;
 
+DRAM_ATTR int bankswitchType = BANK_SWITCH_NONE;
 DRAM_ATTR long cyclesRunning = 0;
 DRAM_ATTR static int thisWaitRecal = 0;
 DRAM_ATTR static long lastWaitRecal=0;
@@ -258,10 +263,10 @@ DRAM_ATTR static int DELAYS[]={
 	0,  // TIMER_LIGHTPEN = 10,
 	15, // TIMER_RAMP_OFF_CHANGE = 11,
 	1,  // TIMER_MUX_SEL_CHANGE = 12, 
-#define TIMER_SHIFT_VALUE_IS_NULL 1	
+//#define TIMER_SHIFT_VALUE_IS_NULL 1	
 	0,  // TIMER_SHIFT = 13, 
 	
-#define TIMER_T1_VALUE_IS_NULL	1
+//#define TIMER_T1_VALUE_IS_NULL	1
 	0,  // TIMER_T1 = 14, 
 #define TIMER_T2_VALUE_IS_NULL	1
 	0   // TIMER_T2 = 15,
@@ -272,6 +277,8 @@ DRAM_ATTR int blankOnDelay = -2; // Karl -2
 DRAM_ATTR int blankOffDelay = -2;
 DRAM_ATTR bool rampOnFraction = false;
 DRAM_ATTR bool rampOffFraction = false;
+
+
 
 DRAM_ATTR static long fcycles;
 
@@ -296,8 +303,7 @@ IRAM_ATTR static einline void readevents()
 	alg_jch3 = g_inputState.j1_y+128;
 	snd_regs[14] = g_inputState.buttonState;
 }
-
-
+#include <math.h>
 IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, unsigned char color)
 {
 	if (intensityDrift>200000)
@@ -306,7 +312,78 @@ IRAM_ATTR static einline  void alg_addline (long x0, long y0, long x1, long y1, 
 		if (degradePercent<0) degradePercent = 0;
 		color = (int)(((float)color)*degradePercent);
 	}
-	mini_draw_line(offx + x0 / scl_factorx, offy +y0 / scl_factory, offx + x1 / scl_factorx, offy + y1 / scl_factory, color); // For ESP32
+
+	x0 = offx + x0 / scl_factorx;
+	x1 = offx + x1 / scl_factorx;
+	y0 = offy + y0 / scl_factory;
+	y1 = offy + y1 / scl_factory;
+
+	// this is a pretty bad hack
+	if (dotProtection)
+	{
+		if ((x0==x1) && (y0==y1))
+		{
+			if (cyclesRunning - protectionStart<10)
+			{
+				dotProtection=0;
+				return;
+			}
+		}
+	}
+	mini_draw_line(x0, y0, x1, y1, color);
+
+	/*
+	long _x0 = offx + x0 / scl_factorx;
+	long _x1 = offx + x1 / scl_factorx;
+	long _y0 = offy + y0 / scl_factory;
+	long _y1 = offy + y1 / scl_factory;
+
+	// this is a pretty bad hack
+	if (dotProtection)
+	{
+		if ((_x0==_x1) && (_y0==_y1))
+		{
+			if (cyclesRunning - protectionStart<10)
+			{
+				dotProtection=0;
+				return;
+			}
+		}
+	}
+
+        if (1)
+        {
+			#define POWER_HZ 50
+			#define WOBBLE_OFFSET_Y 30
+			#define WOBBLE_OFFSET_POS 130
+			#define WOBBLE_CONSTENT 0.2f
+
+            int sinOffsetX = 0;                    
+            int sinOffsetY = 0;                    
+            // sinus angle in 0 to 30000 (when 50 Hz)
+            double currentSinPos = cyclesRunning%POWER_HZ;
+            double currentSinPosMathX = ((double)currentSinPos) / POWER_HZ * 2 * M_PI; 
+            double currentSinPosMathY = ((double)((int)(currentSinPos+WOBBLE_OFFSET_Y) % POWER_HZ)) / (double)POWER_HZ * 2 * M_PI; 
+//printf("sin: %f, x: %f, y%f \n",currentSinPos, currentSinPosMathX, currentSinPosMathY);
+		
+            sinOffsetX = (int) (WOBBLE_OFFSET_POS * sin( currentSinPosMathX ) * cos(WOBBLE_CONSTENT * currentSinPosMathX ));
+            sinOffsetY = (int) (WOBBLE_OFFSET_POS * sin( currentSinPosMathY ) * cos(WOBBLE_CONSTENT * currentSinPosMathY ));
+
+            x1 += sinOffsetX;
+            y1 += sinOffsetY;
+			mini_draw_line(offx + x0 / scl_factorx, offy + y0 / scl_factory,offx + x1 / scl_factorx,offy + y1 / scl_factory, color);
+        }
+	mini_draw_line(_x0, _y0,_x1,_y1, color);
+
+
+
+*/
+
+
+
+
+
+
 	return;
 }
 // capacitor emulation (one...)
@@ -426,7 +503,6 @@ void checkEraseSequence()
 }
 void checkWriteSequence()
 {
-
 	if ((writeSequenceAddress == 0) && (addressBUS == 0x5555)) writeSequenceAddress = 1;
 	else if ((writeSequenceAddress == 1) && ((addressBUS == 0x5555) || (addressBUS == 0x2aaa) ))
 	{
@@ -513,7 +589,6 @@ static IRAM_ATTR einline  void push_front(TimerNode **head, TimerNode *node)
 IRAM_ATTR
 static inline __attribute__((always_inline, hot)) void timerAddItem(int value, void *destination, int ty)
 {
-
     if (freeListHead == NULL) {
 		printf("NOT ENOUGH TIMERS! PANIC!!!\n");
 //		exit(3);
@@ -526,7 +601,7 @@ static inline __attribute__((always_inline, hot)) void timerAddItem(int value, v
 
     TimerItem *t = node->item;
 
-    t->countDown  = DELAYS[(ty&0xff)];
+    t->countDown  = DELAYS[(ty&0xff)]; // TIMER_SHIFT
     t->valueToSet = value&0xff;
     t->whereToSet = destination;
     t->type       = ty;
@@ -673,30 +748,30 @@ static inline __attribute__((always_inline, hot)) void doCheckMultiplexer()
 			break;
 		case 0x02:
 			/* demultiplexor is on */
-#ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
+			#ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
 			alg_rsh = makeSigned(alg_xsh);
 			//setDigitalVoltage(alg_xsh);
-#else
+			#else
 			timerAddItem(alg_DAC, 0, TIMER_MUX_R_CHANGE);
-#endif
+			#endif
 
 			break;
 		case 0x04:
 			/* demultiplexor is on */
-#ifdef TIMER_MUX_Z_CHANGE_VALUE_IS_NULL	
+			#ifdef TIMER_MUX_Z_CHANGE_VALUE_IS_NULL	
 			alg_zsh = alg_DAC;
-#else
+			#else
 			timerAddItem(alg_DAC , &alg_zsh, TIMER_MUX_Z_CHANGE);
-#endif
+			#endif
 			intensityDrift = 0;
 			break;
 		case 0x06:
 			/* sound output line */
-#ifdef TIMER_MUX_S_CHANGE_VALUE_IS_NULL	
+			#ifdef TIMER_MUX_S_CHANGE_VALUE_IS_NULL	
 			alg_ssh = makeSigned(alg_DAC);
-#else
+			#else
 			timerAddItem(alg_DAC , &alg_ssh, TIMER_MUX_S_CHANGE);
-#endif
+			#endif
 
 			break;
 			
@@ -715,7 +790,7 @@ void TimerList_init(void)
         timerItemArray[i].whereToSet = NULL;
         timerItemArray[i].type       = TIMER_ACTION_NONE;
 
-  // Knoten verbinden
+	  	// Knoten verbinden
         TimerNode *node = &timerNodeArray[i];
         node->item = &timerItemArray[i];
 
@@ -746,8 +821,8 @@ static IRAM_ATTR einline void timerDoStep()
 		item->countDown--;
 		if (item->countDown <=0)
 		{
-	#ifdef TIMER_SHIFT_VALUE_IS_NULL	
-	#else
+			#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+			#else
 			if (item->type == TIMER_SHIFT_READ)
 			{
 				alternate = 1;
@@ -769,9 +844,9 @@ static IRAM_ATTR einline void timerDoStep()
 				doInt++;
 			}
 			else 
-	#endif
-	#ifdef TIMER_T1_VALUE_IS_NULL	
-	#else
+			#endif
+			#ifdef TIMER_T1_VALUE_IS_NULL	
+			#else
 			if (item->type == TIMER_T1)
 			{
 				via_t1on = 1; /* timer 1 starts running */
@@ -785,9 +860,9 @@ static IRAM_ATTR einline void timerDoStep()
 				doInt++;
 			}
 			else 
-	#endif
-	#ifdef TIMER_T2_VALUE_IS_NULL	
-	#else
+			#endif
+			#ifdef TIMER_T2_VALUE_IS_NULL	
+			#else
 			if (item->type == TIMER_T2)
 			{
 				via_t2c = ((item->valueToSet) << 8) | via_t2ll;
@@ -798,9 +873,9 @@ static IRAM_ATTR einline void timerDoStep()
 				doInt++;
 			}
 			else 
-	#endif			
-	#ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
-	#else
+			#endif			
+			#ifdef TIMER_MUX_R_CHANGE_VALUE_IS_NULL	
+			#else
 			if (item->type == TIMER_MUX_R_CHANGE)
 			{
 				//noiseCycles = cyclesRunning;
@@ -808,7 +883,7 @@ static IRAM_ATTR einline void timerDoStep()
 				alg_rsh = makeSigned(item->valueToSet);
 			}
 			else 
-	#endif
+			#endif
 			
 			if (item->whereToSet != 0)   
 			{
@@ -824,7 +899,6 @@ static IRAM_ATTR einline void timerDoStep()
 					{
 						rampOffFraction = 1;
 					}
-	//					rChange = cyclesRunning;
 
 				}
 				else if (item->type == TIMER_RAMP_CHANGE) 
@@ -839,7 +913,6 @@ static IRAM_ATTR einline void timerDoStep()
 					{
 						rampOnFraction = 1;
 					}
-	//					rChange = cyclesRunning;
 				}
 				/*                    
 				// ATTENTION!
@@ -863,7 +936,6 @@ static IRAM_ATTR einline void timerDoStep()
 				else
 				{
 					*item->whereToSet = makeSigned(item->valueToSet & 0xff);
-    //					if (item->type == TIMER_XSH_CHANGE) xChange = cyclesRunning;
 				}
 				if (item->type == TIMER_MUX_SEL_CHANGE)
 					doMUL++;
@@ -920,7 +992,7 @@ static inline __attribute__((always_inline, hot)) void snd_update(int command)
             snd_select = via_ora & 0x0f;
 
          break;
-   }
+    }
 	if ((via_orb & 0x07) == 0x06) // SEL == 11 -> Sound, Mux ==0 meaning ON
 	{
 		// dac is sending data to audio hardware
@@ -947,7 +1019,6 @@ IRAM_ATTR unsigned char read8VIA (unsigned address)
       else if (address & 0x1000)
       {
          /* io */
-
          switch (address & 0xf)
          {
             case 0x0:
@@ -1008,7 +1079,6 @@ IRAM_ATTR unsigned char read8VIA (unsigned address)
 				/* T1 low order counter */
 				data = via_t1c;
 				via_ifr &= 0xbf; /* remove timer 1 interrupt flag */
-	//                        via_t1int = 0; // THIS WAS original - and is wrong!
 				via_t1int = 1;
 				int_update ();
 				return data&0xff;
@@ -1039,16 +1109,17 @@ IRAM_ATTR unsigned char read8VIA (unsigned address)
             case 0xa:
                data = (unsigned char) via_sr&0xff;
 
-		#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+				#ifdef TIMER_SHIFT_VALUE_IS_NULL	
 				alternate = 1;
 				//lastShiftTriggered = cyclesRunning;
 				via_ifr &= 0xfb; /* remove shift register interrupt flag */
 				via_srb = 0;
 				via_srclk = 1;
 				int_update ();
-		#else
+				#else
+				
 				timerAddItem(via_sr, 0, TIMER_SHIFT_READ);
-		#endif
+				#endif
                break;
             case 0xb:
                data = (unsigned char) via_acr;
@@ -1072,11 +1143,19 @@ IRAM_ATTR unsigned char read8VIA (unsigned address)
 	// 
 	else if( address < 0xc000 )
 	{
-	   if (BANK_MAX<4) 
-		   data = cartData[address+(currentBank *32768)] & 0xff; // 
-	   else 
-		   data = cartData[address+(currentBank *65536)] & 0xff; // 
-		#ifdef FLASH_SUPPORT
+		if (likely(BANK_MAX<4))
+		{
+			if (likely(bankswitchType != BANK_SWITCH_PB6_48K_RAM))		
+				data = cartData[address+(currentBank *32768)] & 0xff; // 
+			else
+			{
+				data = cartData[address+(currentBank *65536)]& 0xff; // 
+			}
+		}
+		else 
+			data = cartData[address+(currentBank *65536)] & 0xff; // 
+
+   		#ifdef FLASH_SUPPORT
 		if ((idSequenceData == 3) && (idSequenceAddress == 3)  )
 		{
 			if ((address%2) == 0)
@@ -1181,7 +1260,7 @@ IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
                break;
             case 0x5:
                /* T1 high order counter */
-	#ifdef TIMER_T1_VALUE_IS_NULL	
+				#ifdef TIMER_T1_VALUE_IS_NULL	
 				via_t1on = 1; /* timer 1 starts running */
 				via_t1lh = data;
 				via_t1c = (via_t1lh << 8) | via_t1ll;
@@ -1191,9 +1270,9 @@ IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
 				via_t1pb7 = 0;
 				doCheckRamp(0);
 				int_update ();
-	#else
-               timerAddItem(data,0, TIMER_T1);
-	#endif
+				#else
+                timerAddItem(data,0, TIMER_T1);
+				#endif
 
 
                break;
@@ -1215,21 +1294,21 @@ IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
             case 0x9:
                /* T2 high order latch/counter */
 
-	#ifdef TIMER_T2_VALUE_IS_NULL	
+				#ifdef TIMER_T2_VALUE_IS_NULL	
 				via_t2c = ((data) << 8) | via_t2ll;
 				via_t2c += 0; // hack, it seems vectrex (via) takes two cycles to "process" the setting...
 				via_ifr &= 0xdf;
 				via_t2on = 1; /* timer 2 starts running */
 				via_t2int = 1;
 				int_update ();
-	#else
+				#else
                timerAddItem(data,0, TIMER_T2);
-	#endif
+				#endif
 
 
                break;
             case 0xa:
-	#ifdef TIMER_SHIFT_VALUE_IS_NULL	
+				#ifdef TIMER_SHIFT_VALUE_IS_NULL	
 				alternate = 1;
 				//via_stalling = 0;
 				//lastShiftTriggered = cyclesRunning;
@@ -1238,9 +1317,10 @@ IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
 				via_srb = 0;
 				via_srclk = 1;
 				int_update ();
-	#else
+				#else
 				timerAddItem(data, &via_sr, TIMER_SHIFT_WRITE);
-	#endif
+				
+				#endif
                break;
             case 0xb:
 				if ((via_acr & 0x1c) != (data & 0x1c))
@@ -1363,14 +1443,14 @@ IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
 						//printf("no movie path!\n");
 						return;
 					}
-	//printf ("Looking to open Movie: %s\n", path);
+					//printf ("Looking to open Movie: %s\n", path);
 					moveFile =fopen(path, "rb");
 					if (moveFile == NULL) return;
-	//printf ("File opened!\n");
+					//printf ("File opened!\n");
 
 					fseek(moveFile, 0L, SEEK_END);
 					int len = ftell(moveFile);
-	//printf ("Size: %i\n", len);
+					//printf ("Size: %i\n", len);
 					rewind(moveFile);
 					fseek(moveFile, 0, SEEK_SET);
 
@@ -1383,35 +1463,35 @@ IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
 						moveFile = NULL;
 						return;
 					}
-	//printf ("Buffer allocated!\n");
+					//printf ("Buffer allocated!\n");
 
   					readLen = fread(movieBuffer, 1, len, moveFile);
 					
-	//printf ("File read size: %i\n", readLen);
-	//if (feof(moveFile)) printf ("END OF FILE\n");
-	//if (ferror(moveFile)) printf ("READ ERROR \n");
+					//printf ("File read size: %i\n", readLen);
+					//if (feof(moveFile)) printf ("END OF FILE\n");
+					//if (ferror(moveFile)) printf ("READ ERROR \n");
   				    fclose(moveFile);
 					moveFile = NULL;
 
 					if (readLen != len) 
 					{
-	//printf ("Size Mismatch!\n");
+						//printf ("Size Mismatch!\n");
 						free(movieBuffer);
 						movieBuffer = NULL;
-	// exit(1);
+						// exit(1);
 						return;
 					}
 				}
 				if (readLen<pos+1024+512) pos = 0;
 				for (int ii=0; ii< 1024+512;ii++)
 				{
-	//					cart[currentBank][0x4000+ii] = movieBuffer[pos];
+					//					cart[currentBank][0x4000+ii] = movieBuffer[pos];
 					// allways no bankswitch!
 					cart[0x4000+ii] = movieBuffer[pos];
 					pos++;
 				}
-	//				if (doExtremeOutput)
-	//					System.out.println("Read 1536 bytes "+String.format("%02X", cart[currentBank][0x4000])+".");
+				//				if (doExtremeOutput)
+				//					System.out.println("Read 1536 bytes "+String.format("%02X", cart[currentBank][0x4000])+".");
 			}
 		}
 	#endif
@@ -1429,14 +1509,32 @@ IRAM_ATTR void write8VIA (unsigned address, unsigned char data)
 				// only erase of bit is allowed!
 				unsigned char newData = (unsigned char) (data & oldData);
 				cart[address+(currentBank *65536)] = newData;
-	//				printf("FLASH write (%i, %4X->%2x)\n", currentBank, address, newData);
+				//				printf("FLASH write (%i, %4X->%2x)\n", currentBank, address, newData);
 				flashcartChanged=1;
 			}
 		}
 	#endif		
+		if (bankswitchType == BANK_SWITCH_PB6_48K_RAM)		
+		{
+			if ((address >= 0xb000) && (address < 0xc000)) // Peer RAM
+			{
+				// ram is the same in both banks... this is easiest.
+				cartData[address+(0 *32768*2)] = (data & 0xff); // 
+				cartData[address+(1 *32768*2)] = (data & 0xff); // 
+			}
+		}
+		/*
+		if ((address >= 0x2000) && (address < 0x2800)) // Animation
+		{
+		}
+		if ((address >= 0x6000) && (address < 0x6000+8192)) // logo
+		{
+		}
+		if ((address >= 0x8000) && (address < 0x8800)) // spectrum RA
+		{				
+		}
+		*/
 		
-		
-
 	} /* cartridge */
    
 }
@@ -1531,27 +1629,44 @@ void vecx_reset (void)
 	e6809_read8 = read8VIA;
 	e6809_write8 = write8VIA;
 
-	e6809_reset ();
 	currentPB6 = 1;
 	currentIRQ = 1;
-	
+	bankswitchType = BANK_SWITCH_NONE;
 	BANK_MAX = 1;
+	currentBank = 0; // 
 
-
-	BANK_MAX = 1;
+	if (cartSize<=32768) // guessing none
 	{
-	  currentBank = 0; // 
-	  if (cartSize > 50000)
-	  {
+		bankswitchType = BANK_SWITCH_NONE;
+		// printf("Bankswitch guess: None\n");		
+	}
+	else if (cartSize<=32768*2) // guessing PB6
+	{
+		bankswitchType = BANK_SWITCH_PB6;
 		BANK_MAX = 2;
-		currentBank = 1; // 
-	  }
-	  if (cartSize > 100000)
-	  {
+		currentBank = 1; 
+		// printf("Bankswitch guess: PB6\n");		
+		// can also be none and 48K
+	}
+	else if (cartSize<=32768*2*2) // guessing Peer -> PB6, 48K + RAM
+	{
+		bankswitchType = BANK_SWITCH_PB6_48K_RAM;
+		// printf("Bankswitch guess: Peer 44k*2 +4kRam\n");		
+		BANK_MAX = 2;
+		currentBank = 1; 
+		// can also be none and 48K
+		// Peer 48K + RAM
+		// but can also be
+		// 4 banks IRQ wihtout 48K - never heard of it
+	}
+	else if (cartSize<=32768*2*2*2) // guessing vectorblade
+	{
+		// printf("Bankswitch guess: PB6+IRQ\n");		
+		bankswitchType = BANK_SWITCH_PB6_IRQ_48K;
 		BANK_MAX = 4;
 		currentBank = 3; // 
-	  }
 	}
+
 	TimerList_init();
 	cyclesRunning = 0;
 
@@ -1733,7 +1848,6 @@ IRAM_ATTR static inline __attribute__((always_inline, hot)) void via_sstep0(void
 	}
 }
 
-
 /* perform a single cycle worth of analog emulation */
 IRAM_ATTR static inline __attribute__((always_inline, hot)) void alg_sstep(void)
 {
@@ -1832,33 +1946,43 @@ IRAM_ATTR static inline __attribute__((always_inline, hot)) void alg_sstep(void)
 
       else if (((alg_xsh != alg_vector_dx)  ||  (-alg_ysh != alg_vector_dy))  && (sig_ramp== 0)) 
       {
+		
 			// for splines and curved vectors the following is relevant
 			// as it is - for now in this emulator it is not working correctly :-()
 
-			/* the parameters of the vectoring processing has changed.
-			* so end the current line.
-			*/
+			// the parameters of the vectoring processing has changed.
+			// so end the current line.
+			dotProtection = 1;
+			protectionStart = cyclesRunning;
+
+if ((alg_vector_x0==alg_curr_x) && (alg_vector_y0==alg_curr_y))
+{
+}
+else
+{
 			alg_addline (alg_vector_x0, 
 							alg_vector_y0, 
 							alg_curr_x, 
 							alg_curr_y, 
 							alg_vector_color);
 
-			/* we continue vectoring with a new set of parameters if the
-			* current point is not out of limits.
-			*/
-			
+			// we continue vectoring with a new set of parameters if the
+			// current point is not out of limits.
 
 			if (inBounds)
 			{
+			dotProtection = 1;
 				alg_vector_x0 = alg_curr_x;
 				alg_vector_y0 = alg_curr_y;
 				alg_vector_dx = alg_xsh;
 				alg_vector_dy = -alg_ysh;
 				alg_vector_color = makeUnsigned((signed int)alg_zsh);
+
 			}
 			else
 				alg_vectoring = 0;
+
+}
       }
 	}
 	alg_curr_x += sig_dx;
@@ -1896,8 +2020,8 @@ IRAM_ATTR void vecx_emu (long cycles)
 		// the second might be needed for imager or lightpen
 //		icycles = e6809_sstep (via_ifr & 0x80, 0)-stepsDone;
 //		icycles = e6809_sstep ();
+// printf("%04x\n", reg_pc);		
 		#include "6809Step.i"
-		
 	    if (reg_pc == 0xf1a2) thisWaitRecal = 1;
 
 		for (int c = 0; c < icycles-stepsDone; c++) {
@@ -2066,7 +2190,7 @@ IRAM_ATTR void vectrex()
 		printf("ROM Name in ini: %s\n", cartName);
 //            cartSize = load_rom_file(cartName, cartData, sizeof(cartData));
 
-cartSize = load_rom_file("SPIKE.BIN", cartData, sizeof(cartData));
+cartSize = load_rom_file("SPIKE.bin", cartData, sizeof(cartData));
 //cartSize = load_rom_file("VBLADE.NIB", cartData, sizeof(cartData));
 //cartSize = load_rom_file("AKLABETH.BIN", cartData, sizeof(cartData));
 //cartSize = load_rom_file("BERZERKU.BIN", cartData, sizeof(cartData));
@@ -2159,12 +2283,7 @@ void resize()
 int vecx_init()
 {
 	tobekilled = 0;
-	overlayEnabled = 1;
-	if (cartSize != 0)
-	{
-		//cartData
-		// a cartridge was loaded!
-	}
+
 	resize();
 	e8910_init_sound();
 	vecx_reset();
@@ -2244,6 +2363,28 @@ IRAM_ATTR void readKeyEvents()
 		resize();
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
+//	TIMER_T1
+	if (isKeyDown(HID_KEY_1))
+	{
+		DELAYS[TIMER_T1] = DELAYS[TIMER_T1] - 1;
+		printf("timerT1Delay: %d\n", DELAYS[TIMER_T1]);
+	}
+	if (isKeyDown(HID_KEY_2))
+	{
+		DELAYS[TIMER_T1] = DELAYS[TIMER_T1] + 1;
+		printf("timerT1Delay: %d\n", DELAYS[TIMER_T1]);
+	}
+	if (isKeyDown(HID_KEY_3))
+	{
+		DELAYS[TIMER_SHIFT] = DELAYS[TIMER_SHIFT] - 1;
+		printf("shift Delay: %d\n", DELAYS[TIMER_SHIFT]);
+	}
+	if (isKeyDown(HID_KEY_4))
+	{
+		DELAYS[TIMER_SHIFT] = DELAYS[TIMER_SHIFT] + 1;
+		printf("shift Delay: %d\n", DELAYS[TIMER_SHIFT]);
+	}
+/*
 	if (isKeyDown(HID_KEY_1))
 	{
 		blankOnDelay = blankOnDelay - 1;
@@ -2254,7 +2395,6 @@ IRAM_ATTR void readKeyEvents()
 		blankOnDelay = blankOnDelay + 1;
 		printf("blankOnDelay: %d\n", blankOnDelay);
 	}
-
 	if (isKeyDown(HID_KEY_3))
 	{
 		blankOffDelay = blankOffDelay - 1;
@@ -2265,6 +2405,7 @@ IRAM_ATTR void readKeyEvents()
 		blankOffDelay = blankOffDelay + 1;
 		printf("blankOffDelay: %d\n", blankOffDelay);
 	}
+*/
 	if (isKeyDown(HID_KEY_5))
 	{
 		rampOnFractionValue = rampOnFractionValue - 1;
@@ -2285,5 +2426,4 @@ IRAM_ATTR void readKeyEvents()
 		rampOffFractionValue = rampOffFractionValue + 1;
 		printf("rampOffFractionValue: %d\n", rampOffFractionValue);
 	}
-
 }

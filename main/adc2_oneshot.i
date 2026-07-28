@@ -193,12 +193,13 @@ IRAM_ATTR void get9PinAnalog(void)
         dataYAxis = dataYAxisRaw;
         // ESP_LOGI(TAG, "dataYAxis Voltage: %d mV", dataYAxis);
     }
+
     // self calibrating
     if (is9PinJoystickAvailable())
     {
         if(dataXAxis<minV_X)
         {
-            if (minV_X>200) // no NON joytick!
+            if (dataXAxis>200) // no NON joytick!, seems double to above... but may be a timing issue?
             {
                 minV_X=dataXAxis;
                 midV_X = (maxV_X+minV_X)>>1;
@@ -206,7 +207,7 @@ IRAM_ATTR void get9PinAnalog(void)
         }
         if(dataYAxis<minV_Y) 
         {
-            if (minV_Y>200) // no NON joytick!
+            if (dataYAxis>200) // no NON joytick!, seems double to above... but may be a timing issue?
             {
                 minV_Y=dataYAxis;
                 midV_Y = (maxV_Y+minV_Y)>>1;
