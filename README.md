@@ -491,18 +491,7 @@ IRAM_ATTR void my_app(void)
     tobekilled = 0;
     while (!tobekilled)
     {
-        // Input — priority: 9-pin joystick → USB joystick → keyboard
-        if (is9PinJoystickAvailable())
-        {
-            g_inputState.j0_x = (int8_t)get9PinAnalogX();
-            g_inputState.j0_y = (int8_t)get9PinAnalogY();
-        }
-        else if (isUSBJoystickAvailable())
-        {
-            g_inputState.j0_x = (int8_t)getUSBAnalogX();
-            g_inputState.j0_y = (int8_t)getUSBAnalogY();
-        }
-        // else: g_inputState populated from keyboard by mini_end_frame()
+        // g_inputState populated in FrameEnd!
 
         // update simulation state, draw …
         mini_draw_line(x0, y0, x1, y1, brightness);
