@@ -12,6 +12,7 @@ Bug:
     - lunar lander after first live - slow, joystick does not center
     - red baron joystick does not center
     - reboot "m" does not always work (asteroids, lunar)
+    - sometimes an "old" frame seems to jump in?
 
     VECX TODO
     - Highscore saving
@@ -55,6 +56,12 @@ This is like the real vectrex - and no slowdown of emulation!
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_lt8912b.h"
 
+// analog gpio
+#include "soc/soc_caps.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+
 
 #include <math.h>
 
@@ -65,12 +72,8 @@ This is like the real vectrex - and no slowdown of emulation!
 
 #include "draw_line_yuv422.h"
 
-
-
 char * audio_buf;
 size_t audio_bufsize;
-
-
 
 DRAM_ATTR uint32_t g_beam_r2_q16;
 DRAM_ATTR int g_line_Rb = (((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH) > 0) ? ((LINE_WIDTH >> 1) + LINE_GLOW_WIDTH - 1) : 0;
@@ -126,6 +129,11 @@ DRAM_ATTR uint8_t  s_overlay_alpha_val = GLOBAL_OVERLAY_ALPHA;  /* representativ
 //hdmi 1280x720
 //vdsl 480x800
 
+DRAM_ATTR int miniButton; // zero active
+DRAM_ATTR int miniVideoButton; // bool
+DRAM_ATTR int miniResetButton; // bool
+DRAM_ATTR int miniHPD; // bool
+DRAM_ATTR int miniSD;  // bool
 
 
 static const char *TAG = "main";
@@ -234,6 +242,8 @@ DRAM_ATTR int mode = VIDEO_OUT_SELECTED;          // default at boot
 DRAM_ATTR int overlayEnabled = ENABLE_OVERLAYS;          // default at boot
 
 // helper "c" files - that are included, instead of own objects
+#include "gpio.i"
+#include "adc2_oneshot.i"
 #include "audio.i"
 #include "sdcard.i"
 #include "usb.i"
@@ -1469,7 +1479,12 @@ void initGlobals()
 void app_main(void)
 {
     initGlobals();
-    
+    ESP_LOGI(TAG, "initGlobals() done");
+    configure_gpios();
+    p3v_en();
+    ESP_LOGI(TAG, "configure_gpios() done");
+    initADC();
+    ESP_LOGI(TAG, "initADC() done");
 
 #if VECX_DEBUG == 1    
     esp_log_level_set("lcd.dsi.dpi", ESP_LOG_DEBUG);   // show the actual DPI pixel clock achieved
@@ -1697,42 +1712,55 @@ IRAM_ATTR void readevents()
 	g_inputState.j1_x=0;
 	g_inputState.j1_y=0;
 
-    // attached keyboard (slow due to pulls!)
-    // mapping as in Vide
-    /* Player 1 */
- 	if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = -128;
- 	if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 127;
- 	if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 127;
- 	if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = -128;
 
+    // if there is a joystick available - use it, not the keyboard!
+    get_analog(); // ADC Joystick and volume control 
+    if (isJoystickAvailable())
+    {
+        g_inputState.buttonState = get_switches(); // GPIO, just the four buttons
+        g_inputState.j0_x = getAnalogX(); // values from -128 - +127
+        g_inputState.j0_y = getAnalogY();
+    }
+    else
+    {
+        // attached keyboard (slow due to pulls!)
+        // mapping as in Vide
+        /* Player 1 */
+        if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = -128;
+        if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 127;
+        if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 127;
+        if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = -128;
+
+        /* Player 1 */
+        if (isAsciiDown('a'))
+            g_inputState.buttonState &= ~1;
+        else
+            g_inputState.buttonState |= 1;
+
+        if (isAsciiDown('s'))
+            g_inputState.buttonState &= ~2;
+        else
+            g_inputState.buttonState |= 2;
+
+        if (isAsciiDown('d'))
+            g_inputState.buttonState &= ~4;
+        else
+            g_inputState.buttonState |= 4;
+
+        if (isAsciiDown('f'))
+            g_inputState.buttonState &= ~8;
+        else
+            g_inputState.buttonState |= 8;
+    }
+
+
+    // player two might play via keyboard        
     /* Player 2 */
  	if (isKeyDown('h')) g_inputState.j1_x = -128;
  	if (isKeyDown('j')) g_inputState.j1_x = 127;
  	if (isKeyDown('u')) g_inputState.j1_y = 127;
  	if (isKeyDown('n')) g_inputState.j1_y = -128;
 
-    /* Player 1 */
-    if (isAsciiDown('a'))
-        g_inputState.buttonState &= ~1;
-    else
-        g_inputState.buttonState |= 1;
-
-    if (isAsciiDown('s'))
-        g_inputState.buttonState &= ~2;
-    else
-        g_inputState.buttonState |= 2;
-
-    if (isAsciiDown('d'))
-        g_inputState.buttonState &= ~4;
-    else
-        g_inputState.buttonState |= 4;
-
-    if (isAsciiDown('f'))
-        g_inputState.buttonState &= ~8;
-    else
-        g_inputState.buttonState |= 8;
-        
-    /* Player 2 */
     if (isAsciiDown('q'))
         g_inputState.buttonState &= ~16;
     else
