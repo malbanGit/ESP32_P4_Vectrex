@@ -53,9 +53,9 @@ An earlier RGB888 code path exists in the repository for reference but is no lon
 ## Architecture Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        ESP32-P4 Dual-Core                        │
-│                                                                  │
+┌───────────────────────────────────────────────────────────────────┐
+│                        ESP32-P4 Dual-Core                         │
+│                                                                   │
 │  ┌──────────────────────────┐  ┌──────────────────────────────┐  │
 │  │        CORE 0            │  │           CORE 1             │  │
 │  │      "Renderer"          │  │        "Application"         │  │
@@ -71,21 +71,21 @@ An earlier RGB888 code path exists in the repository for reference but is no lon
 │  │  undraw removed lines    │  │        │                     │  │
 │  │  draw   new    lines     │  │  ── marks slot READY ──►     │  │
 │  │        │                 │  │                              │  │
-│  │  swap front/back buffer  │  │  ┌─────────────────────┐     │  │
-│  │  esp_lcd_draw_bitmap     │  │  │   audio_music_task  │     │  │
-│  └──────────────────────────┘  │  │   priority 20       │     │  │
-│                                │  │   calls audio CB    │     │  │
-│  ┌──────────────────────────┐  │  │   → I²S / codec     │     │  │
-│  │     VSYNC ISR (IRAM)     │  │  └─────────────────────┘     │  │
+│  │  swap front/back buffer  │  │  ┌─────────────────────┐    │  │
+│  │  esp_lcd_draw_bitmap     │  │  │   audio_music_task  │    │  │
+│  └──────────────────────────┘  │  │   priority 20       │    │  │
+│                                │  │   calls audio CB    │    │  │
+│  ┌──────────────────────────┐  │  │   → I²S / codec     │    │  │
+│  │     VSYNC ISR (IRAM)     │  │  └─────────────────────┘    │  │
 │  │  xSemaphoreGiveFromISR   │  └──────────────────────────────┘  │
-│  └──────────────────────────┘                                    │
-│                                                                  │
+│  └──────────────────────────┘                                     │
+│                                                                   │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │                Triple-Buffered Frame Slots                 │  │
+│  │                Triple-Buffered Frame Slots                  │  │
 │  │   slot[0]  slot[1]  slot[2]   (up to 1000 lines each)      │  │
 │  │   FREE → BUILDING → READY → RENDERING → FREE               │  │
 │  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 The **framework** (Core 0 + the frame pipeline) and the **application** (Core 1) are completely decoupled. The framework has no include, no variable, and no direct knowledge of what the application does. The only coupling is:
@@ -188,7 +188,7 @@ All drawing goes through one of three **variant families**, each with a C refere
 |---|---|---|
 | **Brightness** | `mini_draw_line()` | Greyscale / white. Writes only the Y (luma) channel. |
 | **Color** | `mini_draw_line_color()` | Fixed palette of 127 colours. Writes Y + U/V chroma. |
-| **Overlay** | (automatic, via `mini_draw_line`) | Additiv to overlay as Brightness on draw; restores overlay background pixels on undraw. |
+| **Overlay** | (automatic, via `mini_draw_line`) | Same as Brightness on draw; restores overlay background pixels on undraw. |
 
 For each draw function there is a matching internal `undraw` function. The renderer calls undraw automatically for lines that no longer appear in the new frame — the application never needs to manage this.
 
@@ -343,9 +343,29 @@ bool isAsciiDown(char c);
 
 > **Note:** The USB HID stack is currently polled, not interrupt-driven. Use `g_inputState` or the `isKeyDown` helpers; do not spin a separate polling task.
 
-### Physical connector / Bluetooth
+### Analog joystick — 9-pin connector
 
-GPIO pinout for the 9-pin retro joystick connector and Bluetooth controller support are not yet documented. This section will be updated when that information becomes available.
+A physical analog joystick connected via the 9-pin retro connector is supported through three functions:
+
+```c
+bool isJoystickAvailable(); // true if a physical analog joystick is detected
+int  getAnalogX();          // X axis: -128 … +127, 0 = center
+int  getAnalogY();          // Y axis: -128 … +127, 0 = center
+```
+
+`isJoystickAvailable()` should be checked before reading axis values. If it returns `false`, fall back to the keyboard-mapped `g_inputState`.
+
+The analog values are read from the ADC, calibrated to millivolts, and mapped to the signed byte range using per-axis min/center/max reference voltages with a configurable dead zone around center. The dead zone suppresses jitter when the stick is at rest — without it a motionless joystick would produce a small non-zero value that causes the Vectrex integrators to drift.
+
+```c
+if (isJoystickAvailable())
+{
+    g_inputState.j0_x = (int8_t)getAnalogX();
+    g_inputState.j0_y = (int8_t)getAnalogY();
+}
+```
+
+> **Note:** The GPIO pinout for the 9-pin connector and Bluetooth controller support are not yet fully documented. This section will be updated when that information becomes available.
 
 ---
 
@@ -431,6 +451,14 @@ IRAM_ATTR void my_app(void)
     tobekilled = 0;
     while (!tobekilled)
     {
+        // read physical joystick if available, otherwise keyboard fallback
+        // (g_inputState is already populated from keyboard by mini_end_frame)
+        if (isJoystickAvailable())
+        {
+            g_inputState.j0_x = (int8_t)getAnalogX();
+            g_inputState.j0_y = (int8_t)getAnalogY();
+        }
+
         // update simulation state …
 
         mini_draw_line(x0, y0, x1, y1, brightness);
@@ -450,9 +478,7 @@ IRAM_ATTR void my_app(void)
 | LVDS / LCD (portrait) | `getDisplayWidth()` → 480 | `getDisplayHeight()` → 800 |
 | HDMI | `getDisplayWidth()` → 1280 | `getDisplayHeight()` → 720 |
 
-`getDisplayWidth()` / `getDisplayHeight()` give the dimensions the actual application output can use.
-`getScreenWidth()` / `getScreenHeight()` give the dimensions the current "physical" dimension of the screen is.
-These two differ when an overlay is loaded, since the overlay is "larger" then the display area.
+`getScreenWidth()` / `getScreenHeight()` are convenience aliases for the same values. The 90° rotation for the LCD is applied transparently inside `mini_draw_line*` — the application always works in logical coordinates.
 
 ---
 
@@ -476,8 +502,8 @@ void mini_end_frame(void);
 ```c
 int getDisplayWidth(void);   // logical screen width
 int getDisplayHeight(void);  // logical screen height
-int getScreenWidth(void);    // physical screen width
-int getScreenHeight(void);   // physical screen height
+int getScreenWidth(void);    // alias for getDisplayWidth
+int getScreenHeight(void);   // alias for getDisplayHeight
 ```
 
 ### Frame rate
@@ -531,6 +557,20 @@ void audio_set_callback(audio_sample_callback_t cb, void *userdata);
 extern volatile input_state_t g_inputState; // always current after mini_end_frame()
 bool isKeyDown(uint8_t hid_keycode);
 bool isAsciiDown(char c);
+```
+
+### Analog joystick
+
+```c
+bool isJoystickAvailable();
+// Returns true when a physical analog joystick is detected on the 9-pin connector.
+
+int getAnalogX();
+// X axis reading: -128 (full left) … 0 (center) … +127 (full right).
+// Dead zone applied around center to suppress jitter at rest.
+
+int getAnalogY();
+// Y axis reading: -128 … 0 … +127. Same dead zone behaviour.
 ```
 
 ### Events
@@ -618,6 +658,7 @@ ESP32_P4_Vectrex/
     ├── draw_line_yuv422_color.S        palette-colour line — RISC-V ASM (used)
     ├── draw_line_yuv422_overlay.c      overlay-aware line — C reference
     ├── draw_line_yuv422_overlay.S      overlay-aware line — RISC-V ASM (used)
+    ├── draw_line_yuv422_color_rgbPalette.c   palette helpers
     │
     ├── hdmi.c / hdmi.h         LT8912B HDMI 1280×720 @ 60 Hz init
     ├── lvds.c / lvds.h         LT8912B LVDS / LCD 480×800 init
