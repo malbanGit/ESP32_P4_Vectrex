@@ -53,9 +53,9 @@ An earlier RGB888 code path exists in the repository for reference but is no lon
 ## Architecture Overview
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│                        ESP32-P4 Dual-Core                         │
-│                                                                   │
+┌──────────────────────────────────────────────────────────────────┐
+│                        ESP32-P4 Dual-Core                        │
+│                                                                  │
 │  ┌──────────────────────────┐  ┌──────────────────────────────┐  │
 │  │        CORE 0            │  │           CORE 1             │  │
 │  │      "Renderer"          │  │        "Application"         │  │
@@ -71,21 +71,21 @@ An earlier RGB888 code path exists in the repository for reference but is no lon
 │  │  undraw removed lines    │  │        │                     │  │
 │  │  draw   new    lines     │  │  ── marks slot READY ──►     │  │
 │  │        │                 │  │                              │  │
-│  │  swap front/back buffer  │  │  ┌─────────────────────┐    │  │
-│  │  esp_lcd_draw_bitmap     │  │  │   audio_music_task  │    │  │
-│  └──────────────────────────┘  │  │   priority 20       │    │  │
-│                                │  │   calls audio CB    │    │  │
-│  ┌──────────────────────────┐  │  │   → I²S / codec     │    │  │
-│  │     VSYNC ISR (IRAM)     │  │  └─────────────────────┘    │  │
+│  │  swap front/back buffer  │  │  ┌─────────────────────┐     │  │
+│  │  esp_lcd_draw_bitmap     │  │  │   audio_music_task  │     │  │
+│  └──────────────────────────┘  │  │   priority 20       │     │  │
+│                                │  │   calls audio CB    │     │  │
+│  ┌──────────────────────────┐  │  │   → I²S / codec     │     │  │
+│  │     VSYNC ISR (IRAM)     │  │  └─────────────────────┘     │  │
 │  │  xSemaphoreGiveFromISR   │  └──────────────────────────────┘  │
-│  └──────────────────────────┘                                     │
-│                                                                   │
+│  └──────────────────────────┘                                    │
+│                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │                Triple-Buffered Frame Slots                  │  │
+│  │                Triple-Buffered Frame Slots                 │  │
 │  │   slot[0]  slot[1]  slot[2]   (up to 1000 lines each)      │  │
 │  │   FREE → BUILDING → READY → RENDERING → FREE               │  │
 │  └────────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 The **framework** (Core 0 + the frame pipeline) and the **application** (Core 1) are completely decoupled. The framework has no include, no variable, and no direct knowledge of what the application does. The only coupling is:
@@ -477,10 +477,12 @@ IRAM_ATTR void my_app(void)
 
 | Mode | Logical width | Logical height |
 |---|---|---|
-| LVDS / LCD (portrait) | `getDisplayWidth()` → 480 | `getDisplayHeight()` → 800 |
-| HDMI | `getDisplayWidth()` → 1280 | `getDisplayHeight()` → 720 |
+| LVDS / LCD (portrait) | `getScreenWidth()` → 480 | `getScreenHeight()` → 800 |
+| HDMI | `getScreenWidth()` → 1280 | `getScreenHeight()` → 720 |
 
-`getScreenWidth()` / `getScreenHeight()` are convenience aliases for the same values. The 90° rotation for the LCD is applied transparently inside `mini_draw_line*` — the application always works in logical coordinates.
+`getDisplayWidth()` / `getDisplayHeight()` give the dimensions the actual application output can use.
+`getScreenWidth()` / `getScreenHeight()` give the dimensions the current "physical" dimension of the screen is.
+These two differ when an overlay is loaded, since the overlay is "larger" then the display area.
 
 ---
 
@@ -504,8 +506,8 @@ void mini_end_frame(void);
 ```c
 int getDisplayWidth(void);   // logical screen width
 int getDisplayHeight(void);  // logical screen height
-int getScreenWidth(void);    // alias for getDisplayWidth
-int getScreenHeight(void);   // alias for getDisplayHeight
+int getScreenWidth(void);    // physical screen width
+int getScreenHeight(void);   // physical screen height
 ```
 
 ### Frame rate
@@ -660,7 +662,6 @@ ESP32_P4_Vectrex/
     ├── draw_line_yuv422_color.S        palette-colour line — RISC-V ASM (used)
     ├── draw_line_yuv422_overlay.c      overlay-aware line — C reference
     ├── draw_line_yuv422_overlay.S      overlay-aware line — RISC-V ASM (used)
-    ├── draw_line_yuv422_color_rgbPalette.c   palette helpers
     │
     ├── hdmi.c / hdmi.h         LT8912B HDMI 1280×720 @ 60 Hz init
     ├── lvds.c / lvds.h         LT8912B LVDS / LCD 480×800 init
@@ -726,7 +727,7 @@ A derivative of **VecX** with enhancements from VIDE, PiTrex, and other communit
 - **Sound:** AY-3-8910 via `libayemu`
 - **Vector output:** integrator simulation → `mini_draw_line()`
 
-### Atari AVG / DVG — vsim
+### Atari AVG / DVG — vsim (derived from VecSim v0.8)
 
 Simulation of the Atari **Analog Vector Generator** (AVG) and **Digital Vector Generator** (DVG) state machines, covering Tempest and related titles.
 
