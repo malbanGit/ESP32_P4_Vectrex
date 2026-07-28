@@ -450,7 +450,9 @@ IRAM_ATTR void my_app(void)
 | LVDS / LCD (portrait) | `getDisplayWidth()` → 480 | `getDisplayHeight()` → 800 |
 | HDMI | `getDisplayWidth()` → 1280 | `getDisplayHeight()` → 720 |
 
-`getScreenWidth()` / `getScreenHeight()` are convenience aliases for the same values. The 90° rotation for the LCD is applied transparently inside `mini_draw_line*` — the application always works in logical coordinates.
+`getDisplayWidth()` / `getDisplayHeight()` give the dimensions the actual application output can use.
+`getScreenWidth()` / `getScreenHeight()` give the dimensions the current "physical" dimension of the screen is.
+These two differ when an overlay is loaded, since the overlay is "larger" then the display area.
 
 ---
 
@@ -474,8 +476,8 @@ void mini_end_frame(void);
 ```c
 int getDisplayWidth(void);   // logical screen width
 int getDisplayHeight(void);  // logical screen height
-int getScreenWidth(void);    // alias for getDisplayWidth
-int getScreenHeight(void);   // alias for getDisplayHeight
+int getScreenWidth(void);    // physical screen width
+int getScreenHeight(void);   // physical screen height
 ```
 
 ### Frame rate
