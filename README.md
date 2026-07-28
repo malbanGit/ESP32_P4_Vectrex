@@ -618,7 +618,6 @@ ESP32_P4_Vectrex/
     ├── draw_line_yuv422_color.S        palette-colour line — RISC-V ASM (used)
     ├── draw_line_yuv422_overlay.c      overlay-aware line — C reference
     ├── draw_line_yuv422_overlay.S      overlay-aware line — RISC-V ASM (used)
-    ├── draw_line_yuv422_color_rgbPalette.c   palette helpers
     │
     ├── hdmi.c / hdmi.h         LT8912B HDMI 1280×720 @ 60 Hz init
     ├── lvds.c / lvds.h         LT8912B LVDS / LCD 480×800 init
