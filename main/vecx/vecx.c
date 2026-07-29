@@ -267,7 +267,7 @@ DRAM_ATTR static int DELAYS[]={
 	0,  // TIMER_SHIFT = 13, 
 	
 //#define TIMER_T1_VALUE_IS_NULL	1
-	0,  // TIMER_T1 = 14, 
+	2,  // TIMER_T1 = 14, 
 #define TIMER_T2_VALUE_IS_NULL	1
 	0   // TIMER_T2 = 15,
 	}; // no need to be saved

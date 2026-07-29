@@ -31,7 +31,7 @@ DRAM_ATTR static adc_cali_handle_t adc2_cali_chan1_handle = NULL;
 DRAM_ATTR static adc_cali_handle_t adc2_cali_chan2_handle = NULL;
 
 static bool example_adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle);
-static void example_adc_calibration_deinit(adc_cali_handle_t handle);
+//static void example_adc_calibration_deinit(adc_cali_handle_t handle);
 bool do_calibration2_chan0 = false;
 bool do_calibration2_chan1 = false;
 bool do_calibration2_chan2 = false;
@@ -324,7 +324,7 @@ static bool example_adc_calibration_init(adc_unit_t unit, adc_channel_t channel,
 
     return calibrated;
 }
-
+/*
 static void example_adc_calibration_deinit(adc_cali_handle_t handle)
 {
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
@@ -336,3 +336,4 @@ static void example_adc_calibration_deinit(adc_cali_handle_t handle)
     ESP_ERROR_CHECK(adc_cali_delete_scheme_line_fitting(handle));
 #endif
 }
+*/

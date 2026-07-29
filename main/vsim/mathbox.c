@@ -244,11 +244,11 @@ void mb_go (int addr, u8 data)
 
       REG2 -= REG0;
       if (REG2 < 0)
-	REG2 = -REG2;
+	      REG2 = -REG2;
 
       REG3 -= REG1;
       if (REG3 < 0)
-	REG3 = -REG3;
+	      REG3 = -REG3;
 
       /* fall into command 1e */
 

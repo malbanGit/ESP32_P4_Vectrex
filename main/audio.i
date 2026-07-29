@@ -59,6 +59,7 @@ static const audio_codec_data_if_t *s_codec_data_if  = NULL;
 static esp_codec_dev_handle_t       s_codec_dev      = NULL;
 
 /* Power-Amp / Lautsprecher-Versorgung anschalten */
+/*
 static void audio_gpio_init(void)
 {
     gpio_config_t io_conf = {
@@ -70,10 +71,10 @@ static void audio_gpio_init(void)
     };
     gpio_config(&io_conf);
 
-    /* PA default aus; es8311-Treiber steuert über pa_pin */
+    // PA default aus; es8311-Treiber steuert über pa_pin 
     gpio_set_level(GPIO_OUTPUT_PA, 0);
 }
-
+*/
 /* I2C-Bus mit neuem Treiber aufsetzen */
 static esp_err_t audio_i2c_init(void)
 {
@@ -352,16 +353,19 @@ static TaskHandle_t s_audio_task_handle = NULL;
  */
 
 /* Enable audio embedding in LT8912B (CEC I2C bank, reg 0xB2 bit0 = audio enable) */
+/*
 static esp_err_t audio_hdmi_enable_lt8912b(const esp_lcd_panel_lt8912b_io_t *lt_io)
 {
-    /* LT8912B CEC bank reg 0xB2: bit0 enables I2S audio input */
+    // LT8912B CEC bank reg 0xB2: bit0 enables I2S audio input 
     uint8_t val = 0x01;
     return esp_lcd_panel_io_tx_param(lt_io->cec_dsi, 0xB2, &val, 1);
 }
+*/
 
 /* Write mono PCM directly to the I2S TX channel, bypassing esp_codec_dev.
  * The same I2S frame reaches both ES8311 and LT8912B — in HDMI mode the
  * ES8311 PA pin (GPIO_OUTPUT_PA) should be low so the speaker stays silent. */
+/*
 static esp_err_t audio_hdmi_write(const int16_t *mono, int samples)
 {
     size_t written = 0;
@@ -371,3 +375,4 @@ static esp_err_t audio_hdmi_write(const int16_t *mono, int samples)
                              &written,
                              portMAX_DELAY);
 }
+*/

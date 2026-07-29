@@ -160,6 +160,7 @@ DRAM_ATTR uint8_t  s_overlay_alpha_val = GLOBAL_OVERLAY_ALPHA;  /* representativ
 
 DRAM_ATTR int mini9PinButton; // zero active
 DRAM_ATTR int miniUSBButton; // zero active
+DRAM_ATTR int miniBTButton; // zero active
 DRAM_ATTR int miniVideoButton; // bool
 DRAM_ATTR int miniResetButton; // bool
 DRAM_ATTR int miniHPD; // bool
@@ -277,6 +278,7 @@ DRAM_ATTR int overlayEnabled = ENABLE_OVERLAYS;          // default at boot
 #include "audio.i"
 #include "sdcard.i"
 #include "usb.i"
+#include "bt_joy.i"
 #include "file.i"
 #include "esp_events.i"
 #include "overlay.i"
@@ -543,7 +545,7 @@ static void lcd_deinit(void)
 
     // 3. Delete the panel (DPI panel, created inside video_start).
     if (panel_handle) {
-        esp_lcd_panel_del(panel_handle);
+        video_stop(panel_handle);
         panel_handle = NULL;
         s_dpi_panel  = NULL;
     }
@@ -1436,7 +1438,8 @@ void app_main(void)
     {
         printf("Something went wrong with the keyboard init - did you connect a keyboard?");
     }
-
+nvs_flash_init();
+bt_joy_init();
     ESP_LOGI(TAG, "Init LCD / DSI");
     lcd_init();
 
@@ -1628,7 +1631,7 @@ IRAM_ATTR void readevents()
     get9PinAnalog(); // ADC Joystick and volume control 
     if (is9PinJoystickAvailable())
     {
-        g_inputState.buttonState = getSwitches(); // GPIO, just the four buttons
+        g_inputState.buttonState = getGPIOSwitches(); // GPIO, just the four buttons
         g_inputState.j0_x = get9PinAnalogX(); // values from -128 - +127
         g_inputState.j0_y = get9PinAnalogY();
     }
@@ -1642,64 +1645,82 @@ IRAM_ATTR void readevents()
         }
         else
         {
-            // attached keyboard (slow due to pulls!)
-            // mapping as in Vide
-            /* Player 1 */
-            if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = -128;
-            if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 127;
-            if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 127;
-            if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = -128;
-
-            /* Player 1 */
-            if (isAsciiDown('a'))
-                g_inputState.buttonState &= ~1;
+            // In your application loop:
+            if (isBTJoystickAvailable(0)) 
+            {
+                g_inputState.buttonState = miniBTButton; 
+                g_inputState.j0_x = (int8_t)getBTAnalogX(0);
+                g_inputState.j0_y = (int8_t)getBTAnalogY(0);
+            }
             else
-                g_inputState.buttonState |= 1;
+            {
+                // attached keyboard (slow due to pulls!)
+                // mapping as in Vide
+                /* Player 1 */
+                if (isKeyDown(HID_KEY_LEFT)) g_inputState.j0_x = -128;
+                if (isKeyDown(HID_KEY_RIGHT)) g_inputState.j0_x = 127;
+                if (isKeyDown(HID_KEY_UP)) g_inputState.j0_y = 127;
+                if (isKeyDown(HID_KEY_DOWN)) g_inputState.j0_y = -128;
 
-            if (isAsciiDown('s'))
-                g_inputState.buttonState &= ~2;
-            else
-                g_inputState.buttonState |= 2;
+                /* Player 1 */
+                if (isAsciiDown('a'))
+                    g_inputState.buttonState &= ~1;
+                else
+                    g_inputState.buttonState |= 1;
 
-            if (isAsciiDown('d'))
-                g_inputState.buttonState &= ~4;
-            else
-                g_inputState.buttonState |= 4;
+                if (isAsciiDown('s'))
+                    g_inputState.buttonState &= ~2;
+                else
+                    g_inputState.buttonState |= 2;
 
-            if (isAsciiDown('f'))
-                g_inputState.buttonState &= ~8;
-            else
-                g_inputState.buttonState |= 8;
+                if (isAsciiDown('d'))
+                    g_inputState.buttonState &= ~4;
+                else
+                    g_inputState.buttonState |= 4;
+
+                if (isAsciiDown('f'))
+                    g_inputState.buttonState &= ~8;
+                else
+                    g_inputState.buttonState |= 8;
+            }
         }
     }
 
 
     // player two might play via keyboard        
     /* Player 2 */
- 	if (isKeyDown('h')) g_inputState.j1_x = -128;
- 	if (isKeyDown('j')) g_inputState.j1_x = 127;
- 	if (isKeyDown('u')) g_inputState.j1_y = 127;
- 	if (isKeyDown('n')) g_inputState.j1_y = -128;
-
-    if (isAsciiDown('q'))
-        g_inputState.buttonState &= ~16;
+    if (isBTJoystickAvailable(1)) {
+        g_inputState.buttonState = miniBTButton; 
+        g_inputState.j1_x = (int8_t)getBTAnalogX(1);
+        g_inputState.j1_y = (int8_t)getBTAnalogY(1);
+    }
     else
-        g_inputState.buttonState |= 16;
+    {
+        if (isKeyDown('h')) g_inputState.j1_x = -128;
+        if (isKeyDown('j')) g_inputState.j1_x = 127;
+        if (isKeyDown('u')) g_inputState.j1_y = 127;
+        if (isKeyDown('n')) g_inputState.j1_y = -128;
 
-    if (isAsciiDown('w'))
-        g_inputState.buttonState &= ~32;
-    else
-        g_inputState.buttonState |= 32;
+        if (isAsciiDown('q'))
+            g_inputState.buttonState &= ~16;
+        else
+            g_inputState.buttonState |= 16;
 
-    if (isAsciiDown('e'))
-        g_inputState.buttonState &= ~64;
-    else
-        g_inputState.buttonState |= 64;
+        if (isAsciiDown('w'))
+            g_inputState.buttonState &= ~32;
+        else
+            g_inputState.buttonState |= 32;
 
-    if (isAsciiDown('r'))
-        g_inputState.buttonState &= ~128;
-    else
-        g_inputState.buttonState |= 128;
+        if (isAsciiDown('e'))
+            g_inputState.buttonState &= ~64;
+        else
+            g_inputState.buttonState |= 64;
+
+        if (isAsciiDown('r'))
+            g_inputState.buttonState &= ~128;
+        else
+            g_inputState.buttonState |= 128;
+    }
 
     ////////////////////////////////////////
     ////////////////////////////////////////

@@ -117,7 +117,7 @@ IRAM_ATTR static void p3v_en(void)
 	gpio_set_level(BOARD_PIN_CTRL_P3V_EN, 1);
 }
 
-IRAM_ATTR int getSwitches(void) // includes 9 pin if available
+IRAM_ATTR int getGPIOSwitches(void) // includes 9 pin if available
 {
     mini9PinButton = 0xf;// non pressed
 //    ESP_LOGI(TAG, "%d%d%d%d%d%d%d%d\n", 

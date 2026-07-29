@@ -19,6 +19,28 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.6.1
+  espressif/esp_hosted:
+    component_hash: 1f37f4eb61d557c247c0aff3de8947e74285408992eece4c07f0987d10b2e164
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.5'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32
+    - esp32c2
+    - esp32s2
+    - esp32s3
+    - esp32c3
+    - esp32c5
+    - esp32c6
+    - esp32c61
+    - esp32h2
+    - esp32h4
+    - esp32p4
+    version: 3.0.5
   espressif/esp_lcd_lt8912b:
     component_hash: f954a3393c8e16159f0c7448c9f4312b58933a53563fe5173db5f63a2b0f7aa7
     dependencies:
@@ -60,8 +82,9 @@ dependencies:
 direct_dependencies:
 - espressif/es8311
 - espressif/esp_codec_dev
+- espressif/esp_hosted
 - espressif/esp_lcd_lt8912b
 - espressif/usb_host_hid
-manifest_hash: a725af5558af0385aca028be137aba30753dca029ab529613741b90017ca3aac
+manifest_hash: d1e5d176e43295a5f45b56c240977f8536f874cb6bfa0ffd4f10290363f3fee8
 target: esp32p4
 version: 2.0.0

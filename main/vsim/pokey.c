@@ -182,10 +182,10 @@ static int s_pokey_count = 1;  /* active chips — set by pokey_set_count() */
 /* ---- forward declarations ---- */
 static void pokey_dev_write(pokey_device *d, UINT8 offset, UINT8 data);
 static void pokey_potgo(pokey_device *d);
-static IRAM_ATTR void pokey_step_one_clock(pokey_device *d);
+static void pokey_step_one_clock(pokey_device *d);
 static void pokey_step_pot(pokey_device *d);
-static IRAM_ATTR void pokey_step_keyboard(pokey_device *d);
-INLINE IRAM_ATTR void pokey_process_channel(pokey_device *d, int ch);
+static void pokey_step_keyboard(pokey_device *d);
+INLINE void pokey_process_channel(pokey_device *d, int ch);
 
 /* ---- channel helpers ---- */
 INLINE IRAM_ATTR void pokey_channel_sample(pokey_channel *c)
