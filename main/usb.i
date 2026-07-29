@@ -467,7 +467,7 @@ typedef struct {
     void                    *arg;
 } kbd_hid_evt_t;
 
-DRAM_ATTR static QueueHandle_t s_kbd_evt_queue = NULL;
+static QueueHandle_t s_kbd_evt_queue = NULL;
 
 typedef struct {
     enum { KEY_STATE_PRESSED = 0x00, KEY_STATE_RELEASED = 0x01 } state;

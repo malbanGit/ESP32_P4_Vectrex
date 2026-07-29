@@ -435,7 +435,7 @@ static const uint8_t tempest_color_lut[16] = {
     YUV_PALETTE_DARKRED,      /* 14: raw 1110 -> B only    (I,R,G off)      */
     YUV_PALETTE_BLACK,        /* 15: raw 1111 -> nothing lit (all bits off) */
 };
-void draw_line(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
+IRAM_ATTR void draw_line(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
 {
   if (z == 0) return; // MOVE, possibly to realign at 0,0
     if (g_color_mode)
@@ -459,7 +459,7 @@ void draw_line(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12
 // from addpoint AVG (Tempest)
 // in color is a 4 bit rgb value
 // %0000rrgb
-void draw_line2(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
+IRAM_ATTR void draw_line2(int x0, int y0, int x1, int y1, int Colour15, int z) // z is 0:12 in lunar, colour is always 7
 {
   if (z == 0) return; // MOVE, possibly to realign at 0,0
   

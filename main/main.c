@@ -1,3 +1,8 @@
+// #define BLUETOOTH_ENABLED must change CMakeLists.txt sdkconfig and idf_component.yml
+#define VECSIM
+#define VECTREX
+
+
 // karl on LCD demo 1 46 !!!!
 // spike is now very VERY slow???? -> Spike IS so slow!!!
 #include "defines.h"
@@ -160,7 +165,9 @@ DRAM_ATTR uint8_t  s_overlay_alpha_val = GLOBAL_OVERLAY_ALPHA;  /* representativ
 
 DRAM_ATTR int mini9PinButton; // zero active
 DRAM_ATTR int miniUSBButton; // zero active
+#ifdef BLUETOOTH_ENABLED
 DRAM_ATTR int miniBTButton; // zero active
+#endif
 DRAM_ATTR int miniVideoButton; // bool
 DRAM_ATTR int miniResetButton; // bool
 DRAM_ATTR int miniHPD; // bool
@@ -278,7 +285,10 @@ DRAM_ATTR int overlayEnabled = ENABLE_OVERLAYS;          // default at boot
 #include "audio.i"
 #include "sdcard.i"
 #include "usb.i"
-#include "bt_joy.i"
+#ifdef BLUETOOTH_ENABLED
+    #include "bt_joy.i"
+#endif
+
 #include "file.i"
 #include "esp_events.i"
 #include "overlay.i"
@@ -895,14 +905,15 @@ IRAM_ATTR static inline void undraw_previous_fb_color(int fb_index)
 // ----------------------------------------------------
 // Tasks
 // ----------------------------------------------------
+#ifdef VECSIM		
 int vecsimGame=0; // 0 is vectrex
 #define MAX_VECSIM_GAME 8
+#endif
 IRAM_ATTR static void application_task(void *arg)
 {
     while (1) 
     {
-        int vectrex(void); //ok
-
+#ifdef VECSIM		
         int tempest(void); //ok
         int battlezone(void); //ok
         int blackwidow(void); //ok
@@ -921,8 +932,11 @@ IRAM_ATTR static void application_task(void *arg)
         if (vecsimGame==5) redbaron();
         if (vecsimGame==6) battlezone();
         if (vecsimGame==7) deluxe();
-
+#endif
+#ifdef VECTREX
+        void vectrex(void);
         vectrex();
+#endif		
     }
 }
 
@@ -1438,8 +1452,10 @@ void app_main(void)
     {
         printf("Something went wrong with the keyboard init - did you connect a keyboard?");
     }
+#ifdef BLUETOOTH_ENABLED
 nvs_flash_init();
 bt_joy_init();
+#endif
     ESP_LOGI(TAG, "Init LCD / DSI");
     lcd_init();
 
@@ -1645,6 +1661,7 @@ IRAM_ATTR void readevents()
         }
         else
         {
+#ifdef BLUETOOTH_ENABLED
             // In your application loop:
             if (isBTJoystickAvailable(0)) 
             {
@@ -1653,6 +1670,7 @@ IRAM_ATTR void readevents()
                 g_inputState.j0_y = (int8_t)getBTAnalogY(0);
             }
             else
+#endif            
             {
                 // attached keyboard (slow due to pulls!)
                 // mapping as in Vide
@@ -1689,12 +1707,14 @@ IRAM_ATTR void readevents()
 
     // player two might play via keyboard        
     /* Player 2 */
+#ifdef BLUETOOTH_ENABLED
     if (isBTJoystickAvailable(1)) {
         g_inputState.buttonState = miniBTButton; 
         g_inputState.j1_x = (int8_t)getBTAnalogX(1);
         g_inputState.j1_y = (int8_t)getBTAnalogY(1);
     }
     else
+#endif    
     {
         if (isKeyDown('h')) g_inputState.j1_x = -128;
         if (isKeyDown('j')) g_inputState.j1_x = 127;
@@ -1729,7 +1749,8 @@ IRAM_ATTR void readevents()
     static volatile int modeSwitchActive=0;
     if (isAsciiDown('m'))
 	{
-		if (modeSwitchActive==0)
+#ifdef VECSIM
+        if (modeSwitchActive==0)
 		{
             audio_set_callback(NULL, NULL);
 
@@ -1745,6 +1766,7 @@ IRAM_ATTR void readevents()
             frames_init();
             redraw = 3;
 		}
+#endif 
 	}
 	else if (modeSwitchActive==3)
 	{
@@ -1787,7 +1809,13 @@ IRAM_ATTR void readevents()
 	{
 		modeSwitchActive = 0;
 	}
-
+#ifdef BLUETOOTH_ENABLED
+   	
+    if (isAsciiDown('z'))
+	{
+        bt_joy_start_scan();
+	}
+#endif
    	if (isAsciiDown('b'))
 	{
 		brightnessLCD = brightnessLCD + 1;

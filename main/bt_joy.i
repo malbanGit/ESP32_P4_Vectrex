@@ -268,40 +268,6 @@ static void bt_parse_hid_descriptor(const uint8_t *desc, size_t len, bt_joy_layo
     }
 }
 
-// ─── Extract arbitrary bit field from a report (LSB-first) ───────────────
-IRAM_ATTR static inline int32_t bt_extract_bits(const uint8_t *report,
-                                                 int bit_offset, int bit_count)
-{
-    uint32_t value = 0;
-    for (int b = 0; b < bit_count; b++) {
-        int byte_idx = (bit_offset + b) / 8;
-        int bit_idx  = (bit_offset + b) % 8;
-        if ((report[byte_idx] >> bit_idx) & 1u)
-            value |= (1u << b);
-    }
-    return (int32_t)value;
-}
-
-// ─── Scale raw HID axis value to -128..+127 ───────────────────────────────
-IRAM_ATTR static inline int8_t bt_scale_axis(int32_t raw,
-                                              int32_t log_min, int32_t log_max,
-                                              int bit_count)
-{
-    if (log_min < 0) {
-        int32_t sign_bit = 1 << (bit_count - 1);
-        if (raw & sign_bit)
-            raw |= ~((sign_bit << 1) - 1);
-    }
-    if (raw < log_min) raw = log_min;
-    if (raw > log_max) raw = log_max;
-    int32_t range = log_max - log_min;
-    if (range <= 0) return 0;
-    int32_t scaled = (int32_t)(((int64_t)(raw - log_min) * 255) / range) - 128;
-    if (scaled < -128) scaled = -128;
-    if (scaled >  127) scaled =  127;
-    return (int8_t)scaled;
-}
-
 // ═════════════════════════════════════════════════════════════════════════
 //  Per-connection state
 // ═════════════════════════════════════════════════════════════════════════
@@ -329,8 +295,7 @@ typedef struct {
     volatile uint8_t btns;
 } bt_conn_t;
 
-DRAM_ATTR static bt_conn_t s_conns[BT_MAX_JOYSTICKS];
-
+static bt_conn_t s_conns[BT_MAX_JOYSTICKS];
 static bt_conn_t *find_conn(uint16_t handle)
 {
     for (int i = 0; i < BT_MAX_JOYSTICKS; i++)
@@ -373,19 +338,19 @@ static int connected_count(void)
 //  Public API
 // ═════════════════════════════════════════════════════════════════════════
 
-bool isBTJoystickAvailable(int port)
+IRAM_ATTR bool isBTJoystickAvailable(int port)
 {
     if (port < 0 || port >= BT_MAX_JOYSTICKS) return false;
     return s_conns[port].used && s_conns[port].layout_valid;
 }
 
-int getBTAnalogX(int port)
+IRAM_ATTR int getBTAnalogX(int port)
 {
     if (port < 0 || port >= BT_MAX_JOYSTICKS) return 0;
     return (int)s_conns[port].x;
 }
 
-int getBTAnalogY(int port)
+IRAM_ATTR int getBTAnalogY(int port)
 {
     if (port < 0 || port >= BT_MAX_JOYSTICKS) return 0;
     return (int)s_conns[port].y;
@@ -416,10 +381,10 @@ IRAM_ATTR static void bt_joy_report_cb(bt_conn_t *c, const uint8_t *data, uint16
     }
 
     if (lay->x_axis.valid) {
-        int32_t raw = bt_extract_bits(payload,
+        int32_t raw = extract_bits(payload,
                                       lay->x_axis.bit_offset,
                                       lay->x_axis.bit_count);
-        int8_t v = bt_scale_axis(raw,
+        int8_t v = scale_axis(raw,
                                  lay->x_axis.logical_min,
                                  lay->x_axis.logical_max,
                                  lay->x_axis.bit_count);
@@ -428,10 +393,10 @@ IRAM_ATTR static void bt_joy_report_cb(bt_conn_t *c, const uint8_t *data, uint16
     }
 
     if (lay->y_axis.valid) {
-        int32_t raw = bt_extract_bits(payload,
+        int32_t raw = extract_bits(payload,
                                       lay->y_axis.bit_offset,
                                       lay->y_axis.bit_count);
-        int8_t v = bt_scale_axis(raw,
+        int8_t v = scale_axis(raw,
                                  lay->y_axis.logical_min,
                                  lay->y_axis.logical_max,
                                  lay->y_axis.bit_count);
@@ -443,7 +408,7 @@ IRAM_ATTR static void bt_joy_report_cb(bt_conn_t *c, const uint8_t *data, uint16
         int     count = lay->buttons.bit_count; if (count > 8) count = 8;
         uint8_t raw_btns = 0;
         for (int b = 0; b < count; b++)
-            if (bt_extract_bits(payload, lay->buttons.bit_offset + b, 1))
+            if (extract_bits(payload, lay->buttons.bit_offset + b, 1))
                 raw_btns |= (uint8_t)(1u << b);
         c->btns = ~raw_btns;  // HID active-high → Vectrex zero-active
 
@@ -653,6 +618,15 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
         }
         ESP_LOGI(BTJOY_TAG, "Connected → port %d (handle 0x%04x)", c->port, handle);
         ble_gattc_disc_all_svcs(handle, svc_disc_cb, NULL);
+
+        struct ble_gap_upd_params params = {
+            .itvl_min            = 16,   // 20 ms
+            .itvl_max            = 16,
+            .latency             = 0,
+            .supervision_timeout = 500,
+        };
+        ble_gap_update_params(handle, &params);
+
         break;
     }
 
@@ -681,6 +655,12 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
         break;
     }
 
+    case BLE_GAP_EVENT_DISC_COMPLETE:
+        ESP_LOGI(BTJOY_TAG, "Scan complete (reason %d), %d/%d slots filled",
+                 event->disc_complete.reason, connected_count(), BT_MAX_JOYSTICKS);
+        break;
+
+
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(BTJOY_TAG, "MTU negotiated: conn=0x%04x mtu=%d",
                  event->mtu.conn_handle, event->mtu.value);
@@ -696,6 +676,37 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
 //  Scanner
 // ═════════════════════════════════════════════════════════════════════════
 
+// Aggressive params: 100% duty cycle for fast detection during active scan.
+// duration_ms: how long to scan in total (BLE_HS_FOREVER = indefinite).
+static void bt_joy_scan_for(uint32_t duration_ms)
+{
+    if (connected_count() >= BT_MAX_JOYSTICKS) return;
+    if (ble_gap_disc_active()) return;  // already scanning
+
+    struct ble_gap_disc_params dp = {
+        .passive           = 0,
+        .filter_duplicates = 1,
+        .itvl              = 160,  // 100 ms
+        .window            = 160,  // 100 ms — 100% duty cycle while scanning
+    };
+    int rc = ble_gap_disc(BLE_OWN_ADDR_PUBLIC, (int32_t)duration_ms, &dp,
+                          gap_event_cb, NULL);
+    if (rc == 0)
+        ESP_LOGI(BTJOY_TAG, "Scanning for %lu ms... (%d/%d slots used)",
+                 duration_ms, connected_count(), BT_MAX_JOYSTICKS);
+    else if (rc != BLE_HS_EALREADY)
+        ESP_LOGE(BTJOY_TAG, "ble_gap_disc error: %d", rc);
+}
+// Public: call this when user wants to pair a controller (e.g. button press).
+void bt_joy_start_scan(void)
+{
+    ESP_LOGI(BTJOY_TAG, "User-initiated scan — 10 seconds");
+    bt_joy_scan_for(10000);
+}
+// Internal alias used by connect/disconnect handlers.
+static void bt_joy_scan(void) { bt_joy_scan_for(10000); }
+
+/*
 static void bt_joy_scan(void)
 {
     if (connected_count() >= BT_MAX_JOYSTICKS) return;
@@ -714,7 +725,7 @@ static void bt_joy_scan(void)
     else if (rc != BLE_HS_EALREADY)
         ESP_LOGE(BTJOY_TAG, "ble_gap_disc error: %d", rc);
 }
-
+*/
 // ═════════════════════════════════════════════════════════════════════════
 //  Initialisation
 // ═════════════════════════════════════════════════════════════════════════
@@ -722,7 +733,8 @@ static void bt_joy_scan(void)
 static void on_ble_sync(void)
 {
     ble_hs_id_infer_auto(0, NULL);
-    bt_joy_scan();
+    ESP_LOGI(BTJOY_TAG, "BLE ready — call bt_joy_start_scan() to pair controllers");
+    // No auto-scan: user must call bt_joy_start_scan() explicitly.
 }
 
 static void nimble_host_task(void *arg)
@@ -730,7 +742,7 @@ static void nimble_host_task(void *arg)
     nimble_port_run();
     nimble_port_freertos_deinit();
 }
-
+/*
 void bt_joy_init(void)
 {
     memset(s_conns, 0, sizeof(s_conns));
@@ -741,3 +753,16 @@ void bt_joy_init(void)
     nimble_port_freertos_init(nimble_host_task);
     ESP_LOGI(BTJOY_TAG, "BLE HID host init — up to %d joysticks", BT_MAX_JOYSTICKS);
 }
+    */
+void bt_joy_init(void)
+{
+    memset(s_conns, 0, sizeof(s_conns));
+    nimble_port_init();
+    ble_hs_cfg.sync_cb  = on_ble_sync;
+    ble_hs_cfg.reset_cb = NULL;
+    ble_svc_gap_device_name_set("vectrex-p4");
+    // Use a low-priority task so NimBLE doesn't starve the emulator.
+    xTaskCreate(nimble_host_task, "nimble_host", 4096, NULL, 2, NULL);
+    ESP_LOGI(BTJOY_TAG, "BLE HID host init — up to %d joysticks", BT_MAX_JOYSTICKS);
+}
+
