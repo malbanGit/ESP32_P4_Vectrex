@@ -405,7 +405,7 @@ The driver handles signed and unsigned axis encodings, any bit-width, and report
 
 ### Bluetooth
 
-The **ESP32-P4 has no built-in Bluetooth radio** — Bluetooth controllers cannot be connected directly. The only supported path is a **USB Bluetooth adapter** (dongle) that presents itself as a standard HID joystick to the USB host; such adapters are detected and used through the same USB HID joystick path described above.
+Pending...
 
 ---
 
@@ -506,7 +506,7 @@ IRAM_ATTR void my_app(void)
 
 ### Coordinate system
 
-| Mode | Logical width | Logical height |
+| Mode | Physical width | Physical height |
 |---|---|---|
 | LVDS / LCD (portrait) | `getScreenWidth()` → 480 | `getScreenHeight()` → 800 |
 | HDMI | `getScreenWidth()` → 1280 | `getScreenHeight()` → 720 |
