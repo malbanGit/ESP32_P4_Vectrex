@@ -17,7 +17,6 @@ static int8_t s_ax_max[VX_GAMEPAD_MAX_SLOTS][2];
 
 void bt_startPairing(int seconds);
 
-
 static void on_event(const vx_gamepad_event_t *ev, void *arg)
 {
     switch (ev->id) {

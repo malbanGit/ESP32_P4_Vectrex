@@ -2205,14 +2205,9 @@ cartSize = load_rom_file("SPIKE.bin", cartData, sizeof(cartData));
 				printf("$%02x ", cartData[i]);
 			printf("\n");
 		}
-		if (mode == VIDEO_OUT_HDMI)
-			loadOverlayRGB("/sdcard/SPIKE.png", HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-		else
-			loadOverlayRGB("/sdcard/SPIKE.png", LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-
+		loadOverlayRGB("/sdcard/SPIKE.png");
 		ESP_LOGI("Vectrex", "Start vectrex tasks");
 	}
-
 
 	vecx_init();
 	setAppFPS(50);
@@ -2243,34 +2238,70 @@ void resize()
 {
 	int width;
 	int height;
-    if (mode == VIDEO_OUT_HDMI)
+    if (isHDMI())
     {
-		SCREEN_HEIGHT = LCD_V_RES;
-		SCREEN_WIDTH = LCD_H_RES;
-        if (overlayEnabled)
+		if ((g_Orientation == ORIENTATION_90) || (g_Orientation == ORIENTATION_270))
 		{
-			width = HDMI_IN_OVERLAY_VECX_WIDTH;
-			height = HDMI_IN_OVERLAY_VECX_HEIGHT;
+			SCREEN_HEIGHT = LCD_H_RES;
+			SCREEN_WIDTH = LCD_V_RES;
+			if (overlayEnabled)
+			{
+				width = HDMI_PORTRAIT_IN_OVERLAY_VECX_WIDTH;
+				height = HDMI_PORTRAIT_IN_OVERLAY_VECX_HEIGHT;
+			}
+			else
+			{
+				width = HDMI_PORTRAIT_VECX_WIDTH;
+				height = HDMI_PORTRAIT_VECX_HEIGHT;
+			}
 		}
-        else
+		else
 		{
-			width = HDMI_VECX_WIDTH;
-			height = HDMI_VECX_HEIGHT;
+			SCREEN_HEIGHT = LCD_V_RES;
+			SCREEN_WIDTH = LCD_H_RES;
+			if (overlayEnabled)
+			{
+				width = HDMI_IN_OVERLAY_VECX_WIDTH;
+				height = HDMI_IN_OVERLAY_VECX_HEIGHT;
+			}
+			else
+			{
+				width = HDMI_VECX_WIDTH;
+				height = HDMI_VECX_HEIGHT;
+			}
 		}
     }
     else
     {
-		SCREEN_HEIGHT = LCD_H_RES;
-		SCREEN_WIDTH = LCD_V_RES;
-        if (overlayEnabled)
+		if ((g_Orientation == ORIENTATION_90) || (g_Orientation == ORIENTATION_270))
 		{
-			width = LCD_IN_OVERLAY_VECX_WIDTH;
-			height = LCD_IN_OVERLAY_VECX_HEIGHT;
+			SCREEN_HEIGHT = LCD_H_RES;
+			SCREEN_WIDTH = LCD_V_RES;
+			if (overlayEnabled)
+			{
+				width = LCD_IN_OVERLAY_VECX_WIDTH;
+				height = LCD_IN_OVERLAY_VECX_HEIGHT;
+			}
+			else
+			{
+				width = LCD_VECX_WIDTH;
+				height = LCD_VECX_HEIGHT;
+			}
 		}
-        else
+		else
 		{
-			width = LCD_VECX_WIDTH;
-			height = LCD_VECX_HEIGHT;
+			SCREEN_HEIGHT = LCD_V_RES;
+			SCREEN_WIDTH = LCD_H_RES;
+			if (overlayEnabled)
+			{
+				width = LCD_LANDSCAPE_IN_OVERLAY_VECX_WIDTH;
+				height = LCD_LANDSCAPE_IN_OVERLAY_VECX_HEIGHT;
+			}
+			else
+			{
+				width = LCD_LANDSCAPE_VECX_WIDTH;
+				height = LCD_LANDSCAPE_VECX_HEIGHT;
+			}
 		}
     }
 
@@ -2340,11 +2371,7 @@ IRAM_ATTR void readKeyEvents()
 		printf("Loading rom: %s\n", name[loadNum]);
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
 
-		if (mode == VIDEO_OUT_HDMI)
-			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-		else
-			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-		
+		loadOverlayRGB(ov[loadNum]);
 		vecx_init();
 		resize();
 		vTaskDelay(pdMS_TO_TICKS(100));
@@ -2355,10 +2382,7 @@ IRAM_ATTR void readKeyEvents()
 		if (loadNum>8) loadNum = 0;
 		printf("Loading rom: %s\n", name[loadNum]);
         cartSize = load_rom_file(name[loadNum], cartData, sizeof(cartData));
-		if (mode == VIDEO_OUT_HDMI)
-			loadOverlayRGB(ov[loadNum], HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-		else
-			loadOverlayRGB(ov[loadNum], LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+		loadOverlayRGB(ov[loadNum]);
 		vecx_init();
 		resize();
 		vTaskDelay(pdMS_TO_TICKS(100));

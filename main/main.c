@@ -20,6 +20,10 @@ Bug:
      cleanseep hates 5
 
     - pole position flimmert bei game over und hat emu fps von 43? Ja hat kein WR.
+    - clipping
+    - individial configuration ini 
+
+
 
     - lunar lander, red baron, Asteroids and battlezone analog sounds
     - clipping for sim emulations
@@ -107,6 +111,8 @@ DRAM_ATTR int g_color_mode; // 0 = not color, 1 = color
 DRAM_ATTR int g_fpsToReach=  1000000/MAX_EMU_FPS;
 DRAM_ATTR volatile input_state_t g_inputState={127,127,127,127,255}; 
 
+DRAM_ATTR int g_Orientation = ORIENTATION_90; // LCD intern default
+
 IRAM_ATTR static inline void _changeGlobalLineValues(int w, int g)
 {
     g_line_width = w;
@@ -149,6 +155,7 @@ i2c_master_bus_config_t i2c_bus_cfg = {
 // Shared flag — core 1 writes, core 0 reads
 static volatile int s_toggle_display_mode = 0; // sentinel "no switch"
 static volatile int s_toggle_overlay_mode = 0; // sentinel "no switch"
+static volatile int s_toggle_orientation = 0; // sentinel "no switch"
 
 
 // ----------------------------------------------------
@@ -432,7 +439,7 @@ static void board_enable_dsi_phy_power(void)
     ESP_LOGI(TAG, "MIPI DSI D-PHY power on (2.5 V)");
 }
 
-static const char *mode_name(int m) { return m == VIDEO_OUT_LVDS ? "LVDS" : "HDMI"; }
+static const char *mode_name(int m) { return ((m&2)== 2) ? "LVDS" : "HDMI"; }
 
 // HDMI Hot-Plug Detect: LT8912B main bank reg 0xC1 bit7 = sink connected (5 V on HPD).
 // Same read the driver's internal get_hpd does; we poll it directly off the main io.
@@ -465,11 +472,11 @@ static esp_err_t video_start(int mode, bool yuv422,
 {
     static const char *TAG = "video";
 
-    esp_err_t err = (mode == VIDEO_OUT_LVDS)
+    esp_err_t err = (isLVDS())
                     ? lvds_start(io, dsi, yuv422, panel, w, h)
                     : hdmi_start(io, dsi, yuv422, panel, w, h);
     if (err != ESP_OK) return err;
-    if (mode == VIDEO_OUT_HDMI) lvds_backlight(false,1023);   // LVDS panel unused -> backlight off
+    if (isHDMI()) lvds_backlight(false,1023);   // LVDS panel unused -> backlight off
 
     esp_err_t err2 = esp_lcd_dpi_panel_get_frame_buffer(
         *panel,
@@ -524,7 +531,7 @@ static esp_err_t video_start(int mode, bool yuv422,
     ESP_LOGI(TAG, "%s up: test card %dx%d (%s)", mode_name(mode), *w, *h, yuv422 ? "YUV422" : "RGB888");
 
     #if LVDS_SETTLE_SWEEP
-    if (mode == VIDEO_OUT_LVDS) lvds_sweep_settle(io);   // diagnostic: find the right settle
+    if (isLVDS()) lvds_sweep_settle(io);   // diagnostic: find the right settle
     #endif
 
     return ESP_OK;
@@ -613,7 +620,7 @@ static void lcd_init(void)
         .phy_clk_src = 0,                                \
         .lane_bit_rate_mbps = 1200,                      \
     }
-    if (mode == VIDEO_OUT_LVDS)
+    if (isLVDS())
     {
         esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG_LCD();
         ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&dsi_bus_cfg, &dsi_bus));
@@ -625,7 +632,7 @@ static void lcd_init(void)
     }
 */
 
-    if (mode == VIDEO_OUT_HDMI)
+    if (isHDMI())
     {
         if (!hdmi_hpd_present(&lt_io))
         {
@@ -635,7 +642,7 @@ static void lcd_init(void)
 
     esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
     esp_lcd_dsi_bus_config_t dsi_bus_cfg = LT8912B_PANEL_BUS_DSI_2CH_CONFIG();
-    if (mode == VIDEO_OUT_LVDS)
+    if (isLVDS())
         dsi_bus_cfg.lane_bit_rate_mbps = BOARD_DSI_LANE_MBPS;   // single source: board.h
     else
         dsi_bus_cfg.lane_bit_rate_mbps = 1200;   // single source: custom
@@ -711,19 +718,32 @@ IRAM_ATTR void mini_draw_line_color(int x0, int y0, int x1, int y1, int color, u
     if (fs->line_count < MAX_LINE_BUFFER) 
     {
         vectrex_line_t *l = &fs->lines[fs->line_count++];
-        if (mode == VIDEO_OUT_HDMI)
+
+        if (g_Orientation == ORIENTATION_0)
         {
             l->x0 = x0;
             l->y0 = y0;
             l->x1 = x1;
             l->y1 = y1;
         }
-        else
+        else if (g_Orientation == ORIENTATION_90)
         {
             /* 90° CW rotation for portrait LCD: (x,y) → (y, -x) */
             l->x0 =  LCD_H_RES-y0;  l->y0 = x0;
             l->x1 =  LCD_H_RES-y1;  l->y1 = x1;
         }
+        else if (g_Orientation == ORIENTATION_180)
+        {
+            /* 180° rotation: (x,y) → (-x, -y) */
+            l->x0 = LCD_H_RES - x0;  l->y0 = LCD_V_RES - y0;
+            l->x1 = LCD_H_RES - x1;  l->y1 = LCD_V_RES - y1;
+        }
+        else if (g_Orientation == ORIENTATION_270)
+        {
+            /* 270° CW (= 90° CCW): (x,y) → (y, -x) */
+            l->x0 = y0;  l->y0 = LCD_V_RES - x0;
+            l->x1 = y1;  l->y1 = LCD_V_RES - x1;
+        }        
 
         l->brightness = brightness;
         l->color = color;
@@ -750,19 +770,31 @@ IRAM_ATTR void mini_draw_line(int x0, int y0, int x1, int y1, uint8_t brightness
     if (fs->line_count < MAX_LINE_BUFFER) 
     {
         vectrex_line_t *l = &fs->lines[fs->line_count++];
-        if (mode == VIDEO_OUT_HDMI)
+        if (g_Orientation == ORIENTATION_0)
         {
             l->x0 = x0;
             l->y0 = y0;
             l->x1 = x1;
             l->y1 = y1;
         }
-        else
+        else if (g_Orientation == ORIENTATION_90)
         {
             /* 90° CW rotation for portrait LCD: (x,y) → (y, -x) */
             l->x0 =  LCD_H_RES-y0;  l->y0 = x0;
             l->x1 =  LCD_H_RES-y1;  l->y1 = x1;
         }
+        else if (g_Orientation == ORIENTATION_180)
+        {
+            /* 180° rotation: (x,y) → (-x, -y) */
+            l->x0 = LCD_H_RES - x0;  l->y0 = LCD_V_RES - y0;
+            l->x1 = LCD_H_RES - x1;  l->y1 = LCD_V_RES - y1;
+        }
+        else if (g_Orientation == ORIENTATION_270)
+        {
+            /* 270° CW (= 90° CCW): (x,y) → (y, -x) */
+            l->x0 = y0;  l->y0 = LCD_V_RES - x0;
+            l->x1 = y1;  l->y1 = LCD_V_RES - x1;
+        }        
 
         l->brightness = brightness;
     }
@@ -783,7 +815,7 @@ IRAM_ATTR void mini_end_frame(void)
 {
     static uint64_t emu_last_time   = 0;
     static int      emu_frame_count = 0;
-//printf("Frame end");
+    //printf("Frame end");
     // EMU FPS
     // note!
     // this FPS displays how many frame ends were recieved from the emulator in 1 second
@@ -983,6 +1015,13 @@ IRAM_ATTR static void renderer_task(void *arg)
             void toggleOverlay();
             toggleOverlay();
             s_toggle_overlay_mode = 0;
+            redraw = 3;
+        }
+        else if (s_toggle_orientation)
+        {
+            void toggleOrientation();
+            toggleOrientation();
+            s_toggle_orientation = 0;
             redraw = 3;
         }
 
@@ -1368,7 +1407,7 @@ IRAM_ATTR static void audio_music_task(void *arg)
         s_audio_cb(NULL, (int16_t *) audio_buf, audio_bufsize);
 
         esp_err_t ret;
-        if (mode == VIDEO_OUT_HDMI)
+        if (isHDMI())
         {
             size_t written = 0;
             ret = i2s_channel_write(s_i2s_tx_chan,
@@ -1397,6 +1436,11 @@ void initGlobals()
 {
     overlayEnabled = ENABLE_OVERLAYS;
     mode = VIDEO_OUT_SELECTED;          // default at boot
+
+    if (isHDMI())
+        g_Orientation = ORIENTATION_0; 
+    else
+        g_Orientation = ORIENTATION_90; // LCD intern default, assuming LCD is default here
     g_color_mode = 0;
     g_fpsToReach=  1000000/MAX_EMU_FPS;
 
@@ -1455,9 +1499,9 @@ void app_main(void)
     {
         printf("Something went wrong with the keyboard init - did you connect a keyboard?");
     }
-#ifdef BLUETOOTH_ENABLED
-bt_init();
-#endif
+    #ifdef BLUETOOTH_ENABLED
+    bt_init();
+    #endif
     ESP_LOGI(TAG, "Init LCD / DSI");
     lcd_init();
 
@@ -1469,14 +1513,14 @@ bt_init();
     frames_init();
 
 
-#ifdef CONFIG_ESP_TASK_WDT_EN
+    #ifdef CONFIG_ESP_TASK_WDT_EN
     // Task-Watchdog aus (Entwicklung)
     esp_task_wdt_deinit();
-#endif
+    #endif
 
     ESP_ERROR_CHECK(audio_init());
 
-    if (mode == VIDEO_OUT_HDMI)
+    if (isHDMI())
     {
         gpio_set_level(GPIO_OUTPUT_PA, 0);   // speaker off
         /* enable LT8912B I2S audio input — CEC bank reg 0xB2 */
@@ -1533,6 +1577,11 @@ bt_init();
     //heap_caps_print_heap_info(MALLOC_CAP_8BIT);
 #endif    
 }
+void toggleVideoOrientationRequest()
+{
+    s_toggle_orientation = 1;   // atomic on 32-bit aligned write on RISC-V
+}
+
 void toggleVideoModeRequest()
 {
     s_toggle_display_mode = 1;   // atomic on 32-bit aligned write on RISC-V
@@ -1543,16 +1592,40 @@ void toggleOverlayRequest()
     s_toggle_overlay_mode = 1;   // atomic on 32-bit aligned write on RISC-V
 }
 
+void printDisplayState()
+{
+    if (isHDMI()) printf("HDMI: "); else printf("LCD: ");
+    if (overlayEnabled) printf("Overlay"); else printf("no Overlay");
+    if (g_Orientation == ORIENTATION_0) printf(", 0°");
+    if (g_Orientation == ORIENTATION_90) printf(", 90°");
+    if (g_Orientation == ORIENTATION_180) printf(", 180°");
+    if (g_Orientation == ORIENTATION_270) printf(", 270°");
+    printf("\n");
+}
+
+
+void toggleOrientation()
+{
+    if (g_Orientation == ORIENTATION_0) g_Orientation = ORIENTATION_90;
+    else if (g_Orientation == ORIENTATION_90) g_Orientation = ORIENTATION_180;
+    else if (g_Orientation == ORIENTATION_180) g_Orientation = ORIENTATION_270;
+    else if (g_Orientation == ORIENTATION_270) g_Orientation = ORIENTATION_0;
+
+    printf("Toggle Orientation invoked\n");
+    // loading a disable overlay, frees all buffers and does not load...
+    loadOverlayRGB(lastOverlay);
+    fireResizeEvent();
+    printDisplayState();
+}
+
 void toggleOverlay()
 {
 	if (overlayEnabled) overlayEnabled=0; else overlayEnabled = 1; 
 printf("Toggle overlay invoked\n");
     // loading a disable overlay, frees all buffers and does not load...
-    if (mode == VIDEO_OUT_HDMI)
-        loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-    else
-        loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
+    loadOverlayRGB(lastOverlay);
     fireResizeEvent();
+    printDisplayState();
 }
 
 void toggleVideoMode()
@@ -1562,21 +1635,18 @@ void toggleVideoMode()
 
     vTaskDelay(pdMS_TO_TICKS(20)); // I never needed this - but doc says after bus reinit - one should wait a bit?
 
-    if (mode == VIDEO_OUT_HDMI)  mode = VIDEO_OUT_LVDS;
+    if (isHDMI())  mode = VIDEO_OUT_LVDS;
     else   mode = VIDEO_OUT_HDMI;
 
     lcd_init();
 
     // audio is simply a switch 
-    if (mode == VIDEO_OUT_HDMI)
+    if (isHDMI())
     {
         gpio_set_level(GPIO_OUTPUT_PA, 0);   // speaker off
         /* enable LT8912B I2S audio input — CEC bank reg 0xB2 */
         uint8_t val = 0x01;
         esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-
-        loadOverlayRGB(lastOverlay, HDMI_OVERLAY_WIDTH, HDMI_OVERLAY_HEIGHT);
-        fireResizeEvent();
     }
     else
     {
@@ -1584,30 +1654,53 @@ void toggleVideoMode()
         gpio_set_level(GPIO_OUTPUT_PA, 1);   // speaker on
         uint8_t val = 0x00;
         esp_lcd_panel_io_tx_param(lt_io.cec_dsi, 0xB2, &val, 1);
-        loadOverlayRGB(lastOverlay, LCD_OVERLAY_WIDTH, LCD_OVERLAY_HEIGHT);
-        fireResizeEvent();
     }
+    loadOverlayRGB(lastOverlay);
+    fireResizeEvent();
+    printDisplayState();
 }
 
 // physical device reolution
 int getScreenWidth()
 {
-    return (mode == VIDEO_OUT_HDMI) ? LCD_H_RES: LCD_V_RES;
+    if ((g_Orientation == ORIENTATION_90) || (g_Orientation == ORIENTATION_270))
+        return LCD_V_RES;
+    return LCD_H_RES;
 }
+
 int getScreenHeight()
 {
-    return (mode == VIDEO_OUT_HDMI) ? LCD_V_RES: LCD_H_RES;
+    if ((g_Orientation == ORIENTATION_90) || (g_Orientation == ORIENTATION_270))
+        return LCD_H_RES;
+    return LCD_V_RES;
 }
 
 // actual part of the screen used for display
 int getDisplayWidth()
 {
-   if (mode == VIDEO_OUT_HDMI)
+    if (isHDMI())
+    {
+        if ((g_Orientation == ORIENTATION_90) || (g_Orientation == ORIENTATION_270))
+        {
+            if (overlayEnabled)
+                return HDMI_PORTRAIT_IN_OVERLAY_VECX_WIDTH;
+            else
+                return HDMI_PORTRAIT_VECX_WIDTH;
+        }
+        else
+        {
+            if (overlayEnabled)
+                return HDMI_IN_OVERLAY_VECX_WIDTH;
+            else
+                return HDMI_VECX_WIDTH;
+        }
+    }
+    // LCD
+    if ((g_Orientation == ORIENTATION_0) || (g_Orientation == ORIENTATION_180))
     {
         if (overlayEnabled)
-    		return HDMI_IN_OVERLAY_VECX_WIDTH;
-        else
-            return HDMI_VECX_WIDTH;
+            return LCD_LANDSCAPE_IN_OVERLAY_VECX_WIDTH;
+        return LCD_LANDSCAPE_VECX_WIDTH;
     }
     if (overlayEnabled)
         return LCD_IN_OVERLAY_VECX_WIDTH;
@@ -1615,12 +1708,28 @@ int getDisplayWidth()
 }
 int getDisplayHeight()
 {
-   if (mode == VIDEO_OUT_HDMI)
+    if (isHDMI())
+    {
+        if ((g_Orientation == ORIENTATION_90) || (g_Orientation == ORIENTATION_270))
+        {
+            if (overlayEnabled)
+                return HDMI_PORTRAIT_IN_OVERLAY_VECX_HEIGHT;
+            else
+                return HDMI_PORTRAIT_VECX_HEIGHT;
+        }
+        else
+        {
+            if (overlayEnabled)
+                return HDMI_IN_OVERLAY_VECX_HEIGHT;
+            else
+                return HDMI_VECX_HEIGHT;
+        }
+    }
+    if ((g_Orientation == ORIENTATION_0) || (g_Orientation == ORIENTATION_180))
     {
         if (overlayEnabled)
-    		return HDMI_IN_OVERLAY_VECX_HEIGHT;
-        else
-            return HDMI_VECX_HEIGHT;
+            return LCD_LANDSCAPE_IN_OVERLAY_VECX_HEIGHT;
+        return LCD_LANDSCAPE_VECX_HEIGHT;
     }
     if (overlayEnabled)
         return LCD_IN_OVERLAY_VECX_HEIGHT;
@@ -1778,11 +1887,12 @@ IRAM_ATTR void readevents()
 #endif 
 	}
 
+    // change hdmi / LCD
     if (isAsciiDown('y'))
 	{
 		if (modeSwitchActive==0)
 		{
-            if (mode == VIDEO_OUT_LVDS)
+            if (isLVDS())
             {
                 if (!hdmi_hpd_present(&lt_io))
                 {
@@ -1799,7 +1909,22 @@ IRAM_ATTR void readevents()
 	{
 		modeSwitchActive = 0;
 	}
-	
+
+    // change orientation
+    if (isAsciiDown('g'))
+	{
+		if (modeSwitchActive==0)
+		{
+            modeSwitchActive = 7;
+			void toggleVideoOrientationRequest();
+			toggleVideoOrientationRequest();
+		}
+	}
+	else if (modeSwitchActive==7)
+	{
+		modeSwitchActive = 0;
+	}
+    
 	if (isKeyDown(HID_KEY_SPACE))
 	{
 		if (modeSwitchActive==0)

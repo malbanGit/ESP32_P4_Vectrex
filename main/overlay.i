@@ -254,7 +254,7 @@ void drawOverlayPal(uint8_t *dest)
         const uint8_t *row_pal = s_overlay_pal + (size_t)y * s_ov_w;
         int dst_y = s_ov_off_y + y;
 
-#if VIDEO_FB_YUV422
+    #if VIDEO_FB_YUV422
         uint8_t *row_dst = dest + (size_t)dst_y * LCD_H_RES * 2;
 
         for (int x = 0; x < s_ov_w; x++)
@@ -286,7 +286,7 @@ void drawOverlayPal(uint8_t *dest)
                 row_dst[px * 2 + 3] = (uint8_t)vv;
             }
         }
-#else // else is RGB
+    #else // else is RGB
         uint8_t *row_dst = dest + ((size_t)dst_y * LCD_H_RES + s_ov_off_x) * 3;
 
         for (int x = 0; x < s_ov_w; x++, row_dst += 3)
@@ -303,7 +303,7 @@ void drawOverlayPal(uint8_t *dest)
                 row_dst[2] = (uint8_t)((c[2] * s_overlay_alpha_val) >> 8);
             }
         }
-#endif
+    #endif
     }
 }
 
@@ -394,14 +394,49 @@ static int build_palette_freq(
  * Surrounding area is filled with transparent black (alpha=0).
  * Pass img_w=0 / img_h=0 to stretch to full screen.                      */
 char lastOverlay[MAX_OVERLAY_NAME];
-esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
+
+// excpeted is an overlay file in portrait mode
+esp_err_t loadOverlayRGB(char *name)//, int img_w, int img_h)
 {
     strncpy(lastOverlay, name, MAX_OVERLAY_NAME-1);
 
     /* clamp / default to full screen */
-    if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
-    if (img_h <= 0 || img_h > LCD_V_RES) img_h = LCD_V_RES;
 
+     void printDisplayState();
+     printDisplayState();
+
+    /*
+    //if (isHDMI())
+    {
+        if ((g_Orientation ==ORIENTATION_0)||(g_Orientation ==ORIENTATION_180))
+        {
+            if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
+            if (img_h <= 0 || img_h > LCD_V_RES) img_h = LCD_V_RES;
+        }
+        else
+        {
+            // twist
+            if (img_w <= 0 || img_w > LCD_V_RES) img_w = LCD_V_RES;
+            if (img_h <= 0 || img_h > LCD_H_RES) img_h = LCD_H_RES;
+        }
+    }
+    else // LCD
+    {
+        if ((g_Orientation ==ORIENTATION_90)||(g_Orientation ==ORIENTATION_270))
+        {
+            if (img_w <= 0 || img_w > LCD_H_RES) img_w = LCD_H_RES;
+            if (img_h <= 0 || img_h > LCD_V_RES) img_h = LCD_V_RES;
+        }
+        else
+        {
+            // twist
+            if (img_w <= 0 || img_w > LCD_V_RES) img_w = LCD_V_RES;
+            if (img_h <= 0 || img_h > LCD_H_RES) img_h = LCD_H_RES;
+        }
+    }
+    printf("Size process: w: %i, h: %i\n", img_w, img_h);
+    */
+    
     /* free previous overlay buffers */
     if (s_overlay != NULL)    { heap_caps_free(s_overlay);    s_overlay    = NULL; }
     if (s_overlay_bg != NULL) { heap_caps_free(s_overlay_bg); s_overlay_bg = NULL; }
@@ -426,54 +461,85 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     /* fill entire buffer with transparent black */
     memset(s_overlay, 0, buf_sz);
     uint8_t *scaled=NULL;
-    /* decode + scale PNG into a temporary BGRA buffer */
-    if (mode ==VIDEO_OUT_HDMI)
-    {
-        scaled = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
-        if (!scaled)
-        {
-            ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
-            heap_caps_free(s_overlay);
-            s_overlay = NULL;
-            return ESP_ERR_NO_MEM;
-        }
+    int load_w, load_h;
+    // load image in portrait mode
 
-        esp_err_t ret = overlay_load_png_bgra(name, scaled, img_w, img_h);
-        if (ret != ESP_OK)
+    // determine size of loaded image
+    // size NOW is the LOADED image
+    // a landscape image will be full size loaded - and rotated later!
+
+    // each H should be > W
+    // since overlays are always "portait" since vectrex is upright
+    // no support for "lying" overlays
+    if (isHDMI())
+    {
+        if ((g_Orientation == ORIENTATION_0) || (g_Orientation == ORIENTATION_180)) // default
         {
-            ESP_LOGE(TAG, "PNG load failed");
-            heap_caps_free(scaled);
-            heap_caps_free(s_overlay);
-            s_overlay = NULL;
-            return ret;
+            // "normal" tv screen
+            // vectrex / overlay will be centered on screen 
+            load_w = HDMI_OVERLAY_WIDTH;
+            load_h = HDMI_OVERLAY_HEIGHT;
+        }
+        else // portrait
+        {
+            // "normal" tv screen
+            // vectrex / overlay will be rotated and centered on screen 
+            load_w = HDMI_PORTRAIT_OVERLAY_WIDTH;
+            load_h = HDMI_PORTRAIT_OVERLAY_HEIGHT;
         }
     }
-    else
+    else // LCD
     {
-        /* LCD portrait: load PNG in landscape orientation (swapped dims), then
-        * rotate 90° CW so it fills the portrait screen.                       */
-        int load_w = img_h, load_h = img_w;
-        scaled = heap_caps_malloc((size_t)load_w * load_h * 4, MALLOC_CAP_SPIRAM);
-        if (!scaled)
+        if ((g_Orientation == ORIENTATION_90) || (g_Orientation == ORIENTATION_270)) // default
         {
-            ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
-            heap_caps_free(s_overlay);
-            s_overlay = NULL;
-            return ESP_ERR_NO_MEM;
-        }
+            // "normal" tv screen
+            // vectrex / overlay will be centered on screen 
 
-        esp_err_t ret = overlay_load_png_bgra(name, scaled, load_w, load_h);
-        if (ret != ESP_OK)
+            // h here always greater then W
+            load_w = LCD_OVERLAY_HEIGHT;
+            load_h = LCD_OVERLAY_WIDTH;
+        }
+        else // landscape
         {
-            ESP_LOGE(TAG, "PNG load failed");
-            heap_caps_free(scaled);
-            heap_caps_free(s_overlay);
-            s_overlay = NULL;
-            return ret;
+            // "min lcd on the side
+            // vectrex / overlay will be rotated and centered on screen 
+            load_w = LCD_LANDSCAPE_OVERLAY_HEIGHT;
+            load_h = LCD_LANDSCAPE_OVERLAY_WIDTH;
         }
+    }
 
-        /* rotate 90° CW: src pixel (sx=dy, sy=load_h-1-dx) → dst pixel (dx, dy) */
-        uint8_t *rotated = heap_caps_malloc((size_t)img_w * img_h * 4, MALLOC_CAP_SPIRAM);
+    // get mem for scaled loaded image
+    scaled = heap_caps_malloc((size_t)load_w * load_h * 4, MALLOC_CAP_SPIRAM);
+    if (!scaled)
+    {
+        ESP_LOGE(TAG, "PSRAM alloc for scaled image failed");
+        heap_caps_free(s_overlay);
+        s_overlay = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    // load image as portrait overlay (h>w)
+    esp_err_t ret = overlay_load_png_bgra(name, scaled, load_w, load_h);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "PNG load failed");
+        heap_caps_free(scaled);
+        heap_caps_free(s_overlay);
+        s_overlay = NULL;
+        return ret;
+    }
+
+
+
+// if needed - rotate image
+    if (g_Orientation == ORIENTATION_0)
+    {
+        /* no rotation — scaled is already correct */
+    }
+    else if (g_Orientation == ORIENTATION_90)
+    {
+        /* 90° CW: output is load_h wide × load_w tall */
+        uint8_t *rotated = heap_caps_malloc((size_t)load_w * load_h * 4, MALLOC_CAP_SPIRAM);
         if (!rotated)
         {
             ESP_LOGE(TAG, "PSRAM alloc for rotated image failed");
@@ -482,27 +548,100 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
             s_overlay = NULL;
             return ESP_ERR_NO_MEM;
         }
-        for (int dy = 0; dy < img_h; dy++) {
-            for (int dx = 0; dx < img_w; dx++) {
-                const uint8_t *s = scaled  + ((size_t)(load_h - 1 - dx) * load_w + dy) * 4;
-                uint8_t       *d = rotated + ((size_t)dy * img_w + dx) * 4;
-                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+        /* src(sx=dy, sy=load_h-1-dx) → dst(dx, dy)
+         * dst width = load_h, dst height = load_w */
+        for (int dy = 0; dy < load_w; dy++) {
+            for (int dx = 0; dx < load_h; dx++) {
+                const uint8_t *s = scaled  + ((size_t)(load_h-1-dx)*load_w + dy)*4;
+                uint8_t       *d = rotated + ((size_t)dy*load_h + dx)*4;
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d[3]=s[3];
+            }
+        }
+        heap_caps_free(scaled);
+        scaled = rotated;
+        int tmp = load_h;
+        load_h = load_w;
+        load_w = tmp;
+    }
+    else if (g_Orientation == ORIENTATION_180)
+    {
+        /* 180°: output is load_w wide × load_h tall (same dims) */
+        uint8_t *rotated = heap_caps_malloc((size_t)load_w * load_h * 4, MALLOC_CAP_SPIRAM);
+        if (!rotated)
+        {
+            ESP_LOGE(TAG, "PSRAM alloc for rotated image failed");
+            heap_caps_free(scaled);
+            heap_caps_free(s_overlay);
+            s_overlay = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        /* src(sx=load_w-1-dx, sy=load_h-1-dy) → dst(dx, dy) */
+        for (int dy = 0; dy < load_h; dy++) {
+            for (int dx = 0; dx < load_w; dx++) {
+                const uint8_t *s = scaled  + ((size_t)(load_h-1-dy)*load_w + (load_w-1-dx))*4;
+                uint8_t       *d = rotated + ((size_t)dy*load_w + dx)*4;
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d[3]=s[3];
             }
         }
         heap_caps_free(scaled);
         scaled = rotated;
     }
+    else if (g_Orientation == ORIENTATION_270)
+    {
+        /* 270° CW: output is load_h wide × load_w tall */
+        uint8_t *rotated = heap_caps_malloc((size_t)load_w * load_h * 4, MALLOC_CAP_SPIRAM);
+        if (!rotated)
+        {
+            ESP_LOGE(TAG, "PSRAM alloc for rotated image failed");
+            heap_caps_free(scaled);
+            heap_caps_free(s_overlay);
+            s_overlay = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        /* src(sx=load_w-1-dy, sy=dx) → dst(dx, dy)
+         * dst width = load_h, dst height = load_w */
+        for (int dy = 0; dy < load_w; dy++) {
+            for (int dx = 0; dx < load_h; dx++) {
+                const uint8_t *s = scaled  + ((size_t)dx*load_w + (load_w-1-dy))*4;
+                uint8_t       *d = rotated + ((size_t)dy*load_h + dx)*4;
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d[3]=s[3];
+            }
+        }
+        heap_caps_free(scaled);
+        scaled = rotated;
+        int tmp = load_h;
+        load_h = load_w;
+        load_w = tmp;
+    }
 
     /* centre position */
-    int off_x = (LCD_H_RES - img_w) / 2;
-    int off_y = (LCD_V_RES - img_h) / 2;
+    // build a new "image", that has the size of the screen
+    // and has the overlay at the correct position (centered)
+
+    // load_h / load_w 
+    // should be compatible with screen -> can be "pasted" into the screen overlay
+
+    // OVERLAY LOAD FOR MODES FROM HERE?
+    int off_x, off_y;
+    printf("Screensize W: %i, H: %i\n", LCD_H_RES, LCD_V_RES);
+    printf("Imagesize W: %i, H: %i\n", load_w, load_h);
+    off_x = (LCD_H_RES - load_w) / 2;
+    off_y = (LCD_V_RES - load_h) / 2;
+
+
+printf("off_x: %i\n", off_x);
+printf("off_y: %i\n", off_y);
+
 
     /* blit scaled image into the centre of the full-screen buffer */
-    for (int y = 0; y < img_h; y++)
+    for (int y = 0; y < load_h; y++)
     {
-        const uint8_t *src = scaled    + (size_t)y * img_w * 4;
+        const uint8_t *src = scaled    + (size_t)y * load_w * 4;
         uint8_t       *dst = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
-        memcpy(dst, src, (size_t)img_w * 4);
+
+        
+if (dst>s_overlay+buf_sz) printf("Overlay size panic! (+ %i)\n",(int)(dst-(s_overlay+buf_sz)));
+        memcpy(dst, src, (size_t)load_w * 4);
     }
 
     heap_caps_free(scaled);
@@ -539,10 +678,10 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     /* ── Build palettised index for the active region ──────────────────── */
     s_ov_off_x = off_x;
     s_ov_off_y = off_y;
-    s_ov_w     = img_w;
-    s_ov_h     = img_h;
+    s_ov_w     = load_w;
+    s_ov_h     = load_h;
 
-    s_overlay_pal = heap_caps_malloc((size_t)img_w * img_h, MALLOC_CAP_SPIRAM);
+    s_overlay_pal = heap_caps_malloc((size_t)load_w * load_h, MALLOC_CAP_SPIRAM);
     if (s_overlay_pal) 
     {
         s_overlay_pal_n = 0;
@@ -550,15 +689,15 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
 
         /* Pass 1: median-cut quantisation → 127-entry BGR palette. */
         s_overlay_pal_n = build_palette_freq(
-                s_overlay, off_x, off_y, img_w, img_h, LCD_H_RES,
+                s_overlay, off_x, off_y, load_w, load_h, LCD_H_RES,
                 s_overlay_palette);
 
         /* Pass 2: assign index bytes. */
-        for (int y = 0; y < img_h; y++) 
+        for (int y = 0; y < load_h; y++) 
         {
             const uint8_t *src = s_overlay + ((size_t)(off_y + y) * LCD_H_RES + off_x) * 4;
-            uint8_t       *dst = s_overlay_pal + (size_t)y * img_w;
-            for (int x = 0; x < img_w; x++, src += 4, dst++) 
+            uint8_t       *dst = s_overlay_pal + (size_t)y * load_w;
+            for (int x = 0; x < load_w; x++, src += 4, dst++) 
             {
                 uint8_t b = src[0], g = src[1], r = src[2], a = src[3];
                 int best = 0, best_d = 0x7FFFFFFF;
@@ -610,6 +749,6 @@ esp_err_t loadOverlayRGB(char *name, int img_w, int img_h)
     drawOverlayPal(s_fb_back);
 
     ESP_LOGI(TAG, "overlay: %s scaled to %dx%d, centred on %dx%d screen (BGRA)",
-             name, img_w, img_h, LCD_H_RES, LCD_V_RES);
+             name, load_w, load_h, LCD_H_RES, LCD_V_RES);
     return ESP_OK;
 }

@@ -18,7 +18,7 @@
 
 #define VECX_DEBUG 1
 #define MAX_EMU_FPS 50
-#define ENABLE_OVERLAYS 0
+#define ENABLE_OVERLAYS 1
 
 #define LINE_WIDTH 1
 #define LINE_GLOW_WIDTH 2
@@ -37,10 +37,13 @@
 #define AY_CHANNEL 2 // 1 = mono, 2 = stereo
 #define AY_BITS 16 // not working atm with other then 16, ES8311 only support 16 bit or higher... dont set it any other then 16!
 
-#define VIDEO_OUT_HDMI 0
-#define VIDEO_OUT_LVDS 1
-#define VIDEO_OUT_SELECTED VIDEO_OUT_LVDS   // this is the startup configuration
+#define VIDEO_OUT_HDMI 1
+#define VIDEO_OUT_LVDS 2
 
+#define isHDMI() ((mode&VIDEO_OUT_HDMI)==VIDEO_OUT_HDMI)
+#define isLVDS() ((mode&VIDEO_OUT_LVDS)==VIDEO_OUT_LVDS)
+
+#define VIDEO_OUT_SELECTED VIDEO_OUT_LVDS   // this is the startup configuration
 
 #define MAX_LINE_BUFFER   1000
 #define NUM_FB            2        // Hardware-Framebuffer
@@ -48,10 +51,11 @@
 
 #define INI_FILE_PATH   "/sdcard/ESP.INI"
 
-// the overlay
+#define MAX_OVERLAY_NAME 128
+
+// the overlay HDMI LANDSCAPE (default)
 #define HDMI_OVERLAY_WIDTH 564		
 #define HDMI_OVERLAY_HEIGHT 720		
-#define MAX_OVERLAY_NAME 128
 
 // the vecterx output inside an overlay
 #define HDMI_IN_OVERLAY_VECX_WIDTH 500		
@@ -60,7 +64,20 @@
 #define HDMI_VECX_WIDTH 500		
 #define HDMI_VECX_HEIGHT 720
 
-// the overlay
+// the overlay HDMI PORTRAIT
+#define HDMI_PORTRAIT_OVERLAY_WIDTH 720		
+#define HDMI_PORTRAIT_OVERLAY_HEIGHT 960
+
+// the vecterx output inside an overlay
+#define HDMI_PORTRAIT_IN_OVERLAY_VECX_WIDTH 700		
+#define HDMI_PORTRAIT_IN_OVERLAY_VECX_HEIGHT 930
+
+#define HDMI_PORTRAIT_VECX_WIDTH 720
+#define HDMI_PORTRAIT_VECX_HEIGHT 1040 //960
+
+
+
+// the overlay LCD PORTRAIT default
 #define LCD_OVERLAY_WIDTH 800		
 #define LCD_OVERLAY_HEIGHT 480		
 
@@ -68,11 +85,26 @@
 #define LCD_IN_OVERLAY_VECX_WIDTH 400 // 410		
 #define LCD_IN_OVERLAY_VECX_HEIGHT 700		
 
-// if now overlay - vectrex fills the screen
+// if no overlay - vectrex fills the screen
 #define LCD_VECX_WIDTH 480 // 410		
 #define LCD_VECX_HEIGHT 800		
 
+// the overlay LCD LANDSCAPE
+#define LCD_LANDSCAPE_OVERLAY_WIDTH 480
+#define LCD_LANDSCAPE_OVERLAY_HEIGHT 360		
 
+// the vecterx output inside an overlay
+#define LCD_LANDSCAPE_IN_OVERLAY_VECX_WIDTH 380 // 410		
+#define LCD_LANDSCAPE_IN_OVERLAY_VECX_HEIGHT 340
+
+// if no overlay - vectrex fills the screen
+#define LCD_LANDSCAPE_VECX_WIDTH 480 // 410		
+#define LCD_LANDSCAPE_VECX_HEIGHT 360		
+
+#define ORIENTATION_0 0
+#define ORIENTATION_90 1
+#define ORIENTATION_180 2
+#define ORIENTATION_270 3
 
 
 
@@ -89,6 +121,7 @@ extern int LCD_V_RES;
 extern int g_color_mode; // 0 = not color, 1 = color
 extern int g_line_width;
 extern int g_line_glow;
+extern int g_Orientation;
 extern int brightnessAdjust;
 extern long unsigned int g_beam_r2_q16;
 
@@ -134,7 +167,7 @@ long load_rom_file(const char *rom_name, uint8_t *buffer, long max_size);
 
 bool isKeyDown(uint8_t hid_code);
 bool isAsciiDown(char c);
-esp_err_t loadOverlayRGB(char *name, int img_w, int img_h);
+esp_err_t loadOverlayRGB(char *name);
 
 
 // different input devices can be plugged in at the same time
