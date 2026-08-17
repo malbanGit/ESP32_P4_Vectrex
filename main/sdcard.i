@@ -154,6 +154,7 @@ esp_err_t initSD()
     // For setting a specific frequency, use host.max_freq_khz (range 400kHz - 40MHz for SDMMC)
     // Example: for fixed frequency of 10MHz, use host.max_freq_khz = 10000;
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    
 #if CONFIG_EXAMPLE_SDMMC_SPEED_HS
 printf("CONFIG_EXAMPLE_SDMMC_SPEED_HS\n");
     host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
@@ -172,6 +173,10 @@ printf("CONFIG_EXAMPLE_SDMMC_SPEED_UHS_I_SDR104\n");
     host.max_freq_khz = SDMMC_FREQ_SDR104;
     host.flags &= ~SDMMC_HOST_FLAG_DDR;
 #endif
+
+// malban:
+// changed from default (1) to 0 - since conflict with BlueTooth (C6)
+host.slot = SDMMC_HOST_SLOT_0;
 
     // For SoCs where the SD power can be supplied both via an internal or external (e.g. on-board LDO) power supply.
     // When using specific IO pins (which can be used for ultra high-speed SDMMC) to connect to the SD card
