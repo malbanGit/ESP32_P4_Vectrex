@@ -1,5 +1,7 @@
 // #define BLUETOOTH_ENABLED must change CMakeLists.txt sdkconfig and idf_component.yml
-#define VECSIM
+
+// with bluetooth / nimble enabled, not enough DRAM for VecSim
+//#define VECSIM
 #define VECTREX
 
 
@@ -15,6 +17,7 @@ Bug:
 
      berzerk likes t1 timer to be 2 or 5
      minestorm prefers 2
+     cleanseep hates 5
 
     - pole position flimmert bei game over und hat emu fps von 43? Ja hat kein WR.
 

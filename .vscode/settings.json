@@ -2,11 +2,16 @@
   "idf.portWin": "COM5",
   "idf.flashType": "UART",
   "idf.currentSetup": "C:\\Users\\salom\\esp\\v5.5.1\\esp-idf",
-  "idf.customExtraVars": {},
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32p4"
+  },
   "clangd.path": "C:\\Users\\salom\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=d:\\ESP32\\new\\1\\git\\build"
+    "--compile-commands-dir=d:\\ESP32\\new\\1\\git\\ESP32_P4_Vectrex\\build"
+  ],
+  "idf.openOcdConfigs": [
+    "board/esp32p4-builtin.cfg"
   ]
 }
