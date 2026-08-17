@@ -405,7 +405,8 @@ The driver handles signed and unsigned axis encodings, any bit-width, and report
 
 ### Bluetooth
 
-Pending...
+Is now implemented - but it only works for BLE Bluetooth. There are not too many Joysticks that support BLE. XBOX e.g.
+Press "z" on the keyboard for now to enable pairing mode.
 
 ---
 
