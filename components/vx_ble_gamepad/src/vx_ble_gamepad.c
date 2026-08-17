@@ -419,12 +419,16 @@ static bool adv_is_hid(const struct ble_hs_adv_fields *f)
 
 static void scan_update(void)
 {
+    // Malban changes
+    // less agressive scanning parameters!
     struct ble_gap_disc_params params = {
         /* Duplicate filtering would suppress the scan response of a device whose
          * advertisement was already reported — exactly the packet the cache
          * above needs to complete a match. */
-        .filter_duplicates = 0,
-        .passive           = 0,
+        .filter_duplicates = 1,
+        .passive           = 1,
+        .itvl              = 160,  // 100ms interval
+        .window            = 16,   // 10ms window — 10% duty cycle 
     };
     uint8_t own_addr_type;
     int     rc;

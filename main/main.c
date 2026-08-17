@@ -1,4 +1,4 @@
-#define BLUETOOTH_ENABLED must change CMakeLists.txt sdkconfig and idf_component.yml
+#define BLUETOOTH_ENABLED //must change CMakeLists.txt sdkconfig and idf_component.yml
 
 // with bluetooth / nimble enabled, not enough DRAM for VecSim
 //#define VECSIM
@@ -1643,6 +1643,7 @@ IRAM_ATTR void readevents()
 	g_inputState.j0_y=0;
 	g_inputState.j1_x=0;
 	g_inputState.j1_y=0;
+    g_inputState.buttonState = 0xff;
 
 
     // if there is a joystick available - use it, not the keyboard!
@@ -1667,7 +1668,8 @@ IRAM_ATTR void readevents()
             // In your application loop:
             if (isBTJoystickAvailable(0)) 
             {
-                g_inputState.buttonState = miniBTButton; 
+                readBTData(0);
+                g_inputState.buttonState = (g_inputState.buttonState & (0xf0 | getBTButtons(0)));
                 g_inputState.j0_x = (int8_t)getBTAnalogX(0);
                 g_inputState.j0_y = (int8_t)getBTAnalogY(0);
             }
@@ -1711,7 +1713,8 @@ IRAM_ATTR void readevents()
     /* Player 2 */
 #ifdef BLUETOOTH_ENABLED
     if (isBTJoystickAvailable(1)) {
-        g_inputState.buttonState = miniBTButton; 
+        readBTData(1);
+        g_inputState.buttonState = (g_inputState.buttonState & (0x0f | getBTButtons(1)));
         g_inputState.j1_x = (int8_t)getBTAnalogX(1);
         g_inputState.j1_y = (int8_t)getBTAnalogY(1);
     }
@@ -1768,11 +1771,11 @@ IRAM_ATTR void readevents()
             frames_init();
             redraw = 3;
 		}
+        else if (modeSwitchActive==3)
+        {
+            modeSwitchActive = 0;
+        }
 #endif 
-	}
-	else if (modeSwitchActive==3)
-	{
-		modeSwitchActive = 0;
 	}
 
     if (isAsciiDown('y'))
@@ -1815,7 +1818,16 @@ IRAM_ATTR void readevents()
    	
     if (isAsciiDown('z'))
 	{
-        bt_startPairing(30); // 30 seconds of pairing enabled
+		if (modeSwitchActive==0)
+        {
+            bt_startPairing(30); // 30 seconds of pairing enabled
+            modeSwitchActive=4;
+        }
+	}
+	else 
+	if (modeSwitchActive==4)
+	{
+		modeSwitchActive = 0;
 	}
 #endif
    	if (isAsciiDown('b'))
