@@ -1,8 +1,5 @@
 #include "vx_ble_gamepad.h"
 
-#define POLL_MS       50
-#define ALL_BUTTONS   0x0f  /* the 4 buttons the driver exposes */
-
 DRAM_ATTR static vx_gamepad_state_t usage_gp_state;
 DRAM_ATTR static volatile bool s_connected[VX_GAMEPAD_MAX_SLOTS];
 DRAM_ATTR static volatile uint8_t s_battery[VX_GAMEPAD_MAX_SLOTS];
@@ -11,9 +8,8 @@ DRAM_ATTR static volatile uint8_t s_battery[VX_GAMEPAD_MAX_SLOTS];
  * here: a frozen display and a healthy 50 Hz stream look identical otherwise. */
 DRAM_ATTR static volatile uint32_t s_reports[VX_GAMEPAD_MAX_SLOTS];
 
-/* Free heap at the end of the previous run, to measure the run-to-run drift.
- * Survives between runs, reset only by a reboot. */
-static size_t s_prev_heap_after;
+void bt_startPairing(int seconds);
+
 
 static void on_event(const vx_gamepad_event_t *ev, void *arg)
 {
@@ -150,7 +146,6 @@ void bt_deinit(void)
 
 
 
-DRAM_ATTR static vx_gamepad_state_t usage_gp_state;
 IRAM_ATTR int readBTData(int slot)
 {
 	return vx_ble_gamepad_get_state(slot, &usage_gp_state); 

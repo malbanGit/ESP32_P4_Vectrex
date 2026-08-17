@@ -1,4 +1,4 @@
-// #define BLUETOOTH_ENABLED must change CMakeLists.txt sdkconfig and idf_component.yml
+#define BLUETOOTH_ENABLED must change CMakeLists.txt sdkconfig and idf_component.yml
 
 // with bluetooth / nimble enabled, not enough DRAM for VecSim
 //#define VECSIM
@@ -1456,8 +1456,7 @@ void app_main(void)
         printf("Something went wrong with the keyboard init - did you connect a keyboard?");
     }
 #ifdef BLUETOOTH_ENABLED
-nvs_flash_init();
-bt_joy_init();
+bt_init();
 #endif
     ESP_LOGI(TAG, "Init LCD / DSI");
     lcd_init();
@@ -1816,7 +1815,7 @@ IRAM_ATTR void readevents()
    	
     if (isAsciiDown('z'))
 	{
-        bt_joy_start_scan();
+        bt_startPairing(30); // 30 seconds of pairing enabled
 	}
 #endif
    	if (isAsciiDown('b'))

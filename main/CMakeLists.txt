@@ -25,7 +25,7 @@ idf_component_register(
         "vecx/vecx.c" 
         "vecx/libayemu/ay8912.c"
     INCLUDE_DIRS "." 
-    REQUIRES esp_lcd fatfs sd_card 
+    REQUIRES esp_lcd fatfs sd_card vx_ble_gamepad
     PRIV_REQUIRES esp_timer esp_psram esp_mm esp_codec_dev esp_driver_i2s esp_driver_gpio
 )
 
